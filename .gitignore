@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+web/dist/
+.vite/
+
+# Données et textures générées — jamais versionnées (voir docs/PLAN.md,
+# « Conventions et garde-fous »). Le pipeline et les scripts de préparation
+# les régénèrent ; ce sont des dizaines de Mo de binaires.
+web/public/data/
+web/public/assets/*.png
+pipeline/.cache/
+*.grib2
+*.grb2
+
+# Poste de travail
+.DS_Store
+Thumbs.db
+.env
+.env.local

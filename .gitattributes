@@ -1,0 +1,16 @@
+# Fins de ligne : LF partout, dans le dépôt COMME dans la copie de travail.
+#
+# Pourquoi `eol=lf` et pas seulement `text=auto` : ce poste a `core.autocrlf=true`,
+# qui réécrirait chaque fichier en CRLF au checkout. Le dépôt deviendrait alors
+# dépendant de la config git locale — et un fichier dont les fins de ligne
+# changent sous les pieds produit des diffs « fichier entier modifié » et des
+# scripts d'édition qui échouent en silence sur une ancre ancrée en fin de ligne.
+* text=auto eol=lf
+
+# Binaires : jamais de conversion.
+*.png binary
+*.jpg binary
+*.grib2 binary
+*.grb2 binary
+*.ktx2 binary
+*.webp binary
