@@ -48,7 +48,7 @@ corriger.
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25.pl`, variable `TMP` à 2 m |
 | Frontend | Vite + Three.js | vanilla, shaders GLSL custom, pas de framework lourd |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** |
-| Hébergement | Statique + CDN ; pipeline en cron | cible non encore tranchée (VPS ou CI planifiée) — voir §8 |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Pages** (site) | tranché le 2026-08-29 (§5) ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
 
 ## 3. Structure du dépôt
@@ -113,13 +113,20 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Le pipeline ne casse jamais le site** : sur échec NOMADS, la dernière texture valide reste en place | Une panne côté fournisseur ne doit pas se voir côté visiteur. Écriture atomique (temporaire + rename) et idempotence pour la même raison. |
 | **Ordre strict des phases**, critères d'acceptation validés visuellement avant de continuer | Le rendu 3D se débogue mal en couches empilées : un artefact de la Phase 4 est indiscernable d'un artefact de la Phase 5 si les deux arrivent ensemble. |
 | **`history_check` en Python stdlib**, pas en TypeScript *(2026-08-29)* | Le portage TS depuis le projet d'origine imposait un `package.json` + `node_modules` à la RACINE (tsx, typescript, vitest) juste pour vérifier un document — en plus du `node_modules` de `web/`. La version stdlib tourne sur un dépôt nu, et Python est déjà la Phase 1. |
+| **Le plan web n'est pas exécuté tel quel : brainstorming → spec → plan réécrit** *(2026-08-29)* | `docs/PLAN.md` vient d'une session web Claude, sans passer par le workflow superpowers. L'utilisateur veut le chemin complet (questions, approches, design, spec, writing-plans) avant tout code. Le plan initial reste la référence produit, pas la feuille de route d'implémentation. |
+| **Deux specs : pipeline d'abord, globe ensuite** *(2026-08-29)* | Deux sous-systèmes indépendants reliés par un seul contrat (PNG 1440 × 721 + `metadata.json`). Le contrat est figé dans la spec pipeline ; le globe peut démarrer sur une texture factice. |
+| **Pipeline sur GitHub Actions, données sur Cloudflare R2, site sur Cloudflare Pages** *(2026-08-29)* | Zéro serveur à maintenir, rien à installer sur le PC de dev. R2 plutôt que commit horaire (dépôt gonflerait de ~4 Go/an) ou GitHub Pages (cache non configurable). Rétention : **dernière texture valide seulement** (`latest.png` + `latest.json` écrasés) — YAGNI, un historique s'ajoutera plus tard si un curseur temporel est voulu. |
+| **Approche A : décodage GRIB isolé derrière un adaptateur, tout le reste en fonctions pures** *(2026-08-29)* | `eccodeslib` n'a aucune roue Windows (vérifié sur PyPI 2.48.0.26) ; le dev local est un venv Windows sans Docker. Donc `decode_grib()` est le seul code non testable localement : testé sur Actions, `skipUnless` en local. Sélection du run, roll, K→°C, normalisation, écriture atomique, upload : pures, testées sur `numpy`. Bonus : le GRIB devient un détail d'entrée remplaçable (NODD/S3). |
 | **Les dossiers surveillés par le contrôle sont dérivés de `git ls-files`**, pas du disque | Le gitignoré (`node_modules/`, `.venv/`, `web/public/data/`) n'est jamais réclamé au document, et une racine encore vide ne produit aucun bruit. La version d'origine lisait le disque et devait exclure des dossiers en dur. |
 
 ## 6. Problèmes rencontrés & solutions
 
-*(Aucun pour l'instant — cette section se remplit au fil des sessions. Y consigner
-les défauts non triviaux, surtout ceux trouvés par une revue plutôt que par un
-test : ce sont eux qui se reproduisent.)*
+*(Y consigner les défauts non triviaux, surtout ceux trouvés par une revue plutôt
+que par un test : ce sont eux qui se reproduisent.)*
+
+| Date | Problème | Solution / leçon |
+|---|---|---|
+| 2026-08-29 | **Hypothèse « NOMADS OpenDAP `tmp2m`, zéro GRIB, zéro eccodes »** proposée pour contourner l'absence d'`eccodes` sur Windows. Vérifiée par `curl` avant d'être recommandée : **le service OpenDAP/GrADS de NOMADS est retiré** (avis NOAA SCN25-81, HTTP 301 vers une page de retrait). | Le GRIB2 est inévitable ; d'où l'approche A (§5). Leçon : **vérifier un endpoint externe avant de bâtir une approche dessus**, un `curl` coûte moins qu'une spec à réécrire. `filter_gfs_0p25_1hr.pl` vérifié vivant le même jour (516 Ko pour `TMP` 2 m, un pas horaire). |
 
 ## 7. Historique par plan (chronologie)
 
@@ -131,13 +138,42 @@ test : ce sont eux qui se reproduisent.)*
 
 | # | Dette | Impact | Statut |
 |---|---|---|---|
-| 1 | **Cible d'hébergement non tranchée** — VPS avec cron, ou CI planifiée déposant sur un CDN | Bloque la Phase 7 ; influe sur la fréquence réelle du pipeline | 🔴 ouvert |
-| 2 | **`cfgrib` exige `eccodes`**, binaire natif à installer hors pip | Rend l'environnement de dev non reproductible par `pip install` seul ; à documenter en §2 dès la Phase 1 | 🔴 ouvert |
+| 1 | ~~Cible d'hébergement non tranchée~~ | — | ✅ résolu 2026-08-29 : GitHub Actions + Cloudflare R2/Pages (§5). Reste à faire : activer R2, créer bucket + token, poser les secrets GitHub — couvert par la spec pipeline |
+| 2 | **`cfgrib` exige `eccodes`, sans roue Windows** (`eccodeslib` : Linux/macOS seulement) | Le pipeline complet ne tourne pas sur le PC de dev ; seuls ses tests unitaires y tournent. Vérification visuelle du PNG via artefact Actions ou R2 | 🟡 contenu par l'approche A (§5) : un seul point d'entrée non testable localement |
 | 3 | **Encodage température dupliqué en trois endroits** (Python, GLSL, JS) sans garde mécanique | Une plage modifiée d'un seul côté produit une carte fausse mais plausible — le pire mode d'échec | 🔴 ouvert, à surveiller dès la Phase 5 |
 | 4 | **Aucune source de heightmap fixée** — ETOPO 2022 ou heightmap NASA prête à l'emploi | Bloque la Phase 4 ; le choix conditionne le script de préparation et la profondeur de bits | 🔴 ouvert |
 | 5 | **Pas de CI** : les 30 tests ne tournent qu'à la main | Une régression du contrôle de document passe inaperçue | 🟡 acceptable tant que le dépôt est mono-utilisateur |
 
 ## 9. État actuel & prochaine action
+
+### 2026-08-29 (2) — Dépôt GitHub créé, brainstorming de la spec pipeline en cours
+
+- Dépôt distant créé : **https://github.com/Haddepe/worldtemp** (privé), `origin`
+  configuré, `master` poussé.
+- L'exécution directe de `docs/PLAN.md` a été **interrompue à la demande de
+  l'utilisateur** (plan issu d'une session web, pas du workflow superpowers).
+  Reprise par `superpowers:brainstorming`, chemin **architectural** (§5).
+- Décisions prises (détail et pourquoi en §5) : deux specs (pipeline puis globe) ;
+  GitHub Actions → Cloudflare R2 + Pages ; rétention `latest` seulement ; dev local
+  en venv Windows ; **approche A validée** (adaptateur GRIB isolé).
+- Découverte : OpenDAP NOMADS retiré (§6). Dette n° 1 résolue, n° 2 contenue (§8).
+- Un `.venv/` local existe (gitignoré) avec `xarray`, `cfgrib`, `numpy`, `Pillow`,
+  `requests` — `eccodes` n'y charge pas, attendu.
+- Mémoire persistante Claude (`worldtemp-brainstorm-decisions`) tient les mêmes
+  décisions pour reprise après redémarrage du PC.
+
+**Aucun code applicatif écrit.** Arbre §3 inchangé.
+
+- **Tests :** 30/30 verts (contrôle du document uniquement).
+- **Build :** sans objet.
+- **Prochaine action :** reprendre le brainstorming à l'étape **« design par
+  sections »** de la spec pipeline (architecture, sélection du run/échéance,
+  contrat de données PNG + `metadata.json`, workflow Actions + R2, gestion
+  d'erreurs, tests). Choix secondaires à confirmer au passage : 8 bits (tooltip en
+  °C entiers, `metadata.json` porte `encoding`) et source
+  `filter_gfs_0p25_1hr.pl`. Puis écrire
+  `docs/superpowers/specs/2026-08-29-pipeline-gfs-design.md`, puis
+  `superpowers:writing-plans`.
 
 ### 2026-08-29 — Amorçage du dépôt et installation du suivi de continuité
 
@@ -235,4 +271,5 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-08-29 (**amorçage du dépôt** — `git init`, plan déplacé en `docs/PLAN.md`, skill `updating-history` + `tools/history_check.py` installés, 30 tests verts, aucun code applicatif)
+**Dernière mise à jour :** 2026-08-29 (**dépôt GitHub + brainstorming pipeline** — remote `Haddepe/worldtemp`, hébergement tranché GH Actions → Cloudflare R2/Pages, approche A validée, OpenDAP NOMADS constaté retiré, aucun code applicatif)
+**Entrée précédente :** 2026-08-29 (**amorçage du dépôt** — `git init`, plan déplacé en `docs/PLAN.md`, skill `updating-history` + `tools/history_check.py` installés, 30 tests verts, aucun code applicatif)
