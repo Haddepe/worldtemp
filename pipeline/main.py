@@ -101,3 +101,35 @@ def run(
         return EXIT_PUBLISH
     log.info("publié : run %s f%03d, valide %s", iso_utc(cand.run), cand.forecast_hour, iso_utc(cand.valid_time))
     return EXIT_OK
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import sys
+    from datetime import timezone
+
+    from pipeline.grib_adapter import decode_grib
+
+    parser = argparse.ArgumentParser(prog="pipeline", description="GFS TMP 2 m → latest.png + latest.json")
+    parser.add_argument("--dry-run", action="store_true", help="générer out/ sans publier sur R2")
+    parser.add_argument("--out", type=Path, default=Path("out"), help="dossier de sortie (défaut : out)")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
+
+    cfg = None if args.dry_run else publish.R2Config.from_env()
+    if cfg is None:
+        log.info("dry-run : aucun upload R2 (%s)", "--dry-run" if args.dry_run else "secrets R2 absents")
+
+    return run(
+        datetime.now(timezone.utc),
+        download=nomads.download,
+        decode=decode_grib,
+        upload=(lambda png, js: publish.upload_r2(cfg, png, js)) if cfg else None,
+        read_current=(lambda: publish.read_current(cfg)) if cfg else (lambda: None),
+        out_dir=args.out,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
