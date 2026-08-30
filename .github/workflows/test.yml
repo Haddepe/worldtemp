@@ -1,0 +1,33 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pipeline/requirements.txt
+            pipeline/requirements-grib.txt
+      - name: Dépendances (avec cfgrib/eccodes)
+        run: pip install -r pipeline/requirements.txt -r pipeline/requirements-grib.txt pytest
+      - name: Tests (niveaux 1 et 2)
+        run: python -m pytest -v
+      - name: Contrôle HISTORY.md
+        run: python tools/history_check.py
+      - name: Dry-run contre NOMADS réel
+        run: python -m pipeline.main --dry-run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dry-run
+          path: out/
+          retention-days: 3

@@ -1,0 +1,44 @@
+name: pipeline
+
+on:
+  schedule:
+    - cron: "12 * * * *"   # minute 12 : les crons à l'heure pile sont retardés ou sautés
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Générer sans publier sur R2"
+        type: boolean
+        default: false
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pipeline/requirements.txt
+            pipeline/requirements-grib.txt
+      - name: Dépendances
+        run: pip install -r pipeline/requirements.txt -r pipeline/requirements-grib.txt
+      - name: Pipeline
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: python -m pipeline.main ${{ inputs.dry_run == true && '--dry-run' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: latest
+          path: out/
+          retention-days: 3
