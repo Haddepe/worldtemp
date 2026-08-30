@@ -161,7 +161,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 | Date | Plan / branche | Statut | Merge | Tests |
 |---|---|---|---|---|
-| 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ livré | *(merge du jour, commit à compléter)* | 85 local / 86 Actions |
+| 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ mergé | `aa29c6f` | 94 local / 95 Actions |
 
 ## 8. Dette technique connue
 
@@ -178,7 +178,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 ## 9. État actuel & prochaine action
 
-### 2026-08-30 — Pipeline GFS implémenté sur `feat/pipeline-gfs` (non mergé)
+### 2026-08-30 — Pipeline GFS implémenté et mergé (`feat/pipeline-gfs` → `master`)
 
 Spec (`docs/superpowers/specs/2026-08-30-pipeline-gfs-design.md`) et plan
 (`docs/superpowers/plans/2026-08-30-pipeline-gfs.md`) écrits via
@@ -200,8 +200,7 @@ livré détaillé en §3, décisions en §5.
   produit visuellement correct — continents reconnaissables, centré sur la
   longitude 0.
 - **Build :** sans objet (toujours aucun frontend).
-- **Prochaine action :** merger `feat/pipeline-gfs` dans `master` (revue de
-  fin de branche), puis **Task 12** du plan (mise en place R2 : bucket, token,
+- **Prochaine action :** **Task 12** du plan (mise en place R2 : bucket, token,
   4 secrets GitHub, CORS — manuel, dette n° 7 §8), puis reprendre le
   brainstorming pour la spec 2 (globe).
 
