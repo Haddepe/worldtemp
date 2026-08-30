@@ -126,7 +126,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 
 | Décision | Pourquoi |
 |---|---|
-| **Plage de température FIXE [-90 °C, +60 °C]**, encodée 8 bits (`pixel = (T+90)/150*255`) | Une plage dynamique obligerait le shader à lire des métadonnées par frame. La plage fixe couvre les records mondiaux (Vostok ≈ -89 °C, Vallée de la Mort ≈ +57 °C) au prix de ~0,59 °C par niveau. **Source de vérité unique**, à recopier avec commentaire croisé dans `grib_to_texture.py`, les shaders et `colormap.js`. |
+| **Plage de température FIXE [-90 °C, +60 °C]**, encodée 8 bits (`pixel = (T+90)/150*255`) | Une plage dynamique obligerait le shader à lire des métadonnées par frame. La plage fixe couvre les records mondiaux (Vostok ≈ -89 °C, Vallée de la Mort ≈ +57 °C) au prix de ~0,59 °C par niveau. **Source de vérité unique**, à recopier avec commentaire croisé dans `grib_to_texture.py`, les shaders et `colormap.js`. « *— supplantée le 2026-08-30 : `encoding` voyage dans `latest.json`, voir plus bas.* » |
 | **ShaderMaterial custom dès la Phase 2**, même trivial | Tout le projet finit dans ces shaders. Partir d'un matériau standard imposerait une migration au moment précis où la scène devient complexe. |
 | **Colormap en LUT 1D (texture 256 × 1)**, pas de rampe codée en dur | Changer de palette sans toucher au shader, et une seule source de vérité entre le rendu et la légende. |
 | **Arrêts de couleur concentrés entre -45 °C et +45 °C** | 99 % des pixels y vivent. Une rampe linéaire sur toute la plage rendrait la carte terne au quotidien pour couvrir des extrêmes qui n'apparaissent presque jamais. |
@@ -161,7 +161,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 | Date | Plan / branche | Statut | Merge | Tests |
 |---|---|---|---|---|
-| — | *(aucun plan livré à ce jour)* | — | — | — |
+| 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ livré | *(merge du jour, commit à compléter)* | 85 local / 86 Actions |
 
 ## 8. Dette technique connue
 
@@ -192,7 +192,10 @@ livré détaillé en §3, décisions en §5.
   fixture GRIB tourne, rien n'y est skippé). Run CI
   [33319227172](https://github.com/Haddepe/worldtemp/actions/runs/33319227172) —
   vert sauf `history_check` (§3 sans le dossier `fixtures`, pied de page en
-  retard), corrigé par cette mise à jour de `HISTORY.md`.
+  retard), corrigé par cette mise à jour de `HISTORY.md` ; run 33319658191
+  entièrement vert.
+- Revue finale de branche : 403 NOMADS traité comme transitoire, contrat lon
+  précisé (`lon_max` 179,75, pas de colonne de bouclage).
 - Dry-run réel contre NOMADS (`python -m pipeline.main --dry-run`) : `latest.png`
   produit visuellement correct — continents reconnaissables, centré sur la
   longitude 0.
