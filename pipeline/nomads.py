@@ -9,6 +9,8 @@ import requests
 from pipeline import config
 from pipeline.run_selection import Candidate
 
+USER_AGENT = "worldtemp-pipeline (+https://github.com/Haddepe/worldtemp)"
+
 
 class NotFound(Exception):
     """404 : ce run/échéance n'est pas (ou pas encore) sur NOMADS → candidat suivant."""
@@ -29,16 +31,21 @@ def build_url(c: Candidate, base: str = config.NOMADS_FILTER_URL) -> str:
     return base + "?" + urlencode(params, safe="/")
 
 
-def download(url: str, timeout: float = config.HTTP_TIMEOUT_S) -> bytes:
+def download(url: str, timeout: float = config.HTTP_TIMEOUT_S, get=requests.get) -> bytes:
     try:
-        resp = requests.get(url, timeout=timeout)
+        resp = get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
     except requests.RequestException as exc:
         raise TransientError(str(exc)) from exc
     if resp.status_code == 404:
         raise NotFound(url)
-    if resp.status_code == 429 or resp.status_code >= 500:
+    # 403 : NOMADS renvoie ce code aux IP partagées limitées (dont les runners
+    # Actions) — c'est une IP throttlée, pas une interdiction définitive.
+    if resp.status_code in (403, 429) or resp.status_code >= 500:
         raise TransientError(f"HTTP {resp.status_code}")
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as exc:
+        raise TransientError(str(exc)) from exc
     # Le filtre NOMADS peut répondre 200 avec une page HTML d'erreur.
     if not resp.content.startswith(b"GRIB"):
         raise NotFound(f"réponse non GRIB ({len(resp.content)} octets)")
