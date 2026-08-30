@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,7 +27,7 @@ jobs:
       - name: Contrôle HISTORY.md
         run: python tools/history_check.py
       - name: Dry-run contre NOMADS réel
-        if: always()
+        if: ${{ !cancelled() }}
         run: python -m pipeline.main --dry-run
       - uses: actions/upload-artifact@v4
         if: always()

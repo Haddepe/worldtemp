@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-import pytest
+from PIL import Image
 
-from pipeline import nomads
+from pipeline import nomads, texture
 from pipeline.grib_adapter import Field
 from pipeline.main import EXIT_DATA, EXIT_OK, EXIT_PUBLISH, EXIT_SOURCE, run
 from pipeline.publish import PublishError
@@ -140,3 +140,25 @@ def test_dry_run_when_upload_is_none(tmp_path):
     )
     assert code == EXIT_OK
     assert (tmp_path / "latest.json").exists()
+
+
+def test_run_applies_longitude_roll(tmp_path):
+    # Rampe de longitude en Kelvin (colonne 0 → 273,15 K, colonne 1439 → ~323,12 K),
+    # tuilée sur les 721 lignes ; entièrement dans la plage plausible [180, 340].
+    ramp_row = 273.15 + np.arange(1440, dtype=np.float32) / 1440 * 50
+    values = np.tile(ramp_row, (721, 1)).astype(np.float32)
+    field = Field(values, np.linspace(90, -90, 721), np.arange(0, 360, 0.25))
+
+    code, rec = make_run(tmp_path, decode=lambda data: field)
+    assert code == EXIT_OK
+
+    img = Image.open(tmp_path / "latest.png")
+    pixels = np.array(img)
+
+    expected_from_col0 = texture.quantize(texture.kelvin_to_celsius(ramp_row[0:1]))[0]
+    expected_from_col720 = texture.quantize(texture.kelvin_to_celsius(ramp_row[720:721]))[0]
+
+    # roll de 720 colonnes exactement une fois : x=720 porte la colonne GFS 0,
+    # x=0 porte la colonne GFS 720.
+    assert pixels[0, 720] == expected_from_col0
+    assert pixels[0, 0] == expected_from_col720
