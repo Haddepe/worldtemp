@@ -173,7 +173,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 4 | **Aucune source de heightmap fixée** — ETOPO 2022 ou heightmap NASA prête à l'emploi | Bloque la Phase 4 ; le choix conditionne le script de préparation et la profondeur de bits | 🔴 ouvert |
 | 5 | ~~Pas de CI~~ : les tests ne tournaient qu'à la main | — | ✅ résolu 2026-08-30 : `.github/workflows/test.yml` exécute pytest + `history_check` + un dry-run NOMADS réel sur chaque push/PR |
 | 6 | **GitHub désactive les workflows planifiés (`schedule`) après 60 jours sans commit** sur le dépôt | `pipeline.yml` s'arrêterait silencieusement si le dépôt reste inactif deux mois | 🔴 ouvert ; se réveille via un `workflow_dispatch` manuel ou un simple commit — à surveiller si le projet marque une pause |
-| 7 | **R2 non activé** : bucket, token, les 4 secrets GitHub (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) et le CORS restent à poser | `pipeline.yml` tourne aujourd'hui en dry-run implicite (secrets absents) : génère mais ne publie pas | 🔴 ouvert, manuel — couvert par la Task 12 du plan |
+| 7 | **R2 non activé** : bucket, token, les 4 secrets GitHub (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) et le CORS restent à poser | **`pipeline.yml` est DÉSACTIVÉ manuellement** (`gh workflow disable pipeline.yml`, 2026-08-30) pour ne pas tourner à vide chaque heure. ⚠️ À la reprise : poser les secrets puis **`gh workflow enable pipeline.yml`** | 🔴 ouvert, manuel — couvert par la Task 12 du plan |
 | 8 | **`actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`** tournent sur Node 20, déprécié côté GitHub Actions | Migration future vers les majeures suivantes à prévoir (pas encore annoncée comme bloquante) | 🟡 à surveiller |
 
 ## 9. État actuel & prochaine action
@@ -200,7 +200,9 @@ livré détaillé en §3, décisions en §5.
   produit visuellement correct — continents reconnaissables, centré sur la
   longitude 0.
 - **Build :** sans objet (toujours aucun frontend).
-- **Prochaine action :** **Task 12** du plan (mise en place R2 : bucket, token,
+- **Prochaine action :** ⚠️ **réactiver le cron** (`gh workflow enable pipeline.yml`,
+  désactivé le 2026-08-30 pour ne pas tourner à vide) une fois les secrets posés ;
+  **Task 12** du plan (mise en place R2 : bucket, token,
   4 secrets GitHub, CORS — manuel, dette n° 7 §8), puis reprendre le
   brainstorming pour la spec 2 (globe).
 
@@ -329,6 +331,6 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-08-30 (**pipeline GFS implémenté** — `feat/pipeline-gfs` non mergé, 12 tâches subagent-driven, 85 passed/1 skipped local, 86 passed sur Actions, dettes n° 3 et n° 5 résolues, dry-run NOMADS réel vert)
+**Dernière mise à jour :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
 **Entrée précédente :** 2026-08-29 (**dépôt GitHub + brainstorming pipeline** — remote `Haddepe/worldtemp`, hébergement tranché GH Actions → Cloudflare R2/Pages, approche A validée, OpenDAP NOMADS constaté retiré, aucun code applicatif)
 **Entrée précédente :** 2026-08-29 (**amorçage du dépôt** — `git init`, plan déplacé en `docs/PLAN.md`, skill `updating-history` + `tools/history_check.py` installés, 30 tests verts, aucun code applicatif)
