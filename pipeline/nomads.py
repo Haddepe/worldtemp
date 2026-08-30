@@ -36,7 +36,7 @@ def download(url: str, timeout: float = config.HTTP_TIMEOUT_S) -> bytes:
         raise TransientError(str(exc)) from exc
     if resp.status_code == 404:
         raise NotFound(url)
-    if resp.status_code >= 500:
+    if resp.status_code == 429 or resp.status_code >= 500:
         raise TransientError(f"HTTP {resp.status_code}")
     resp.raise_for_status()
     # Le filtre NOMADS peut répondre 200 avec une page HTML d'erreur.
