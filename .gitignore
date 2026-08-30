@@ -19,6 +19,12 @@ pipeline/.cache/
 *.grib2
 *.grb2
 
+# Sortie locale du pipeline (spec §4)
+out/
+
+# La fixture GRIB de test est l'exception à *.grib2 (spec §7)
+!tests/fixtures/*.grib2
+
 # Poste de travail
 .DS_Store
 Thumbs.db

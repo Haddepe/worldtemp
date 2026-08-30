@@ -101,6 +101,9 @@ Idempotence : avant tout téléchargement, `GET` du `latest.json` public sur R2.
 erreur réseau sur ce GET → on continue (première publication, ou R2 indisponible).
 Pas de cache disque : le runner Actions est éphémère.
 
+« Implémentation : lecture via `get_object` S3 avec les mêmes secrets (pas d'URL
+publique, pas de 5ᵉ secret) — écart assumé, voir HISTORY §5. »
+
 ## 4. Contrat de données
 
 C'est la frontière avec la spec globe. Figé ici ; toute modification incrémente
@@ -111,7 +114,11 @@ C'est la frontière avec la spec globe. Figé ici ; toute modification incrémen
 - 1440 × 721, PNG 8 bits niveaux de gris (mode Pillow `L`), sans alpha ni palette.
 - Équirectangulaire : x = longitude de **-180° (gauche) à +180° (droite)**, y =
   latitude de **+90° (haut) à -90° (bas)**. Pixel (0, 0) = lon -180, lat +90.
-  UV sphère : `u = x / 1439`, `v = 1 - y / 720`.
+  « Colonne x ↔ lon = -180 + 0,25·x (dernière colonne 179,75 ; **pas de colonne
+  de bouclage**, le front utilise `RepeatWrapping` en u). Ligne y ↔ lat =
+  90 − 0,25·y (pôles inclus). Échantillonner la longitude λ et la latitude φ au
+  centre du pixel : `u = (λ + 180) / 360 + 1 / 2880`,
+  `v_haut = ((90 − φ) · 4 + 0,5) / 721` (Three.js : `v = 1 − v_haut`). »
 - Depuis la grille GFS (lon 0→359.75, lat 90→-90) : `np.roll` de 720 colonnes sur
   l'axe des longitudes, **pas de flip latitude** (vérifié par le test adaptateur
   `lat[0] == 90`).
@@ -136,7 +143,8 @@ C'est la frontière avec la spec globe. Figé ici ; toute modification incrémen
   "generated_at": "2026-08-30T14:07:42Z",
   "encoding": { "bits": 8, "min_c": -90, "max_c": 60 },
   "grid": { "width": 1440, "height": 721,
-            "lon_min": -180, "lon_max": 180, "lat_min": -90, "lat_max": 90 },
+            "lon_min": -180, "lon_max": 179.75, "lat_min": -90, "lat_max": 90,
+            "lon_step": 0.25, "lat_step": 0.25 },
   "texture": "latest.png",
   "stats": { "min_c": -71.3, "max_c": 48.9 }
 }
@@ -273,8 +281,8 @@ Pas de mock NOMADS : c'est l'endpoint qu'on veut surveiller (leçon HISTORY §6)
 
 ### Non testés unitairement
 
-`nomads.download` et `publish.upload_r2` : wrappers de quelques lignes sur
-`requests` / `boto3`, couverts par le niveau 3 et le run planifié.
+`publish.upload_r2` : wrapper de quelques lignes sur `boto3`, couvert par le
+niveau 3 et le run planifié.
 
 ## 8. Critères d'acceptation
 
