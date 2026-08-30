@@ -15,9 +15,7 @@ def _grib_stack_available() -> bool:
     return True
 
 
-pytestmark = pytest.mark.skipif(not _grib_stack_available(), reason="cfgrib/eccodes indisponibles (poste Windows)")
-
-
+@pytest.mark.skipif(not _grib_stack_available(), reason="cfgrib/eccodes indisponibles (poste Windows)")
 def test_decode_real_gfs_file():
     from pipeline.grib_adapter import decode_grib
 
@@ -32,4 +30,8 @@ def test_decode_real_gfs_file():
 
 
 def test_field_importable_without_decoding():
-    from pipeline.grib_adapter import Field  # noqa: F401
+    from pipeline.grib_adapter import Field, decode_grib
+
+    assert callable(decode_grib)
+    field = Field(np.zeros((1, 1), np.float32), np.zeros(1), np.zeros(1))
+    assert field.values.shape == (1, 1)
