@@ -27,7 +27,8 @@ def build_metadata(c: Candidate, celsius: np.ndarray, generated_at: datetime) ->
         "encoding": {"bits": 8, "min_c": config.MIN_C, "max_c": config.MAX_C},
         "grid": {
             "width": config.WIDTH, "height": config.HEIGHT,
-            "lon_min": -180, "lon_max": 180, "lat_min": -90, "lat_max": 90,
+            "lon_min": -180, "lon_max": 179.75, "lat_min": -90, "lat_max": 90,
+            "lon_step": 0.25, "lat_step": 0.25,
         },
         "texture": "latest.png",
         "stats": {"min_c": round(float(celsius.min()), 1), "max_c": round(float(celsius.max()), 1)},
