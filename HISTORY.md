@@ -191,8 +191,8 @@ livré détaillé en §3, décisions en §5.
 - **Sur Actions :** **86 passed** (le test réel de `decode_grib` contre la
   fixture GRIB tourne, rien n'y est skippé). Run CI
   [33319227172](https://github.com/Haddepe/worldtemp/actions/runs/33319227172) —
-  vert sauf `history_check` (§8 non à jour à ce moment-là), corrigé par cette
-  mise à jour de `HISTORY.md`.
+  vert sauf `history_check` (§3 sans le dossier `fixtures`, pied de page en
+  retard), corrigé par cette mise à jour de `HISTORY.md`.
 - Dry-run réel contre NOMADS (`python -m pipeline.main --dry-run`) : `latest.png`
   produit visuellement correct — continents reconnaissables, centré sur la
   longitude 0.
