@@ -35,8 +35,8 @@ web/
   index.html                 # canvas plein écran + overlay UI
   package.json  vite.config.ts  tsconfig.json  wrangler.jsonc
   public/
-    assets/blue-marble-4k.jpg          # NASA BMNG, 4096×2048, ~1,5 Mo, commité
-    _headers                           # cache long sur /assets/*, court sur index
+    textures/blue-marble-4k.jpg        # NASA BMNG, 4096×2048, ~1,5 Mo, commité (hors /assets/ : pas haché par Vite)
+    _headers                           # cache long sur /assets/* (hachés), 1 j sur /textures/*, court sur index
   src/
     main.ts                  # bootstrap : tier → scène → données → UI
     config.ts                # DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS
@@ -196,8 +196,8 @@ Une seule source de vérité pour la palette.
 - `web/wrangler.jsonc` : `name: "worldtemp"`, `compatibility_date` du jour,
   `assets: { directory: "./dist" }`, **pas de `main`** : Worker sans script,
   requêtes statiques gratuites.
-- `web/public/_headers` : `/assets/*` → `Cache-Control: public, max-age=31536000,
-  immutable` ; `/` et `/index.html` → `max-age=0, must-revalidate`. Les données ne
+- `web/public/_headers` : `/assets/*` (fichiers hachés par Vite) → `Cache-Control: public, max-age=31536000,
+  immutable` ; `/textures/*` (Blue Marble, nom stable) → `max-age=86400` ; `/` et `/index.html` → `max-age=0, must-revalidate`. Les données ne
   transitent pas par le Worker : le navigateur lit R2 directement.
 - CI, `.github/workflows/test.yml` étendu :
   - job `web` (parallèle à `pytest`) : `actions/setup-node` 24, `npm ci`,
