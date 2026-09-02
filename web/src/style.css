@@ -50,7 +50,20 @@ html, body {
   padding: 0.5rem 0.75rem;
 }
 
-#banner { grid-column: 1 / -1; justify-self: center; text-align: center; }
+#banner { grid-column: 1 / -1; justify-self: center; text-align: center; display: flex; align-items: center; gap: 0.5rem; }
+#toggle-overlay {
+  background: transparent;
+  color: inherit;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+#toggle-overlay[aria-expanded="false"] { transform: rotate(180deg); }
+#overlay.collapsed #legend,
+#overlay.collapsed #controls { display: none; }
 #status { grid-column: 1 / -1; justify-self: center; color: #ffd166; }
 #legend { grid-row: 3; grid-column: 1; align-self: end; justify-self: start; min-width: 16rem; }
 #controls { grid-row: 3; grid-column: 2; align-self: end; display: flex; gap: 0.5rem; align-items: center; }
@@ -64,11 +77,24 @@ html, body {
 #fatal {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
   padding: 2rem;
   background: #000;
   text-align: center;
+}
+
+#fatal button {
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-muted);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Spécificité #fatal[hidden] (ID + attribut) > #fatal seul : sans cette règle,
@@ -80,6 +106,7 @@ html, body {
 }
 
 @media (max-width: 600px) {
-  #legend { min-width: 0; width: calc(100vw - 1.5rem); grid-column: 1 / -1; }
-  #controls { grid-column: 1 / -1; justify-self: end; }
+  #overlay { grid-template-rows: auto 1fr auto auto; }
+  #legend { min-width: 0; width: calc(100vw - 1.5rem); grid-row: 3; grid-column: 1 / -1; }
+  #controls { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; }
 }

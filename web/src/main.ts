@@ -28,7 +28,7 @@ async function boot(): Promise<void> {
 
   canvas.addEventListener("webglcontextlost", (ev) => {
     ev.preventDefault();
-    ui.showFatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.");
+    ui.showFatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.", { reload: true });
   });
 
   const baseMap = await new THREE.TextureLoader().loadAsync("/textures/blue-marble-4k.jpg");
@@ -76,6 +76,7 @@ async function boot(): Promise<void> {
       console.warn("[worldtemp] données indisponibles :", e);
       if (loader.data) {
         refreshBanner();
+        ui.setStatus("Mise à jour impossible, nouvel essai dans 15 min");
       } else {
         ui.setBanner("NOAA GFS 0,25°");
         ui.setStatus("Données indisponibles, nouvel essai dans 15 min");

@@ -10,7 +10,10 @@
   <body>
     <canvas id="globe" aria-label="Globe 3D des températures"></canvas>
     <div id="overlay">
-      <header id="banner" class="panel" aria-live="polite">Chargement…</header>
+      <header id="banner" class="panel" aria-live="polite">
+        <span id="banner-text">Chargement…</span>
+        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls">▾</button>
+      </header>
       <div id="status" class="panel" role="status" hidden></div>
       <aside id="legend" class="panel" aria-label="Légende des températures"></aside>
       <aside id="controls" class="panel">

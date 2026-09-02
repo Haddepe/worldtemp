@@ -8,7 +8,7 @@ export interface Overlay {
   setLegend(minC: number, maxC: number, stats: { min_c: number; max_c: number }): void;
   onOpacity(cb: (opacity: number) => void): void;
   initialOpacity(): number;
-  showFatal(text: string): void;
+  showFatal(text: string, options?: { reload?: boolean }): void;
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -18,16 +18,22 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 export function createOverlay(): Overlay {
-  const banner = byId<HTMLElement>("banner");
+  const bannerText = byId<HTMLElement>("banner-text");
   const status = byId<HTMLElement>("status");
   const legend = byId<HTMLElement>("legend");
   const opacity = byId<HTMLInputElement>("opacity");
   const fatal = byId<HTMLElement>("fatal");
   const overlay = byId<HTMLElement>("overlay");
+  const toggle = byId<HTMLButtonElement>("toggle-overlay");
+
+  toggle.addEventListener("click", () => {
+    const collapsed = overlay.classList.toggle("collapsed");
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+  });
 
   return {
     setBanner(text) {
-      banner.textContent = text;
+      bannerText.textContent = text;
     },
     setStatus(text) {
       status.hidden = text === null;
@@ -48,8 +54,15 @@ export function createOverlay(): Overlay {
     initialOpacity() {
       return Number(opacity.value);
     },
-    showFatal(text) {
+    showFatal(text, options) {
       fatal.textContent = text;
+      if (options?.reload) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Recharger";
+        button.addEventListener("click", () => location.reload());
+        fatal.appendChild(button);
+      }
       fatal.hidden = false;
       overlay.hidden = true;
     },
