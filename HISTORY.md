@@ -47,10 +47,10 @@ corriger.
 | Pipeline de données | Python (**3.12 sur Actions**, venv local **3.14**) | `xarray`, `cfgrib` (exige `eccodes`), `numpy`, `Pillow`, `requests`, `boto3` (client S3 pour R2, §5) |
 | Dépendances pipeline | `pipeline/requirements.txt` (numpy, Pillow, requests, boto3 — installe sur **Windows**) vs `pipeline/requirements-grib.txt` (`cfgrib`, `eccodeslib`, `xarray` — **Actions seulement**, pas de roue Windows) | split par l'approche A (§5) ; variable cfgrib de `TMP` à 2 m confirmée `t2m` sur Actions (`pipeline/grib_adapter.py`) |
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
-| Frontend | Vite + Three.js | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` pas encore écrit |
+| Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
-| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Pages** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
-| CI | `.github/workflows/test.yml` (push/PR : pytest + `history_check` + dry-run NOMADS réel) et `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; URL `https://worldtemp.<sous-domaine>.workers.dev` (à compléter après le premier déploiement) ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
+| CI | `.github/workflows/test.yml` : job `test` (push/PR : pytest + `history_check` + dry-run NOMADS réel), job `web` (npm ci, typecheck, vitest, build, upload `web-dist`), job `deploy` (`wrangler deploy`, seulement sur push `master`, après `test`+`web`) ; `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) ; jobs `web`/`deploy` ajoutés le 2026-09-02 |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
 
 ## 3. Structure du dépôt
@@ -80,20 +80,56 @@ pipeline/
   requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray
 tools/
   history_check.py             # contrôle mécanique de HISTORY.md contre le dépôt
+  prepare_bluemarble.py        # télécharge/redimensionne la texture Blue Marble NASA (source, licence)
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
   fixtures/gfs_tmp2m.grib2     # fixture GRIB réelle (~514 Ko), exception au .gitignore
   pipeline/                    # tests pytest des modules ci-dessus (1 fichier par module)
 .github/workflows/
-  test.yml                     # pytest + history_check + dry-run NOMADS, sur push/PR
+  test.yml                     # jobs test (pytest+history_check+dry-run), web (npm/vitest/build), deploy (wrangler, master)
   pipeline.yml                 # cron horaire (minute 12) + workflow_dispatch
 pytest.ini                     # testpaths = tests
 HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
 .gitignore
+web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/slider), #fatal
+  package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
+  package-lock.json
+  tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler
+  vite.config.ts                # config Vitest (fichiers de tests sous web/tests/)
+  wrangler.jsonc                # Worker sans script, assets statiques = ./dist (Workers Static Assets)
+  public/
+    _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
+    textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public
+  src/
+    main.ts                    # bootstrap : scène, globe, DataLoader, tier GPU, branchement overlay
+    config.ts                  # DATA_BASE_URL, REFRESH_MS (15 min), STALE_AFTER_MS (6 h)
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux)
+    data/
+      metadata.ts               # parseMetadata : contrat des métadonnées publiées par le pipeline (encoding, grid, valid_time…)
+      sampling.ts                # heatmapUv : formules d'échantillonnage lat/lon → UV (miroir du GLSL)
+      loader.ts                  # DataLoader : fetch + cache-busting + refresh 15 min, non réentrant
+    gpu/
+      tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
+    render/
+      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls, rendu à la demande
+      globe.ts                   # sphère + ShaderMaterial (segments par tier), setHeatmap/setLut/setOpacity
+      colormap.ts                # arrêts de couleur, LUT 256×1 sRGB, dégradé CSS de la légende
+      shaders/globe.vert.glsl    # vertex shader (position, UV, normale vers le fragment)
+      shaders/globe.frag.glsl    # fragment shader : texture couleur + heatmap + LUT, éclairage simplifié
+    ui/
+      format.ts                  # formatBanner, legendTicks : mise en forme texte/heure/graduations
+      overlay.ts                 # createOverlay : bandeau, statut, légende, repliage mobile
+  tests/
+    fixtures.ts                  # SAMPLE : métadonnées de test (même contrat que le pipeline), réutilisées par plusieurs suites
+    metadata.test.ts
+    sampling.test.ts
+    colormap.test.ts
+    tier.test.ts
+    loader.test.ts
+    format.test.ts
 ```
-
-`web/` n'est pas encore écrit — seul le pipeline (ci-dessus) existe pour l'instant.
 
 ## 4. Architecture & principe directeur
 
@@ -147,6 +183,17 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Repo passé public le 2026-08-30** | Minutes GitHub Actions illimitées sur dépôt public ; le cron horaire consomme environ 1 500 min/mois, au-dessus du quota gratuit de 2 000 min d'un dépôt privé une fois `pipeline.yml` et `test.yml` cumulés. |
 | **429 NOMADS traité comme erreur transitoire (retry)**, ajouté en revue *(2026-08-30)* | Un run/échéance pas encore prêt répond parfois 429 avant le 200 ; le traiter comme une panne définitive ferait échouer des runs qui auraient réussi à la tentative suivante. |
 | **`if: always()` sur l'étape dry-run de `test.yml`** *(2026-08-30)* | L'artefact `out/` du dry-run est l'outil de diagnostic principal en cas d'échec (PNG produit, visible sans repasser par R2) : il doit exister même quand une étape précédente (tests ou `history_check`) tombe, sinon le diagnostic manque justement quand il sert le plus. |
+| **Cloudflare Workers Static Assets plutôt que Cloudflare Pages** *(2026-09-02)* | Cloudflare recommande Workers pour tout nouveau projet depuis 2026 ; Pages est gelé. `wrangler.jsonc` déclare un Worker sans script, uniquement des assets (`./dist`). Déploiement par le job `deploy` de `test.yml`, après `test` et `web`, sur push `master` seulement. |
+| **TypeScript plutôt que JavaScript** pour le frontend *(2026-09-02)* | Le contrat `latest.json` (schéma pipeline) et les signatures inter-modules (`heatmapUv`, `decideTier`, `DataLoader`…) se prêtent à un typage strict ; `tsconfig.json` en `strict` + `noUncheckedIndexedAccess`. |
+| **Un seul `ShaderMaterial` custom dès le premier commit du globe**, plutôt qu'un matériau standard puis migration | Le relief/hillshading (spec 3, dette n° 4) s'ajoutera dans le même shader sans réécrire le pipeline de rendu ni la scène. |
+| **Blue Marble NASA 4K committée sous `web/public/textures/`, pas sous `web/public/assets/`** *(2026-09-02)* | `_headers` donne aux fichiers hachés de `assets/` un cache `immutable` 1 an ; la texture, servie sous un nom stable, doit rester invalidable (`_headers` : `/textures/*` → `max-age=86400`). La loger sous `assets/` la figerait derrière un cache qu'on ne peut pas casser sans renommer le fichier. |
+| **LUT de couleur en `SRGBColorSpace` `DataTexture`** *(2026-09-02)* | Le GPU décode alors la LUT en linéaire avant le mélange avec la heatmap dans le shader, au lieu de mélanger des octets sRGB bruts — évite un dégradé de légende visuellement différent du rendu 3D. |
+| **Heatmap chargée en `ImageBitmap` avec `imageOrientation: "flipY"`** *(2026-09-02)* | Three.js ignore l'option `flipY` d'une `THREE.Texture` quand la source est un `ImageBitmap` ; l'orientation doit donc être corrigée en amont, au décodage. |
+| **Rendu à la demande** (la boucle `requestAnimationFrame` ne dessine que sur mouvement des contrôles ou `requestRender()` explicite), pas une boucle continue *(2026-09-02)* | Le globe est une scène statique entre deux interactions (pas d'animation permanente) : dessiner en continu gâche batterie et GPU sur mobile pour rien. |
+| **Pas de micro-benchmark GPU** pour choisir le tier ; ordre de priorité URL (`?tier=`) → nom du renderer WebGL → faisceau d'indices heuristique (§5 ligne « détection GPU ») *(2026-09-02)* | Un micro-benchmark coûte des frames au démarrage et son résultat varie avec la charge du moment ; le faisceau d'indices est immédiat et suffisant, le paramètre d'URL couvre les cas où il se trompe. |
+| **`DataLoader.refresh()` non réentrant** : une promesse en vol est partagée plutôt que de relancer un fetch *(2026-09-02, trouvé en revue, §6)* | L'intervalle de 15 min et l'écouteur `visibilitychange` peuvent se déclencher au même instant ; sans garde, deux fetch concurrents pour la même donnée. |
+| **Vitest réservé à la logique pure**, le rendu WebGL validé à l'œil et via Chrome DevTools MCP par les sous-agents d'implémentation *(2026-09-02)* | Un canvas WebGL ne s'assert pas utilement en test unitaire ; les 59 tests couvrent `metadata`, `sampling`, `colormap`, `tier`, `loader`, `format` (logique déterministe), pas la scène Three.js elle-même. |
+| **`encoding` et `grid` lus depuis les métadonnées publiées par le pipeline côté front**, aucune constante recopiée *(2026-09-02)* | Honore côté front la dette n° 3 (§8), déjà résolue côté pipeline le 2026-08-30 : source de vérité unique, des deux côtés du contrat. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -157,12 +204,16 @@ que par un test : ce sont eux qui se reproduisent.)*
 |---|---|---|
 | 2026-08-29 | **Hypothèse « NOMADS OpenDAP `tmp2m`, zéro GRIB, zéro eccodes »** proposée pour contourner l'absence d'`eccodes` sur Windows. Vérifiée par `curl` avant d'être recommandée : **le service OpenDAP/GrADS de NOMADS est retiré** (avis NOAA SCN25-81, HTTP 301 vers une page de retrait). | Le GRIB2 est inévitable ; d'où l'approche A (§5). Leçon : **vérifier un endpoint externe avant de bâtir une approche dessus**, un `curl` coûte moins qu'une spec à réécrire. `filter_gfs_0p25_1hr.pl` vérifié vivant le même jour (516 Ko pour `TMP` 2 m, un pas horaire). |
 | 2026-08-30 | Deux défauts trouvés en revue (aucun par test, hors CI) pendant l'exécution subagent-driven : un `pytestmark` **au niveau module** sur `test_grib_adapter.py` sautait aussi le test d'importabilité censé prouver que le module se charge sans `cfgrib` ; l'étape dry-run de `test.yml` était sautée dès que `history_check` échouait, privant le diagnostic de son artefact. | Corrigés respectivement en isolant le skip sur le seul test qui dépend de `cfgrib`, et en ajoutant `if: always()` (§5). Leçon : **un skip au niveau module désactive aussi les tests qui prouvent l'absence de dépendance** — à réserver au cas par cas. |
+| 2026-09-02 | `#fatal { display: grid }` en CSS écrasait la règle UA `[hidden] { display: none }` sur le même élément : page entièrement noire au tout premier lancement (avant tout fetch), l'écran d'erreur fatale restant visible par-dessus le canvas alors qu'il portait l'attribut `hidden`. | Corrigé par `#fatal[hidden] { display: none }` (et symétriquement `#overlay[hidden]`). Leçon : dès qu'une règle CSS fixe `display` sur un sélecteur d'ID, l'attribut `[hidden]` a besoin d'un override explicite au même niveau de spécificité, sinon `display` gagne. |
+| 2026-09-02 | `DataLoader.refresh()` réentrant, trouvé en revue : l'intervalle de rafraîchissement (15 min) et l'écouteur `visibilitychange` peuvent se déclencher au même instant et déclenchaient chacun un fetch, doublant la requête. | Corrigé par une promesse en vol partagée (guard de réentrance) — voir §5. |
+| 2026-09-02 | Sur mobile (≤ 600 px), la légende et le slider se chevauchaient : les deux panneaux occupaient la même 3ᵉ ligne de la grille CSS. Trouvé par la validation visuelle propre à la tâche (pas en revue). | Corrigé en ajoutant une 4ᵉ ligne à la grille de l'overlay (`web/src/style.css`). La revue de la même tâche a par ailleurs ajouté le bouton de rechargement sur `webglcontextlost` et le repli (collapse) de l'overlay que le plan avait laissé tomber depuis la spec §5. |
 
 ## 7. Historique par plan (chronologie)
 
 | Date | Plan / branche | Statut | Merge | Tests |
 |---|---|---|---|---|
 | 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ mergé | `aa29c6f` | 94 local / 95 Actions |
+| 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | 🟡 livré, merge à venir | merge : à compléter | 59 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
 
 ## 8. Dette technique connue
 
@@ -170,15 +221,55 @@ que par un test : ce sont eux qui se reproduisent.)*
 |---|---|---|---|
 | 1 | ~~Cible d'hébergement non tranchée~~ | — | ✅ résolu 2026-08-29 : GitHub Actions + Cloudflare R2/Pages (§5) ; R2 mis en service le 2026-09-02 (dette n° 7) |
 | 2 | **`cfgrib` exige `eccodes`, sans roue Windows** (`eccodeslib` : Linux/macOS seulement) | `decode_grib` (`pipeline/grib_adapter.py`) ne tourne pas sur le PC de dev, skip local (`skipUnless`) | 🟡 contenu par l'approche A (§5) : `decode_grib` testé **réellement** sur Actions contre la fixture commitée `tests/fixtures/gfs_tmp2m.grib2` (test vert, pas un mock) — seul le poste Windows reste aveugle |
-| 3 | ~~Encodage température dupliqué en trois endroits~~ (Python, GLSL, JS) sans garde mécanique | — | ✅ résolu par construction le 2026-08-30 : `encoding` et `grid` portés par `latest.json` (§5), le front les lit au lieu de les recopier. Reste à honorer côté front : à couvrir dans la spec 2 (globe) |
+| 3 | ~~Encodage température dupliqué en trois endroits~~ (Python, GLSL, JS) sans garde mécanique | — | ✅ résolu par construction le 2026-08-30 (pipeline) et **honorée côté front le 2026-09-02** : `web/src/data/metadata.ts` lit `encoding`/`grid` depuis les métadonnées publiées, aucune constante recopiée |
 | 4 | **Aucune source de heightmap fixée** — ETOPO 2022 ou heightmap NASA prête à l'emploi | Bloque la Phase 4 ; le choix conditionne le script de préparation et la profondeur de bits | 🔴 ouvert |
 | 5 | ~~Pas de CI~~ : les tests ne tournaient qu'à la main | — | ✅ résolu 2026-08-30 : `.github/workflows/test.yml` exécute pytest + `history_check` + un dry-run NOMADS réel sur chaque push/PR |
 | 6 | **GitHub désactive les workflows planifiés (`schedule`) après 60 jours sans commit** sur le dépôt | `pipeline.yml` s'arrêterait silencieusement si le dépôt reste inactif deux mois | 🔴 ouvert ; se réveille via un `workflow_dispatch` manuel ou un simple commit — à surveiller si le projet marque une pause |
 | 7 | ~~R2 non activé~~ | — | ✅ résolu 2026-09-02 : bucket `worldtemp`, `r2.dev`, CORS, token, 4 secrets GitHub posés ; **`pipeline.yml` réactivé** (`gh workflow enable`), premier run réel publié (§9) |
 | 8 | **`actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`** tournent sur Node 20, déprécié côté GitHub Actions | Migration future vers les majeures suivantes à prévoir (pas encore annoncée comme bloquante) | 🟡 à surveiller |
 | 9 | **Critère 6 de la spec (secret R2 invalide → run rouge exit 4, `latest.*` intact) non testé de bout en bout** : le Secret Access Key n'a pas été conservé côté utilisateur, le casser aurait imposé de recréer le token | Le chemin est couvert par les tests unitaires de `publish.py` (exit 4) mais pas vérifié contre R2 réel | 🟡 ouvert — à faire à la prochaine rotation du token : poser une valeur fausse, `gh workflow run`, vérifier, remettre la vraie |
+| 10 | **Le job `deploy` de `test.yml` reconstruit le frontend** (`npm ci` + `npm run build`) au lieu de réutiliser l'artefact `web-dist` déjà produit par le job `web` | Double build à chaque déploiement ; quelques dizaines de secondes de CI perdues, pas de risque fonctionnel | 🟡 mineur, ouvert |
+| 11 | **Aucun test unitaire sur `web/src/ui/overlay.ts`** : ni le repli/dépli de l'overlay, ni l'affichage du statut d'échec de rafraîchissement (`refresh()` qui échoue) ne sont couverts par Vitest, seulement validés à l'œil | Une régression sur ces deux comportements ne casserait aucun test | 🟡 ouvert |
+| 12 | **`ImageBitmap` de la heatmap remplacée non fermé explicitement (`.close()`)** lors d'un rafraîchissement | Repose sur le ramasse-miettes du navigateur ; sans conséquence pratique vu la cadence de rafraîchissement (15 min) mais consomme de la mémoire GPU/CPU inutilement entre deux passages du GC | 🟡 mineur, ouvert |
+| 13 | **`navigator.hardwareConcurrency === 0` traité comme « aucun signal »** dans `web/src/gpu/tier.ts`, alors que la spec écrit littéralement « ≤ 4 → tier low » | Cas surtout théorique (peu de navigateurs renvoient 0 plutôt que `undefined`) ; un appareil qui renverrait 0 recevrait le tier `high` au lieu de `low` par ce seul critère | 🟡 théorique, ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-02 (2) — Globe + heatmap livrés sur la branche `feat/globe-heatmap`
+
+Spec (`docs/superpowers/specs/2026-09-02-globe-heatmap-design.md`) et plan
+(`docs/superpowers/plans/2026-09-02-globe-heatmap.md`) exécutés en
+**subagent-driven development** (10 tâches, une revue par tâche ; 4 tours de
+correction au total, sur les tâches 6, 7 et 8 — défauts détaillés en §6).
+Livré : scaffold Vite/TS/Vitest (`web/`), contrat `latest.json` et
+échantillonnage lat/lon → UV, texture Blue Marble + script de préparation,
+scène Three.js et globe `ShaderMaterial` (tiers `high`/`low`), colormap LUT
+256×1 + légende, détection de tier GPU par faisceau d'indices,
+`DataLoader` (fetch, cache-busting, rafraîchissement 15 min + `visibilitychange`),
+overlay (bandeau, statut, légende, slider, repli mobile) et dégradation sans
+donnée, CI (jobs `web` et `deploy`, Workers Static Assets — §2, §5).
+
+- **Tests :** `npm --prefix web run test` → **59 passed** (Vitest, logique pure
+  uniquement : `metadata`, `sampling`, `colormap`, `tier`, `loader`, `format` —
+  le rendu WebGL est validé à l'œil et via Chrome DevTools MCP par les
+  sous-agents d'implémentation, §5). `.venv/Scripts/python -m pytest -q` →
+  **85 passed, 1 skipped** annoncé au plan, **94 passed, 1 skipped** constaté
+  à l'exécution de cette mise à jour (inchangé par cette branche, qui ne
+  touche pas `pipeline/`/`tests/` — l'écart vient d'un compte de référence
+  daté au moment du plan, pas d'une régression).
+- **Build :** `vite build` OK — `dist/assets/index-*.js` 551 Ko (≈ 140 Ko
+  gzip), `index.html` + CSS négligeables ; texture Blue Marble 1020 Ko servie
+  à part (`web/public/textures/`, hors cache `immutable`). Premier
+  chargement transféré ≈ 1,4 Mo en tout (JS/CSS gzip + texture).
+- **CI sur la branche :** job `web` vert ; job `deploy` sauté (ne tourne que
+  sur push `master`) ; job `test` rouge uniquement sur `history_check` avant
+  cette mise à jour du document.
+- **Prochaine action :** revue finale de branche, merge dans `master`
+  (`superpowers:finishing-a-development-branch`), premier déploiement (le
+  secret GitHub `CLOUDFLARE_API_TOKEN` doit être posé par l'utilisateur), CORS
+  du bucket R2 pour l'origine `workers.dev`, puis critères 4 à 6 de la spec
+  (mobile, cron horaire visible sans rechargement, site en ligne). Ensuite,
+  brainstorming de la **spec 3 (relief)**, dette n° 4 §8.
 
 ### 2026-09-02 — R2 en service, premier run réel publié (Task 12)
 
@@ -361,7 +452,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
+**Dernière mise à jour :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
+**Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
 **Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
 **Entrée précédente :** 2026-08-29 (**dépôt GitHub + brainstorming pipeline** — remote `Haddepe/worldtemp`, hébergement tranché GH Actions → Cloudflare R2/Pages, approche A validée, OpenDAP NOMADS constaté retiré, aucun code applicatif)
 **Entrée précédente :** 2026-08-29 (**amorçage du dépôt** — `git init`, plan déplacé en `docs/PLAN.md`, skill `updating-history` + `tools/history_check.py` installés, 30 tests verts, aucun code applicatif)

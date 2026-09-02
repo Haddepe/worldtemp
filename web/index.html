@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Globe 3D des températures mondiales actuelles (NOAA GFS)." />
+    <title>Worldtemp — températures mondiales en 3D</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="globe" aria-label="Globe 3D des températures"></canvas>
+    <div id="overlay">
+      <header id="banner" class="panel">
+        <span id="banner-text">Chargement…</span>
+        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Replier ou déployer les panneaux">▾</button>
+      </header>
+      <div id="status" class="panel" role="status" hidden></div>
+      <aside id="legend" class="panel" aria-label="Légende des températures"></aside>
+      <aside id="controls" class="panel">
+        <label for="opacity">Heatmap</label>
+        <input id="opacity" type="range" min="0" max="1" step="0.01" value="0.85" />
+      </aside>
+      <div id="ad-slot" hidden></div>
+    </div>
+    <div id="fatal" role="alert" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

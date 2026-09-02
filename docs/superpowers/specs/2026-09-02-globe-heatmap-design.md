@@ -143,11 +143,12 @@ Uniforms : `uBaseMap`, `uHeatmap`, `uLut`, `uGridSize`, `uHeatmapOpacity`,
 vec2 hm = vec2(vUv.x + 0.5 / uGridSize.x,
                1.0 - ((1.0 - vUv.y) * (uGridSize.y - 1.0) + 0.5) / uGridSize.y);
 float t = texture2D(uHeatmap, hm).r;              // 0..1, bilinéaire natif
-vec3 heat = texture2D(uLut, vec2(t, 0.5)).rgb;    // LUT 256×1, déjà linéaire
+vec3 heat = texture2D(uLut, vec2(t, 0.5)).rgb;    // LUT 256×1, sRGB décodée par le GPU
 vec3 base = texture2D(uBaseMap, vUv).rgb;         // sRGB → linéaire par Three.js
 vec3 albedo = mix(base, heat, uHeatmapOpacity);
 float lambert = max(dot(normalize(vNormal), uLightDir), 0.0);
 gl_FragColor = vec4(albedo * (0.25 + 0.75 * lambert), 1.0);
+#include <colorspace_fragment>                    // conversion vers l'espace de sortie sRGB
 ```
 
 Pourquoi `RepeatWrapping` en u : la dernière colonne est 179,75°, le filtrage
@@ -171,9 +172,11 @@ Arrêts en °C, densifiés là où vivent 99 % des pixels :
 
 `buildLut(stops, min_c, max_c): Uint8Array` (256 × 4 RGBA, interpolation linéaire
 en RGB entre arrêts placés à `(°C − min_c) / (max_c − min_c)`) alimente **à la
-fois** la `DataTexture` (`NoColorSpace`, `LinearFilter`, `ClampToEdge`) et le
-gradient CSS de la légende (`linear-gradient` construit depuis les mêmes arrêts).
-Une seule source de vérité pour la palette.
+fois** la `DataTexture` (`SRGBColorSpace`, `LinearFilter`, `ClampToEdge` — les
+octets sont du sRGB, le GPU les décode en linéaire à l'échantillonnage, cohérent
+avec la Blue Marble avant la conversion de sortie) et le gradient CSS de la
+légende (`linear-gradient` construit depuis les mêmes arrêts). Une seule source
+de vérité pour la palette.
 
 ## 5. Interface (`ui/overlay.ts`, HTML/CSS hors canvas)
 
