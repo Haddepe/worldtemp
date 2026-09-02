@@ -105,7 +105,9 @@ export class DataLoader {
       const texture = bitmapToTexture(bitmap, meta);
       const previous = this.current;
       this.current = { meta, texture };
+      const img = previous?.texture.image as ImageBitmap | undefined;
       previous?.texture.dispose();
+      if (img && typeof img.close === "function") img.close();
       return this.current;
     };
     this.inflight = run().finally(() => {

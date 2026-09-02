@@ -64,7 +64,7 @@ html, body {
 #toggle-overlay[aria-expanded="false"] { transform: rotate(180deg); }
 #overlay.collapsed #legend,
 #overlay.collapsed #controls { display: none; }
-#status { grid-column: 1 / -1; justify-self: center; color: #ffd166; }
+#status { grid-column: 1 / -1; justify-self: center; align-self: start; color: #ffd166; }
 #legend { grid-row: 3; grid-column: 1; align-self: end; justify-self: start; min-width: 16rem; }
 #controls { grid-row: 3; grid-column: 2; align-self: end; display: flex; gap: 0.5rem; align-items: center; }
 #ad-slot { grid-column: 1 / -1; height: 90px; }

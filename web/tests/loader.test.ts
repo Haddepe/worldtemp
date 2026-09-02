@@ -17,7 +17,7 @@ const BASE = "https://example.test/gfs";
 const META = parseMetadata(SAMPLE);
 
 function fakeBitmap(width = 1440, height = 721): ImageBitmap {
-  return { width, height, close() {} } as unknown as ImageBitmap;
+  return { width, height, close: vi.fn() } as unknown as ImageBitmap;
 }
 
 function deps(json: unknown, bitmap: ImageBitmap = fakeBitmap()): LoaderDeps & {
@@ -98,6 +98,17 @@ describe("DataLoader.refresh", () => {
     expect(second?.meta.generated_at).toBe("2026-08-30T15:07:42Z");
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(d.fetchBitmap).toHaveBeenCalledTimes(2);
+  });
+
+  it("generated_at différent : l'ancien ImageBitmap est fermé", async () => {
+    const firstBitmap = fakeBitmap();
+    const d = deps(SAMPLE, firstBitmap);
+    const loader = new DataLoader(BASE, d);
+    await loader.refresh();
+    d.fetchJson.mockResolvedValueOnce({ ...SAMPLE, generated_at: "2026-08-30T15:07:42Z" });
+    d.fetchBitmap.mockResolvedValueOnce(fakeBitmap());
+    await loader.refresh();
+    expect(firstBitmap.close).toHaveBeenCalledTimes(1);
   });
 
   it("JSON invalide : lève MetadataError, l'état courant reste intact", async () => {

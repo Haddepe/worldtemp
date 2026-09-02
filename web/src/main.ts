@@ -46,27 +46,36 @@ async function boot(): Promise<void> {
 
   const loader = new DataLoader(DATA_BASE_URL);
   let lutKey = "";
+  let lut: THREE.DataTexture | null = null;
+  let updateFailed = false;
 
   const refreshBanner = () => {
     const d = loader.data;
     if (!d) return;
     ui.setBanner(formatBanner(d.meta, Date.now()));
-    ui.setStatus(isStale(d.meta, Date.now(), STALE_AFTER_MS) ? "Données anciennes" : null);
+    ui.setStatus(
+      updateFailed
+        ? "Mise à jour impossible, nouvel essai dans 15 min"
+        : isStale(d.meta, Date.now(), STALE_AFTER_MS)
+          ? "Données anciennes"
+          : null,
+    );
   };
 
   const applyData = async () => {
     try {
       const fresh = await loader.refresh();
+      updateFailed = false;
       if (fresh) {
         const { encoding, grid, stats } = fresh.meta;
         const key = `${encoding.min_c}/${encoding.max_c}`;
         if (key !== lutKey) {
-          globe.setLut(createLutTexture(buildLut(STOPS, encoding.min_c, encoding.max_c)));
-          ui.setLegend(encoding.min_c, encoding.max_c, stats);
+          lut?.dispose();
+          lut = createLutTexture(buildLut(STOPS, encoding.min_c, encoding.max_c));
+          globe.setLut(lut);
           lutKey = key;
-        } else {
-          ui.setLegend(encoding.min_c, encoding.max_c, stats);
         }
+        ui.setLegend(encoding.min_c, encoding.max_c, stats);
         globe.setHeatmap(fresh.texture, grid.width, grid.height);
         sceneHandle.requestRender();
         console.info(`[worldtemp] données ${fresh.meta.run} f${fresh.meta.forecast_hour}, valides ${fresh.meta.valid_time_utc}`);
@@ -75,8 +84,8 @@ async function boot(): Promise<void> {
     } catch (e) {
       console.warn("[worldtemp] données indisponibles :", e);
       if (loader.data) {
+        updateFailed = true;
         refreshBanner();
-        ui.setStatus("Mise à jour impossible, nouvel essai dans 15 min");
       } else {
         ui.setBanner("NOAA GFS 0,25°");
         ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
