@@ -40,6 +40,7 @@ export function isStale(meta: LatestMetadata, nowMs: number, staleAfterMs: numbe
 export function bitmapToTexture(bitmap: ImageBitmap, meta: LatestMetadata): THREE.Texture {
   const { width, height } = meta.grid;
   if (bitmap.width !== width || bitmap.height !== height) {
+    if (typeof bitmap.close === "function") bitmap.close();
     throw new TextureError(`texture ${bitmap.width}×${bitmap.height}, grille ${width}×${height} attendue`);
   }
   const texture = new THREE.Texture(bitmap);
@@ -74,6 +75,7 @@ export const browserDeps: LoaderDeps = {
 
 export class DataLoader {
   private current: LoadedData | null = null;
+  private inflight: Promise<LoadedData | null> | null = null;
 
   constructor(
     private readonly baseUrl: string,
@@ -88,15 +90,27 @@ export class DataLoader {
    * Relit `latest.json`. Renvoie les nouvelles données si `generated_at` a
    * changé, `null` sinon. Lève (`MetadataError`, `TextureError`, erreur
    * réseau) sans toucher à l'état courant.
+   *
+   * Non réentrant : un appel pendant qu'un précédent est en cours renvoie la
+   * même promesse au lieu de déclencher un second fetch/decode concurrent
+   * (le minuteur de rafraîchissement et `visibilitychange` peuvent se
+   * chevaucher).
    */
-  async refresh(): Promise<LoadedData | null> {
-    const meta = parseMetadata(await this.deps.fetchJson(`${this.baseUrl}/latest.json`));
-    if (!needsTextureFetch(this.current?.meta ?? null, meta)) return null;
-    const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, meta));
-    const texture = bitmapToTexture(bitmap, meta);
-    const previous = this.current;
-    this.current = { meta, texture };
-    previous?.texture.dispose();
-    return this.current;
+  refresh(): Promise<LoadedData | null> {
+    if (this.inflight) return this.inflight;
+    const run = async (): Promise<LoadedData | null> => {
+      const meta = parseMetadata(await this.deps.fetchJson(`${this.baseUrl}/latest.json`));
+      if (!needsTextureFetch(this.current?.meta ?? null, meta)) return null;
+      const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, meta));
+      const texture = bitmapToTexture(bitmap, meta);
+      const previous = this.current;
+      this.current = { meta, texture };
+      previous?.texture.dispose();
+      return this.current;
+    };
+    this.inflight = run().finally(() => {
+      this.inflight = null;
+    });
+    return this.inflight;
   }
 }

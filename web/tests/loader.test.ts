@@ -118,4 +118,25 @@ describe("DataLoader.refresh", () => {
     await expect(loader.refresh()).rejects.toThrowError(TextureError);
     expect(loader.data).toBe(first);
   });
+
+  it("appels concurrents : un seul fetch en vol, la même promesse pour les deux appels", async () => {
+    let resolveJson!: (value: unknown) => void;
+    const jsonPromise = new Promise<unknown>((resolve) => {
+      resolveJson = resolve;
+    });
+    const fetchJson = vi.fn(() => jsonPromise);
+    const fetchBitmap = vi.fn(async () => fakeBitmap());
+    const loader = new DataLoader(BASE, { fetchJson, fetchBitmap });
+
+    const p1 = loader.refresh();
+    const p2 = loader.refresh();
+    expect(p1).toBe(p2);
+
+    resolveJson(SAMPLE);
+    const [got1, got2] = await Promise.all([p1, p2]);
+    expect(got1?.meta.generated_at).toBe(META.generated_at);
+    expect(got2).toBe(got1);
+    expect(fetchJson).toHaveBeenCalledTimes(1);
+    expect(fetchBitmap).toHaveBeenCalledTimes(1);
+  });
 });
