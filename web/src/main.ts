@@ -1,20 +1,15 @@
 import * as THREE from "three";
-import { DATA_BASE_URL, REFRESH_MS } from "./config";
-import { DataLoader } from "./data/loader";
+import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS } from "./config";
+import { DataLoader, isStale } from "./data/loader";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STOPS, buildLut, createLutTexture } from "./render/colormap";
 import { createGlobe } from "./render/globe";
 import { createScene } from "./render/scene";
-
-function fatal(message: string): void {
-  const el = document.getElementById("fatal");
-  if (!el) return;
-  el.textContent = message;
-  el.hidden = false;
-  document.getElementById("overlay")?.setAttribute("hidden", "");
-}
+import { formatBanner } from "./ui/format";
+import { createOverlay } from "./ui/overlay";
 
 async function boot(): Promise<void> {
+  const ui = createOverlay();
   const canvas = document.getElementById("globe") as HTMLCanvasElement | null;
   if (!canvas) throw new Error("canvas #globe introuvable");
 
@@ -22,8 +17,8 @@ async function boot(): Promise<void> {
   try {
     sceneHandle = createScene(canvas);
   } catch (e) {
-    fatal("Ce navigateur ne prend pas en charge WebGL, nécessaire au globe 3D.");
     console.error(e);
+    ui.showFatal("Ce navigateur ne prend pas en charge WebGL, nécessaire au globe 3D.");
     return;
   }
 
@@ -33,7 +28,7 @@ async function boot(): Promise<void> {
 
   canvas.addEventListener("webglcontextlost", (ev) => {
     ev.preventDefault();
-    fatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.");
+    ui.showFatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.");
   });
 
   const baseMap = await new THREE.TextureLoader().loadAsync("/textures/blue-marble-4k.jpg");
@@ -41,44 +36,66 @@ async function boot(): Promise<void> {
   baseMap.anisotropy = sceneHandle.renderer.capabilities.getMaxAnisotropy();
 
   const globe = createGlobe(decision.tier, baseMap);
+  globe.setOpacity(ui.initialOpacity());
+  ui.onOpacity((o) => {
+    globe.setOpacity(o);
+    sceneHandle.requestRender();
+  });
   sceneHandle.scene.add(globe.mesh);
   sceneHandle.start();
 
   const loader = new DataLoader(DATA_BASE_URL);
   let lutKey = "";
 
+  const refreshBanner = () => {
+    const d = loader.data;
+    if (!d) return;
+    ui.setBanner(formatBanner(d.meta, Date.now()));
+    ui.setStatus(isStale(d.meta, Date.now(), STALE_AFTER_MS) ? "Données anciennes" : null);
+  };
+
   const applyData = async () => {
     try {
       const fresh = await loader.refresh();
-      if (!fresh) return;
-      const { encoding, grid } = fresh.meta;
-      const key = `${encoding.min_c}/${encoding.max_c}`;
-      if (key !== lutKey) {
-        globe.setLut(createLutTexture(buildLut(STOPS, encoding.min_c, encoding.max_c)));
-        lutKey = key;
+      if (fresh) {
+        const { encoding, grid, stats } = fresh.meta;
+        const key = `${encoding.min_c}/${encoding.max_c}`;
+        if (key !== lutKey) {
+          globe.setLut(createLutTexture(buildLut(STOPS, encoding.min_c, encoding.max_c)));
+          ui.setLegend(encoding.min_c, encoding.max_c, stats);
+          lutKey = key;
+        } else {
+          ui.setLegend(encoding.min_c, encoding.max_c, stats);
+        }
+        globe.setHeatmap(fresh.texture, grid.width, grid.height);
+        sceneHandle.requestRender();
+        console.info(`[worldtemp] données ${fresh.meta.run} f${fresh.meta.forecast_hour}, valides ${fresh.meta.valid_time_utc}`);
       }
-      globe.setHeatmap(fresh.texture, grid.width, grid.height);
-      sceneHandle.requestRender();
-      console.info(`[worldtemp] données ${fresh.meta.run} f${fresh.meta.forecast_hour}, valides ${fresh.meta.valid_time_utc}`);
+      refreshBanner();
     } catch (e) {
       console.warn("[worldtemp] données indisponibles :", e);
+      if (loader.data) {
+        refreshBanner();
+      } else {
+        ui.setBanner("NOAA GFS 0,25°");
+        ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
+      }
     }
   };
 
   await applyData();
   setInterval(applyData, REFRESH_MS);
+  setInterval(refreshBanner, 60_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void applyData();
-  });
-
-  const opacity = document.getElementById("opacity") as HTMLInputElement | null;
-  opacity?.addEventListener("input", () => {
-    globe.setOpacity(Number(opacity.value));
-    sceneHandle.requestRender();
   });
 }
 
 boot().catch((e: unknown) => {
   console.error(e);
-  fatal("Le globe n'a pas pu démarrer. Rechargez la page.");
+  const fatal = document.getElementById("fatal");
+  if (fatal) {
+    fatal.textContent = "Le globe n'a pas pu démarrer. Rechargez la page.";
+    fatal.hidden = false;
+  }
 });
