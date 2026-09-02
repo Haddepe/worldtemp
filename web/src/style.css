@@ -34,6 +34,14 @@ html, body {
   gap: 0.5rem;
 }
 
+/* Spécificité #overlay[hidden] (ID + attribut) > #overlay seul : sans cette
+   règle, l'attribut HTML `hidden` posé par `fatal()` ne l'emporterait jamais
+   sur `display: grid` ci-dessus et l'overlay resterait en place (et cliquable)
+   sous le panneau noir de #fatal. */
+#overlay[hidden] {
+  display: none;
+}
+
 .panel {
   pointer-events: auto;
   background: var(--panel-bg);
