@@ -49,7 +49,7 @@ corriger.
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
-| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; URL `https://worldtemp.<sous-domaine>.workers.dev` (à compléter après le premier déploiement) ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; **site en ligne depuis le 2026-09-02 : `https://worldtemp.depernet-hadrien.workers.dev`** ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
 | CI | `.github/workflows/test.yml` : job `test` (push/PR : pytest + `history_check` + dry-run NOMADS réel), job `web` (npm ci, typecheck, vitest, build, upload `web-dist`), job `deploy` (`wrangler deploy`, seulement sur push `master`, après `test`+`web`) ; `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) ; jobs `web`/`deploy` ajoutés le 2026-09-02 |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
 
@@ -207,13 +207,15 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-02 | `#fatal { display: grid }` en CSS écrasait la règle UA `[hidden] { display: none }` sur le même élément : page entièrement noire au tout premier lancement (avant tout fetch), l'écran d'erreur fatale restant visible par-dessus le canvas alors qu'il portait l'attribut `hidden`. | Corrigé par `#fatal[hidden] { display: none }` (et symétriquement `#overlay[hidden]`). Leçon : dès qu'une règle CSS fixe `display` sur un sélecteur d'ID, l'attribut `[hidden]` a besoin d'un override explicite au même niveau de spécificité, sinon `display` gagne. |
 | 2026-09-02 | `DataLoader.refresh()` réentrant, trouvé en revue : l'intervalle de rafraîchissement (15 min) et l'écouteur `visibilitychange` peuvent se déclencher au même instant et déclenchaient chacun un fetch, doublant la requête. | Corrigé par une promesse en vol partagée (guard de réentrance) — voir §5. |
 | 2026-09-02 | Sur mobile (≤ 600 px), la légende et le slider se chevauchaient : les deux panneaux occupaient la même 3ᵉ ligne de la grille CSS. Trouvé par la validation visuelle propre à la tâche (pas en revue). | Corrigé en ajoutant une 4ᵉ ligne à la grille de l'overlay (`web/src/style.css`). La revue de la même tâche a par ailleurs ajouté le bouton de rechargement sur `webglcontextlost` et le repli (collapse) de l'overlay que le plan avait laissé tomber depuis la spec §5. |
+| 2026-09-02 | Revue finale de branche : `#status` sans `grid-row`/`align-self` était auto-placé dans la ligne `1fr` de la grille et s'étirait sur toute la hauteur avec `pointer-events: auto`, bloquant la rotation du globe précisément dans les états dégradés de la spec §7. | `align-self: start` ; leçon : dans une grille avec une ligne `1fr`, tout panneau flottant doit fixer son alignement, sinon il remplit la ligne. |
+| 2026-09-02 | Revue finale : le statut « Mise à jour impossible » posé par le `catch` de `applyData()` était effacé sous 60 s par le timer du bandeau, qui recalculait le statut sans connaître l'échec. | Drapeau `updateFailed` levé dans le `catch`, abaissé au prochain `refresh()` réussi, lu par `refreshBanner()`. Leçon : un état affiché par deux chemins doit dériver d'une seule variable, pas de deux écritures concurrentes. |
 
 ## 7. Historique par plan (chronologie)
 
 | Date | Plan / branche | Statut | Merge | Tests |
 |---|---|---|---|---|
 | 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ mergé | `aa29c6f` | 94 local / 95 Actions |
-| 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | 🟡 livré, merge à venir | merge : à compléter | 59 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
+| 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | ✅ mergé, déployé | `fcaf208` | 60 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
 
 ## 8. Dette technique connue
 
@@ -230,10 +232,42 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 9 | **Critère 6 de la spec (secret R2 invalide → run rouge exit 4, `latest.*` intact) non testé de bout en bout** : le Secret Access Key n'a pas été conservé côté utilisateur, le casser aurait imposé de recréer le token | Le chemin est couvert par les tests unitaires de `publish.py` (exit 4) mais pas vérifié contre R2 réel | 🟡 ouvert — à faire à la prochaine rotation du token : poser une valeur fausse, `gh workflow run`, vérifier, remettre la vraie |
 | 10 | **Le job `deploy` de `test.yml` reconstruit le frontend** (`npm ci` + `npm run build`) au lieu de réutiliser l'artefact `web-dist` déjà produit par le job `web` | Double build à chaque déploiement ; quelques dizaines de secondes de CI perdues, pas de risque fonctionnel | 🟡 mineur, ouvert |
 | 11 | **Aucun test unitaire sur `web/src/ui/overlay.ts`** : ni le repli/dépli de l'overlay, ni l'affichage du statut d'échec de rafraîchissement (`refresh()` qui échoue) ne sont couverts par Vitest, seulement validés à l'œil | Une régression sur ces deux comportements ne casserait aucun test | 🟡 ouvert |
-| 12 | **`ImageBitmap` de la heatmap remplacée non fermé explicitement (`.close()`)** lors d'un rafraîchissement | Repose sur le ramasse-miettes du navigateur ; sans conséquence pratique vu la cadence de rafraîchissement (15 min) mais consomme de la mémoire GPU/CPU inutilement entre deux passages du GC | 🟡 mineur, ouvert |
+| 12 | ~~`ImageBitmap` de la heatmap remplacée non fermé~~ | — | ✅ résolu 2026-09-02 (revue finale) : `close()` après `dispose()` de la texture précédente, test `loader` dédié |
+| 14 | **Reliquats mineurs de la revue finale de branche (2026-09-02)**, non corrigés : `uGridSize` semé à (1440, 721) dans `globe.ts` ; `resize()` ne réapplique pas `setPixelRatio` (changement d'écran) et n'a pas de garde `h = 0` ; boucle rAF et `setInterval` continuent après `webglcontextlost` ; échec de chargement de la Blue Marble → écran fatal au lieu du globe seul (cas absent de la table §7 de la spec) ; `#ad-slot` masqué sans hauteur réservée (spec §5 ambiguë, phase 6 tranchera) ; légende `min-width: 16rem` (224 px) au lieu de 256 px ; repères `stats` en texte aux extrémités, pas positionnés sur la barre ; regex de tier `Arc|Xe` trop courte (spec §4) ; asymétrie `num()`/`str()` dans `metadata.ts` ; pas de `concurrency` sur le job `deploy` ; `_headers` sans `nosniff`/`Referrer-Policy` | Polish, aucun impact sur les critères d'acceptation ; à prendre au fil des specs 3 et 4 | 🟡 ouvert |
 | 13 | **`navigator.hardwareConcurrency === 0` traité comme « aucun signal »** dans `web/src/gpu/tier.ts`, alors que la spec écrit littéralement « ≤ 4 → tier low » | Cas surtout théorique (peu de navigateurs renvoient 0 plutôt que `undefined`) ; un appareil qui renverrait 0 recevrait le tier `high` au lieu de `low` par ce seul critère | 🟡 théorique, ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-02 (3) — Merge, premier déploiement : le site est en ligne
+
+Revue finale de branche (modèle le plus capable) : « With fixes », trois
+défauts Important corrigés en une vague (§6 : `#status` étiré, statut d'échec
+effacé ; plus `ImageBitmap.close()`, dette n° 12), deux attributs
+d'accessibilité (`aria-label` du bouton de repli, `aria-live` retiré du
+bandeau), et la spec §4 corrigée (LUT `SRGBColorSpace`,
+`#include <colorspace_fragment>`) pour coller au code. Re-revue scoped propre,
+CI de branche verte.
+
+- Merge `fcaf208` (`--no-ff`) dans `master`, branche supprimée. Run
+  [33671690511](https://github.com/Haddepe/worldtemp/actions/runs/33671690511)
+  : `test`, `web`, **`deploy`** verts — premier déploiement Workers Static
+  Assets, **`https://worldtemp.depernet-hadrien.workers.dev`**.
+- CORS du bucket R2 : règle `site` ajoutée pour cette origine (par l'API MCP
+  Cloudflare, en plus de `localhost:5173`) ; vérifié
+  `access-control-allow-origin` renvoyé sur `latest.json`.
+- **Critère 6 ✅** : `/` → `max-age=0, must-revalidate` ; `/assets/index-*.js`
+  → `immutable` ; `/textures/blue-marble-4k.jpg` → `max-age=86400` ; poids
+  brut du premier chargement ≈ 1,8 Mo (JS 551 Ko non compressé + texture
+  1 044 Ko + PNG 218 Ko), sous les 3 Mo.
+- **Critères 4 et 5 : à faire par l'utilisateur** (téléphone avec et sans
+  `?tier=low` ; changement de texture sans rechargement dans les 15 min
+  suivant un run du cron, minute 12).
+- **Tests :** `npm --prefix web run test` → **60 passed** ; pytest
+  **94 passed, 1 skipped** ; `history_check` ✓.
+- **Build :** `vite build` OK, déployé.
+- **Prochaine action :** critères 4 et 5 (utilisateur), puis
+  `superpowers:brainstorming` pour la **spec 3 (relief : heightmap, displacement,
+  normal map, hillshading)**, qui tranche la dette n° 4 §8.
 
 ### 2026-09-02 (2) — Globe + heatmap livrés sur la branche `feat/globe-heatmap`
 
@@ -452,7 +486,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
+**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.depernet-hadrien.workers.dev`, CORS R2, critère 6 ✅, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte, critères 4-5 à valider par l'utilisateur)
+**Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
 **Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
 **Entrée précédente :** 2026-08-29 (**dépôt GitHub + brainstorming pipeline** — remote `Haddepe/worldtemp`, hébergement tranché GH Actions → Cloudflare R2/Pages, approche A validée, OpenDAP NOMADS constaté retiré, aucun code applicatif)
