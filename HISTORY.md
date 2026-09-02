@@ -49,7 +49,7 @@ corriger.
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
 | Frontend | Vite + Three.js | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` pas encore écrit |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
-| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Pages** (site) | tranché le 2026-08-29 (§5) ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Pages** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
 | CI | `.github/workflows/test.yml` (push/PR : pytest + `history_check` + dry-run NOMADS réel) et `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
 
@@ -142,6 +142,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Les dossiers surveillés par le contrôle sont dérivés de `git ls-files`**, pas du disque | Le gitignoré (`node_modules/`, `.venv/`, `web/public/data/`) n'est jamais réclamé au document, et une racine encore vide ne produit aucun bruit. La version d'origine lisait le disque et devait exclure des dossiers en dur. |
 | **Prévision valide à l'heure courante** (run R + échéance fh tel que R+fh ≈ heure courante, délai de disponibilité 3 h 30, 4 candidats testés) plutôt que l'analyse f000 du dernier run *(2026-08-30)* | `valid_time` reste proche de l'heure réelle et la carte change visiblement à chaque cron horaire. f000 du dernier run disponible aurait 4 à 9 h de retard : le cron horaire tournerait pour rien la plupart du temps. |
 | **Contrat de données étendu : `encoding` et `grid` portés par `latest.json`**, le front ne recopie aucune constante *(2026-08-30)* | Résout **par construction** la dette n° 3 (triple duplication Python/GLSL/JS de la plage d'encodage, §8) : une seule source de vérité, côté pipeline, lue à l'exécution plutôt que recopiée à la main. |
+| **Mise en place R2 par API via le plugin Claude Code `cloudflare@cloudflare`** (bucket, `r2.dev`, CORS), **token R2 de type *Account* créé au dashboard** *(2026-09-02)* | L'OAuth du MCP Cloudflare n'a pas le droit « API Tokens » (erreur 9109) : le token passe par le dashboard, ce qui garde le secret hors du chat. Token *Account* plutôt que *User* : survit aux changements du compte utilisateur, recommandé pour la CI. Nom `worldtemp-github-actions`, permission Object Read & Write restreinte au bucket. Secrets posés côté PC par `Get-Clipboard \| gh secret set …` (rien de tapé, rien dans l'historique). |
 | **Idempotence via `get_object` S3** (mêmes secrets R2 que la publication) plutôt que l'URL publique du bucket *(2026-08-30)* | Évite un 5ᵉ secret GitHub rien que pour lire ce qu'on vient d'écrire. |
 | **Repo passé public le 2026-08-30** | Minutes GitHub Actions illimitées sur dépôt public ; le cron horaire consomme environ 1 500 min/mois, au-dessus du quota gratuit de 2 000 min d'un dépôt privé une fois `pipeline.yml` et `test.yml` cumulés. |
 | **429 NOMADS traité comme erreur transitoire (retry)**, ajouté en revue *(2026-08-30)* | Un run/échéance pas encore prêt répond parfois 429 avant le 200 ; le traiter comme une panne définitive ferait échouer des runs qui auraient réussi à la tentative suivante. |
@@ -167,16 +168,45 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 | # | Dette | Impact | Statut |
 |---|---|---|---|
-| 1 | ~~Cible d'hébergement non tranchée~~ | — | ✅ résolu 2026-08-29 : GitHub Actions + Cloudflare R2/Pages (§5). Reste à faire : activer R2, créer bucket + token, poser les secrets GitHub — couvert par la spec pipeline |
+| 1 | ~~Cible d'hébergement non tranchée~~ | — | ✅ résolu 2026-08-29 : GitHub Actions + Cloudflare R2/Pages (§5) ; R2 mis en service le 2026-09-02 (dette n° 7) |
 | 2 | **`cfgrib` exige `eccodes`, sans roue Windows** (`eccodeslib` : Linux/macOS seulement) | `decode_grib` (`pipeline/grib_adapter.py`) ne tourne pas sur le PC de dev, skip local (`skipUnless`) | 🟡 contenu par l'approche A (§5) : `decode_grib` testé **réellement** sur Actions contre la fixture commitée `tests/fixtures/gfs_tmp2m.grib2` (test vert, pas un mock) — seul le poste Windows reste aveugle |
 | 3 | ~~Encodage température dupliqué en trois endroits~~ (Python, GLSL, JS) sans garde mécanique | — | ✅ résolu par construction le 2026-08-30 : `encoding` et `grid` portés par `latest.json` (§5), le front les lit au lieu de les recopier. Reste à honorer côté front : à couvrir dans la spec 2 (globe) |
 | 4 | **Aucune source de heightmap fixée** — ETOPO 2022 ou heightmap NASA prête à l'emploi | Bloque la Phase 4 ; le choix conditionne le script de préparation et la profondeur de bits | 🔴 ouvert |
 | 5 | ~~Pas de CI~~ : les tests ne tournaient qu'à la main | — | ✅ résolu 2026-08-30 : `.github/workflows/test.yml` exécute pytest + `history_check` + un dry-run NOMADS réel sur chaque push/PR |
 | 6 | **GitHub désactive les workflows planifiés (`schedule`) après 60 jours sans commit** sur le dépôt | `pipeline.yml` s'arrêterait silencieusement si le dépôt reste inactif deux mois | 🔴 ouvert ; se réveille via un `workflow_dispatch` manuel ou un simple commit — à surveiller si le projet marque une pause |
-| 7 | **R2 non activé** : bucket, token, les 4 secrets GitHub (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`) et le CORS restent à poser | **`pipeline.yml` est DÉSACTIVÉ manuellement** (`gh workflow disable pipeline.yml`, 2026-08-30) pour ne pas tourner à vide chaque heure. ⚠️ À la reprise : poser les secrets puis **`gh workflow enable pipeline.yml`** | 🔴 ouvert, manuel — couvert par la Task 12 du plan |
+| 7 | ~~R2 non activé~~ | — | ✅ résolu 2026-09-02 : bucket `worldtemp`, `r2.dev`, CORS, token, 4 secrets GitHub posés ; **`pipeline.yml` réactivé** (`gh workflow enable`), premier run réel publié (§9) |
 | 8 | **`actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`** tournent sur Node 20, déprécié côté GitHub Actions | Migration future vers les majeures suivantes à prévoir (pas encore annoncée comme bloquante) | 🟡 à surveiller |
+| 9 | **Critère 6 de la spec (secret R2 invalide → run rouge exit 4, `latest.*` intact) non testé de bout en bout** : le Secret Access Key n'a pas été conservé côté utilisateur, le casser aurait imposé de recréer le token | Le chemin est couvert par les tests unitaires de `publish.py` (exit 4) mais pas vérifié contre R2 réel | 🟡 ouvert — à faire à la prochaine rotation du token : poser une valeur fausse, `gh workflow run`, vérifier, remettre la vraie |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-02 — R2 en service, premier run réel publié (Task 12)
+
+Aucun code touché. Plugin Claude Code `cloudflare@cloudflare` installé (serveurs
+MCP `cloudflare-api`, `-bindings`, `-builds`, `-observability`, `-docs`, OAuth
+côté utilisateur), puis Task 12 du plan déroulée (§5 pour le partage
+agent/utilisateur) :
+
+- R2 activé au dashboard (utilisateur) ; bucket `worldtemp` (WEUR), `r2.dev`
+  activé, CORS `http://localhost:5173` GET/HEAD posés par API (agent).
+- Token R2 *Account* `worldtemp-github-actions` créé au dashboard ; 4 secrets
+  GitHub posés ; `pipeline.yml` **réactivé**.
+- Run [33653151011](https://github.com/Haddepe/worldtemp/actions/runs/33653151011)
+  vert en 23 s : « latest.json non lu sur R2 (NoSuchKey) », « téléchargé : run
+  2026-09-02T12:00:00Z f004, 515559 octets », « écrit : 218062 octets PNG »,
+  « publié ». **Critère 4 ✅** : `latest.json` public cohérent
+  (`valid_time_utc` 16:00Z pour un contrôle à 16:10Z, `encoding`/`grid` conformes
+  au contrat, stats −69,5/46,2 °C), PNG `image/png`, `cache-control: public,
+  max-age=300`.
+- Run [33653251174](https://github.com/Haddepe/worldtemp/actions/runs/33653251174)
+  dans la même heure : « déjà publié », 19 s, exit 0. **Critère 5 ✅**.
+- **Critère 6 sauté** (dette n° 9 §8).
+- **Tests :** inchangés (94 local / 95 Actions, aucun code modifié).
+- **Build :** sans objet (toujours aucun frontend).
+- **Prochaine action :** `superpowers:brainstorming` pour la **spec 2 (globe
+  Three.js)**, qui consomme `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.json`
+  (`schema_version`, `encoding`, `grid`, `RepeatWrapping`, formules d'échantillonnage
+  spec pipeline §4). Surveiller les premiers runs horaires du cron (minute 12).
 
 ### 2026-08-30 — Pipeline GFS implémenté et mergé (`feat/pipeline-gfs` → `master`)
 
@@ -331,6 +361,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
+**Dernière mise à jour :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
+**Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
 **Entrée précédente :** 2026-08-29 (**dépôt GitHub + brainstorming pipeline** — remote `Haddepe/worldtemp`, hébergement tranché GH Actions → Cloudflare R2/Pages, approche A validée, OpenDAP NOMADS constaté retiré, aucun code applicatif)
 **Entrée précédente :** 2026-08-29 (**amorçage du dépôt** — `git init`, plan déplacé en `docs/PLAN.md`, skill `updating-history` + `tools/history_check.py` installés, 30 tests verts, aucun code applicatif)
