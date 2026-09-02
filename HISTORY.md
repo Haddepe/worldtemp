@@ -49,7 +49,7 @@ corriger.
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
-| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; **site en ligne depuis le 2026-09-02 : `https://worldtemp.depernet-hadrien.workers.dev`** ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; **site en ligne depuis le 2026-09-02 : `https://worldtemp.geoviz.workers.dev`** ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
 | CI | `.github/workflows/test.yml` : job `test` (push/PR : pytest + `history_check` + dry-run NOMADS réel), job `web` (npm ci, typecheck, vitest, build, upload `web-dist`), job `deploy` (`wrangler deploy`, seulement sur push `master`, après `test`+`web`) ; `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) ; jobs `web`/`deploy` ajoutés le 2026-09-02 |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
 
@@ -251,7 +251,10 @@ CI de branche verte.
 - Merge `fcaf208` (`--no-ff`) dans `master`, branche supprimée. Run
   [33671690511](https://github.com/Haddepe/worldtemp/actions/runs/33671690511)
   : `test`, `web`, **`deploy`** verts — premier déploiement Workers Static
-  Assets, **`https://worldtemp.depernet-hadrien.workers.dev`**.
+  Assets, **`https://worldtemp.geoviz.workers.dev`**.
+- Sous-domaine `workers.dev` du compte renommé de `depernet-hadrien` en
+  **`geoviz`** (choix utilisateur, sans nom civil ; par l'API : DELETE puis PUT
+  `/workers/subdomain`, l'ancienne URL ne répond plus).
 - CORS du bucket R2 : règle `site` ajoutée pour cette origine (par l'API MCP
   Cloudflare, en plus de `localhost:5173`) ; vérifié
   `access-control-allow-origin` renvoyé sur `latest.json`.
@@ -486,7 +489,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.depernet-hadrien.workers.dev`, CORS R2, critère 6 ✅, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte, critères 4-5 à valider par l'utilisateur)
+**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, critère 6 ✅, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte, critères 4-5 à valider par l'utilisateur)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
 **Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
