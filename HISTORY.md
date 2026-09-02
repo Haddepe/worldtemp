@@ -262,9 +262,11 @@ CI de branche verte.
   → `immutable` ; `/textures/blue-marble-4k.jpg` → `max-age=86400` ; poids
   brut du premier chargement ≈ 1,8 Mo (JS 551 Ko non compressé + texture
   1 044 Ko + PNG 218 Ko), sous les 3 Mo.
-- **Critères 4 et 5 : à faire par l'utilisateur** (téléphone avec et sans
-  `?tier=low` ; changement de texture sans rechargement dans les 15 min
-  suivant un run du cron, minute 12).
+- **Critère 4 ✅** (utilisateur, téléphone, 2026-09-02 au soir) : `?tier=low`
+  et `?tier=high` fonctionnent tous deux ; différence invisible tant que le
+  relief n'existe pas (maillage 65 k vs 590 k triangles, pixel ratio 1,5 vs 2).
+  **Critère 5 : à faire** (changement de texture sans rechargement dans les
+  15 min suivant un run du cron, minute 12).
 - **Tests :** `npm --prefix web run test` → **60 passed** ; pytest
   **94 passed, 1 skipped** ; `history_check` ✓.
 - **Build :** `vite build` OK, déployé.
@@ -489,7 +491,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, critère 6 ✅, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte, critères 4-5 à valider par l'utilisateur)
+**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
 **Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
