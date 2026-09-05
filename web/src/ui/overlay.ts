@@ -6,8 +6,9 @@ export interface Overlay {
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
   setLegend(minC: number, maxC: number, stats: { min_c: number; max_c: number }): void;
-  onOpacity(cb: (opacity: number) => void): void;
-  initialOpacity(): number;
+  setLegendVisible(on: boolean): void;
+  onFilter(cb: (on: boolean) => void): void;
+  initialFilter(): boolean;
   showFatal(text: string, options?: { reload?: boolean }): void;
 }
 
@@ -21,7 +22,7 @@ export function createOverlay(): Overlay {
   const bannerText = byId<HTMLElement>("banner-text");
   const status = byId<HTMLElement>("status");
   const legend = byId<HTMLElement>("legend");
-  const opacity = byId<HTMLInputElement>("opacity");
+  const filter = byId<HTMLButtonElement>("filter-temperature");
   const fatal = byId<HTMLElement>("fatal");
   const overlay = byId<HTMLElement>("overlay");
   const toggle = byId<HTMLButtonElement>("toggle-overlay");
@@ -48,11 +49,18 @@ export function createOverlay(): Overlay {
         `<div class="ticks">${ticks}</div>` +
         `<div class="extremes"><span>min ${stats.min_c.toFixed(1)} °C</span><span>max ${stats.max_c.toFixed(1)} °C</span></div>`;
     },
-    onOpacity(cb) {
-      opacity.addEventListener("input", () => cb(Number(opacity.value)));
+    setLegendVisible(on) {
+      legend.hidden = !on;
     },
-    initialOpacity() {
-      return Number(opacity.value);
+    onFilter(cb) {
+      filter.addEventListener("click", () => {
+        const on = filter.getAttribute("aria-pressed") !== "true";
+        filter.setAttribute("aria-pressed", String(on));
+        cb(on);
+      });
+    },
+    initialFilter() {
+      return filter.getAttribute("aria-pressed") === "true";
     },
     showFatal(text, options) {
       fatal.textContent = text;

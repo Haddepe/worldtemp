@@ -61,7 +61,7 @@ format → `tiles/v2/` (les tuiles sont servies `immutable`, un an).
 | Jeu | Contenu | Niveaux | Volume estimé |
 |---|---|---|---|
 | `sat/{z}/{x}/{y}.jpg` | Blue Marble RGB, JPEG qualité 85. Source NASA BMNG 21600×10800 (60 px/degré, native au niveau 5). | 0–5 | 2 730 tuiles ≈ 160 Mo |
-| `map/{z}/{x}/{y}.png` | PNG RGB 8 bits, 3 canaux de données : **R** ombrage du relief (128 = plat : `gdaldem hillshade -alt 30`, car 255·sin 30° = 127,5 ; azimut 315°), **G** masque terre anti-aliasé (0 mer et lacs, 255 terre), **B** intensité de frontière (0..255, trait ≈ 1,5 px à chaque niveau). | 0–8 | ≈ 50 000 tuiles terre ≈ 750 Mo |
+| `map/{z}/{x}/{y}.png` | PNG RGB 8 bits, 3 canaux de données : **R** ombrage du relief (128 = plat : `gdaldem hillshade -alt 30`, car 255·sin 30° = 127,5 ; azimut 315°), **G** masque terre anti-aliasé (0 mer, 255 terre ; les lacs restent terre : source = polygones de côtes OSM), **B** intensité de frontière (0..255, trait ≈ 1,5 px à chaque niveau). | 0–8 | ≈ 50 000 tuiles terre ≈ 750 Mo |
 
 - Une tuile `map` dont les canaux G et B sont **nuls partout** (océan pur) n'est **pas
   générée**. L'index (ci-dessous) l'indique ; le client la rend en océan uniforme
@@ -225,6 +225,10 @@ reste **à la demande**, spec 2 §4). Parcours depuis les 2 racines :
 Taille projetée = diagonale géodésique de la tuile (en unités de sphère) rapportée à
 la distance caméra–centre de tuile et à la hauteur du viewport en pixels.
 
+La hauteur de viewport utilisée est en **pixels CSS** (pas framebuffer) — choix de
+budget : sur un écran de 900 px CSS de haut, le niveau 8 n'est atteint qu'au-delà
+d'environ 1 200 px, le zoom Normandie y plafonne au niveau 7.
+
 ### Chargement (`loader.ts`)
 
 - Les feuilles sélectionnées **et leurs ancêtres** sont demandés (raffinement progressif,
@@ -268,7 +272,9 @@ la distance caméra–centre de tuile et à la hauteur du viewport en pixels.
 - Plans `near` / `far` recalculés à chaque changement : `near = max(0,002,
   (d − 1) · 0,3)`, `far = d + 2`, où `d` est la distance caméra–centre.
 - `rotateSpeed` proportionnel à l'altitude `(d − 1)` (borné), sinon ingérable de
-  près ; `zoomToCursor = true`.
+  près ; `zoomToCursor` désactivé (OrbitControls déplace la cible avec
+  `screenSpacePanning`, ce qui casse la garde d'altitude) ; zoom vers le curseur
+  reporté en spec 4.
 
 ### Tiers
 
@@ -365,7 +371,9 @@ Règle inchangée : **le globe s'affiche toujours** ; aucune exception non attra
 - ≤ 120 patches rendus (typiquement 20 à 60), un appel de dessin par patch.
 - 60 fps sur desktop, ≥ 30 fps sur mobile `low`.
 - Stockage R2 ≈ 1 Go (plan gratuit : 10 Go), écritures ≈ 55 000 une fois (1 M/mois),
-  lectures cachées en périphérie par le domaine personnalisé.
+  lectures cachées en périphérie par le domaine personnalisé. **Mesuré en v1 :
+  ≈ 4,5 Go** (70 161 tuiles `map`, PNG RGB peu compressible) — accepté sous les
+  10 Go du plan gratuit, compression à revoir en v2.
 
 ## 10. Tests
 
@@ -407,7 +415,9 @@ Constaté par inspection réseau et script (`static.ventusky.com/media/script-fr
 ## 12. Critères d'acceptation
 
 1. `tiles.yml` vert ; `manifest.json`, `index.bin`, ≈ 50 000 tuiles `map` et 2 730
-   `sat` sur `https://data.<domaine>/tiles/v1/`, volume total < 1,5 Go.
+   `sat` sur `https://data.<domaine>/tiles/v1/`, volume total < 1,5 Go. **Mesuré en
+   v1 : ≈ 4,5 Go** (70 161 tuiles `map`, PNG RGB peu compressible), accepté sous
+   les 10 Go du plan gratuit ; compression à revoir en v2.
 2. Zoom Normandie (≈ 2° de large) : côtes, frontières et relief nets, aucun pixel
    visible, ≥ 30 fps sur desktop.
 3. Filtre actif : Sahara et Europe à même température → même teinte (contrôle d'une
