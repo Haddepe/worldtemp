@@ -49,9 +49,10 @@ corriger.
 | Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
-| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR), URL publique `https://pub-97483d42990244b3b19ae530da791d26.r2.dev/gfs/latest.{png,json}` ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : Cloudflare recommande Workers pour tout nouveau projet depuis 2026, Pages est gelé ; déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; **site en ligne depuis le 2026-09-02 : `https://worldtemp.geoviz.workers.dev`** ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
-| CI | `.github/workflows/test.yml` : job `test` (push/PR : pytest + `history_check` + dry-run NOMADS réel), job `web` (npm ci, typecheck, vitest, build, upload `web-dist`), job `deploy` (`wrangler deploy`, seulement sur push `master`, après `test`+`web`) ; `pipeline.yml` (cron horaire + `workflow_dispatch`) | `pytest` en plus d'`unittest` (les tests `unittest` existants restent collectés) ; jobs `web`/`deploy` ajoutés le 2026-09-02 |
-| Outillage dépôt | Python stdlib seule | `tools/history_check.py`, tests `unittest` |
+| Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
+| Génération des tuiles | **GDAL CLI** (`gdaldem`, `gdalwarp`, `gdal_rasterize`, `ogr2ogr` — Actions seulement, absent du venv Windows) + **rclone** (upload R2) | orchestré par `.github/workflows/tiles.yml` (`workflow_dispatch`, 9 jobs `map`/`sat` + `index`) ; sources : **GEBCO 2026** (bathymétrie/relief), **OSM land polygons** (ODbL, masque terre + lacs), **Natural Earth 10 m** (frontières), **NASA Blue Marble (BMNG) 21600×10800** (satellite) — §5 |
+| CI | `.github/workflows/test.yml` : job `test` (pytest + `history_check` + dry-run NOMADS réel, **installe GDAL** pour tester réellement `tiler/gdal_adapter.py`), job `web` (npm ci, typecheck, vitest, build), job `deploy` (`wrangler deploy`, push `master` seulement, après `test`+`web`) ; `pipeline.yml` (cron horaire) ; `tiles.yml` (génération manuelle des tuiles, doit résider sur `master` pour `workflow_dispatch`, §6) | jobs `web`/`deploy` ajoutés le 2026-09-02 ; GDAL ajouté à `test.yml` le 2026-09-05 |
+| Outillage dépôt | Python stdlib seule | `tools/history_check.py` (`CODE_ROOTS` inclut désormais `tiler`), tests `unittest` |
 
 ## 3. Structure du dépôt
 
@@ -66,7 +67,21 @@ docs/
   PLAN.md                      # plan d'implémentation en 7 phases (arbre cible inclus)
   superpowers/
     specs/2026-08-30-pipeline-gfs-design.md   # contrat pipeline (spec)
+    specs/2026-09-02-globe-heatmap-design.md  # contrat globe + heatmap (spec 2)
+    specs/2026-09-05-tiles-design.md          # pyramide de tuiles, filtre, domaine (spec 3, §11 audit Ventusky)
     plans/2026-08-30-pipeline-gfs.md          # plan d'exécution (12 tâches)
+    plans/2026-09-02-globe-heatmap.md         # plan d'exécution (10 tâches)
+    plans/2026-09-05-tiles.md                 # plan d'exécution (20 tâches)
+tiler/                          # génération des tuiles, Actions seulement (dépend de GDAL)
+  __init__.py
+  grid.py                       # pyramide géodésique 512 px : tile_at, tile_bounds, tile_range, box_for_job
+  encode.py                     # index binaire WTIX (canaux R/G/B), compose_channels, TileIndex.from_bytes
+  cut.py                        # cut_block : découpe un bloc raster en tuiles
+  borders.py                    # frontières GeoJSON → lignes rasterisées (canal B)
+  gdal_adapter.py                # GdalBackend : hillshade (-alt 30 -s 111120), land_mask, ocean_only, clip_vector, extract_gebco_tile
+  sat.py                         # pyramide satellite découpée dans la Blue Marble (open_source, sat_tile, iter_sat_tiles)
+  main.py                        # orchestration blocs → tuiles → index, CLI (extract-gebco/map/sat/merge-index), build_level0
+  requirements.txt               # numpy, Pillow (+ GDAL CLI, hors pip, installé par apt sur Actions)
 pipeline/
   config.py                    # constantes : encodage, grille, sélection du run, R2
   run_selection.py             # run + échéance valides à l'heure courante
@@ -84,10 +99,20 @@ tools/
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
   fixtures/gfs_tmp2m.grib2     # fixture GRIB réelle (~514 Ko), exception au .gitignore
+  fixtures/tiler/borders.geojson  # fixture frontières pour test_tiler_borders.py
   pipeline/                    # tests pytest des modules ci-dessus (1 fichier par module)
+  tiler/                       # tests pytest de tiler/ (1 fichier par module ; GDAL skip sous Windows)
+    test_tiler_grid.py
+    test_tiler_encode.py
+    test_tiler_cut.py
+    test_tiler_borders.py
+    test_tiler_gdal_adapter.py  # dont test_ocean_only_catches_subpixel_islet (all_touched)
+    test_tiler_sat.py
+    test_tiler_main.py
 .github/workflows/
-  test.yml                     # jobs test (pytest+history_check+dry-run), web (npm/vitest/build), deploy (wrangler, master)
+  test.yml                     # jobs test (pytest+history_check+dry-run, installe GDAL), web (npm/vitest/build), deploy (wrangler, master)
   pipeline.yml                 # cron horaire (minute 12) + workflow_dispatch
+  tiles.yml                    # génération manuelle des tuiles : 8 jobs map (matriciel) + sat + index ; doit résider sur master (§6)
 pytest.ini                     # testpaths = tests
 HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
@@ -97,30 +122,37 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
   tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler
-  vite.config.ts                # config Vitest (fichiers de tests sous web/tests/)
-  wrangler.jsonc                # Worker sans script, assets statiques = ./dist (Workers Static Assets)
+  vite.config.ts                # config Vitest (fichiers de tests sous web/tests/) ; server.strictPort (spec 3)
+  wrangler.jsonc                # Worker Static Assets ; routes: globelayers.com (custom_domain), workers_dev: true (§8)
   public/
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
-    textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public
+    textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap : scène, globe, DataLoader, tier GPU, branchement overlay
-    config.ts                  # DATA_BASE_URL, REFRESH_MS (15 min), STALE_AFTER_MS (6 h)
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux)
+    main.ts                    # bootstrap : scène, globe tuilé, DataLoader, tiles loader, tier GPU, vue par URL, overlay
+    config.ts                  # DATA_BASE_URL/TILES_BASE_URL (data.globelayers.com), REFRESH_MS, STALE_AFTER_MS
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), attribution avec lien OSM
     data/
       metadata.ts               # parseMetadata : contrat des métadonnées publiées par le pipeline (encoding, grid, valid_time…)
       sampling.ts                # heatmapUv : formules d'échantillonnage lat/lon → UV (miroir du GLSL)
       loader.ts                  # DataLoader : fetch + cache-busting + refresh 15 min, non réentrant
     gpu/
       tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
+    tiles/                       # spec 3 : pyramide géodésique de tuiles (miroir TS de tiler/)
+      grid.ts                    # miroir de tiler/grid.py : tileBounds, tileSpan, children, parent, tileKey, subRect
+      manifest.ts                # lecture du manifeste JSON des tuiles (TilesManifest {sat, map})
+      index.ts                   # lecture de l'index binaire WTIX (isOcean par ancêtre le plus profond couvert)
+      lod.ts                     # selectTiles (frustum, horizon, taille projetée en px CSS), mapStyleFor, ViewState
+      loader.ts                  # chargeur de tuiles : priorité, concurrence par tier, tentatives, LRU par budget mémoire
+      patch.ts                   # géométrie des patches (quadtree) avec jupes orientées vers l'extérieur, lonLatToVec3
     render/
-      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls, rendu à la demande
-      globe.ts                   # sphère + ShaderMaterial (segments par tier), setHeatmap/setLut/setOpacity
+      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls, rendu à la demande, sélection en hauteur CSS
+      globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch
       colormap.ts                # arrêts de couleur, LUT 256×1 sRGB, dégradé CSS de la légende
-      shaders/globe.vert.glsl    # vertex shader (position, UV, normale vers le fragment)
-      shaders/globe.frag.glsl    # fragment shader : texture couleur + heatmap + LUT, éclairage simplifié
+      shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
+      shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT (remplace l'ancien fragment shader du globe, retiré)
     ui/
       format.ts                  # formatBanner, legendTicks : mise en forme texte/heure/graduations
-      overlay.ts                 # createOverlay : bandeau, statut, légende, repliage mobile
+      overlay.ts                 # createOverlay : bandeau, statut, légende conditionnelle, bouton Température, repliage mobile
   tests/
     fixtures.ts                  # SAMPLE : métadonnées de test (même contrat que le pipeline), réutilisées par plusieurs suites
     metadata.test.ts
@@ -129,6 +161,13 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     tier.test.ts
     loader.test.ts
     format.test.ts
+    tiles-grid.test.ts            # miroir des nombres de contrôle de tiler/grid.py
+    tiles-manifest.test.ts
+    tiles-index.test.ts
+    tiles-patch.test.ts           # dont l'orientation des jupes
+    tiles-lod.test.ts
+    tiles-loader.test.ts          # concurrence, éviction LRU, isOcean clampé
+    tiles-globe.test.ts
 ```
 
 ## 4. Architecture & principe directeur
@@ -194,6 +233,24 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **`DataLoader.refresh()` non réentrant** : une promesse en vol est partagée plutôt que de relancer un fetch *(2026-09-02, trouvé en revue, §6)* | L'intervalle de 15 min et l'écouteur `visibilitychange` peuvent se déclencher au même instant ; sans garde, deux fetch concurrents pour la même donnée. |
 | **Vitest réservé à la logique pure**, le rendu WebGL validé à l'œil et via Chrome DevTools MCP par les sous-agents d'implémentation *(2026-09-02)* | Un canvas WebGL ne s'assert pas utilement en test unitaire ; les 59 tests couvrent `metadata`, `sampling`, `colormap`, `tier`, `loader`, `format` (logique déterministe), pas la scène Three.js elle-même. |
 | **`encoding` et `grid` lus depuis les métadonnées publiées par le pipeline côté front**, aucune constante recopiée *(2026-09-02)* | Honore côté front la dette n° 3 (§8), déjà résolue côté pipeline le 2026-08-30 : source de vérité unique, des deux côtés du contrat. |
+| **Pyramide géodésique de tuiles 512 px, niveaux 0–8 pour `map`, 0–5 pour `sat`** *(2026-09-05)* | 512 px équilibre nombre de tuiles et poids réseau ; niveau 8 = zoom Normandie sans pixel visible (critère 2), niveau 5 suffit pour la Blue Marble (moins de détail utile que le relief/heatmap). |
+| **Trois canaux de données par tuile `map` (R = hillshade, G = masque terre, B = frontières)**, un seul fichier PNG par tuile | Un seul fetch réseau par tuile porte tout ce dont le shader a besoin (relief + terre/mer + tracé des frontières), au lieu de trois requêtes. |
+| **Index binaire `WTIX`** (bitmap y-majeur, 1 bit/tuile, LSB-first, arrondi à l'octet, jusqu'au niveau max de `map`) plutôt qu'un `HEAD` réseau par tuile | Savoir qu'une tuile est intégralement océan (donc non écrite, §5 ligne suivante) sans un aller-retour HTTP par tuile candidate — décisif pour la sélection LOD qui teste des dizaines de tuiles par frame. |
+| **Tuiles `map` entièrement océan non écrites sur R2** | La majorité des tuiles aux niveaux fins sont de l'océan pur (aucune variation) : les omettre économise l'essentiel des 70 161 tuiles `map` et du volume R2 ; l'absence est distinguée d'un échec réseau par l'index WTIX, pas par un 404 interprété à la volée. |
+| **Niveau 0 de `map` assemblé à part par le job `index`** (`build_level0`), pas généré comme les autres niveaux | Une tuile de niveau 0 (hémisphère entier) chevauche 4 dalles GEBCO à la fois ; l'assembler après coup à partir des blocs déjà découpés évite de retélécharger/recouper une géométrie différente juste pour ce niveau. |
+| **Globe tuilé en quadtree de patches, un seul `ShaderMaterial` partagé entre tous les patches**, uniforms réécrits par patch (`uniformsNeedUpdate = true`) avant chaque tirage | Un matériau par patch multiplierait les compilations de shader et les changements d'état GPU ; le partage impose en contrepartie de repousser explicitement les uniforms au GPU à chaque patch, faute de quoi tous les patches affichent les données du dernier tracé (bug trouvé en revue, §6). |
+| **Repli sur l'ancêtre** quand la tuile exacte n'est pas encore chargée (patch affiché avec la texture du parent recadrée via `subRect`), plutôt qu'un patch vide | Évite un trou visible pendant le chargement progressif ; le contenu est visuellement correct en moins précis, jamais absent. |
+| **Filtrage bicubique Catmull-Rom en 9 prélèvements bilinéaires**, coordonnées en texels (`patch.frag.glsl`) | Élimine les losanges de l'interpolation bilinéaire native sur la heatmap au zoom maximal (critère 4) ; 9 taps bilinéaires reproduit un noyau 4×4 à moitié moins de textures lues qu'un Catmull-Rom naïf en 16 prélèvements ponctuels. |
+| **Bouton « Température » qui remplace l'opacité par un binaire filtre on/off** (`uMapStyle` 0 ↔ 1, fondu linéaire piloté par la distance caméra, pas par l'utilisateur) | Un slider d'opacité laisse l'utilisateur choisir un mélange à mi-chemin en permanence, où le biais de perception (Sahara semblant plus chaud que l'Europe à cause de la texture satellite claire, §11 audit Ventusky de la spec) reste actif ; un binaire force soit la lecture pure de la température (LUT seule), soit la carte, jamais les deux mélangés par choix utilisateur. |
+| **Hillshade GDAL sans exagération verticale** (`-alt 30`, pas de `-z`), `-s 111120` pour la conversion degrés→mètres | Une exagération (`-z` > 1) avait été ajoutée en cours d'exécution pour faire passer une fixture de test plate, puis rejetée (§6) : elle aurait saturé le relief réel en production. `-s 111120` convertit la résolution angulaire de GEBCO en mètres, faute de quoi le calcul de pente serait faux d'un facteur ~111 000. |
+| **`zoomToCursor` retiré** (caméra centrée uniquement, pas de zoom vers le point sous le curseur) | `OrbitControls` avec `screenSpacePanning` déplace la cible pendant un zoom vers le curseur, ce qui invalide la garde de distance à l'origine (1,042) censée fixer l'altitude minimale ; reporté à la spec 4 plutôt que réimplémenté avec une cible fixe recalculée. |
+| **Sélection LOD basée sur la hauteur CSS du canvas (`canvas.clientHeight`)**, pas la hauteur framebuffer | Choix de budget : sur un écran à `devicePixelRatio` élevé, éviter de charger le niveau le plus fin juste parce que le framebuffer est physiquement grand. Conséquence assumée et vérifiée (T17) : le niveau 8 n'est atteint qu'à partir d'environ 1200 px CSS de haut, donc invisible sur un portable 1280 × 800 aussi bien en tier `high` qu'en `low`. |
+| **`mapStyleFor` avec le dénominateur `(1,25 − 1,12)`** plutôt que le littéral `0,13` | Mêmes constantes que la spec, mais écrites comme différence pour éviter un écart de précision IEEE-754 à la borne du fondu (ruling de revue, coût nul si faux). |
+| **`isOcean` clampé à la profondeur de l'index WTIX** (retombe sur l'ancêtre le plus profond réellement couvert par l'index, pas sur `false` par défaut) | L'index ne descend pas jusqu'au niveau maximal de zoom ; sans clamp, une tuile plus fine que l'index se voyait attribuer `isOcean = false` par défaut, ce qui pouvait déclencher des requêtes pour des tuiles océan jamais écrites (§5 ligne tuiles océan). |
+| **Génération des tuiles sur GitHub Actions** (`tiles.yml`, `workflow_dispatch` manuel, 8 jobs `map` matriciels + `sat` + `index`, ~3 h au total) plutôt qu'en local | GDAL n'a pas de roue Windows simple pour ce pipeline (même raison que `eccodes`, dette n° 2) ; matricer les 8 boîtes GEBCO en jobs parallèles ramène le temps total (3 h 01 mesuré) au temps du job le plus long plutôt qu'à leur somme (~15 h). |
+| **Domaine personnalisé `globelayers.com` (Cloudflare Registrar)**, `data.globelayers.com` en front du bucket R2 | `r2.dev` est documenté par Cloudflare comme réservé au développement (« dev only », pas de garantie de disponibilité) ; un domaine personnalisé est nécessaire avant toute mise en production sérieuse, et regroupe site + données sous un même nom de marque. |
+| **Cache Rule Cloudflare « cache tout, TTL selon `Cache-Control` d'origine » sur `data.globelayers.com`** | Un domaine personnalisé R2 ne met rien en cache edge par défaut (seuls certains types de fichiers le sont) ; sans cette règle, chaque lecture de tuile retourne à R2 au lieu d'être servie depuis le edge Cloudflare, ce qui coûte des lectures R2 (quota gratuit 10 M/mois) et de la latence. |
+| **Volume mesuré ≈ 4,5 Go accepté pour la v1** (70 161 tuiles `map`, PNG RGB peu compressible) malgré l'estimation initiale de la spec (< 1,5 Go) | Reste sous les 10 Go du plan R2 gratuit ; compression (palette/quantification) à revoir en v2 plutôt que de retarder la v1 pour une optimisation non bloquante. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -209,6 +266,17 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-02 | Sur mobile (≤ 600 px), la légende et le slider se chevauchaient : les deux panneaux occupaient la même 3ᵉ ligne de la grille CSS. Trouvé par la validation visuelle propre à la tâche (pas en revue). | Corrigé en ajoutant une 4ᵉ ligne à la grille de l'overlay (`web/src/style.css`). La revue de la même tâche a par ailleurs ajouté le bouton de rechargement sur `webglcontextlost` et le repli (collapse) de l'overlay que le plan avait laissé tomber depuis la spec §5. |
 | 2026-09-02 | Revue finale de branche : `#status` sans `grid-row`/`align-self` était auto-placé dans la ligne `1fr` de la grille et s'étirait sur toute la hauteur avec `pointer-events: auto`, bloquant la rotation du globe précisément dans les états dégradés de la spec §7. | `align-self: start` ; leçon : dans une grille avec une ligne `1fr`, tout panneau flottant doit fixer son alignement, sinon il remplit la ligne. |
 | 2026-09-02 | Revue finale : le statut « Mise à jour impossible » posé par le `catch` de `applyData()` était effacé sous 60 s par le timer du bandeau, qui recalculait le statut sans connaître l'échec. | Drapeau `updateFailed` levé dans le `catch`, abaissé au prochain `refresh()` réussi, lu par `refreshBanner()`. Leçon : un état affiché par deux chemins doit dériver d'une seule variable, pas de deux écritures concurrentes. |
+| 2026-09-05 | `workflow_dispatch` de `tiles.yml` renvoyait `404 workflow not found` : GitHub n'expose le déclenchement manuel que pour les workflows présents sur la branche par défaut, quelle que soit la `--ref` visée. `tiles.yml` n'existait que sur `feat/tiles`. | Résolu par la **PR #1** (branche `ci/register-tiles-workflow`, uniquement le fichier de workflow) mergée sur `master` par l'utilisateur (`d83e05e`) — un push/merge direct vers `master` était bloqué par le classificateur de permissions de la session. Leçon : enregistrer un nouveau workflow manuel sur `master` **avant** de développer dessus, sur une branche dédiée minimale. |
+| 2026-09-05 | Téléchargement de la Blue Marble NASA (190 Mo) coupé en cours de transfert par le serveur (`curl: (18) transfer closed with N bytes remaining`), non couvert par `--retry` (curl ne classe pas l'erreur 18 comme transitoire). | `curl -C -` (reprise du fichier partiel) + `--retry-all-errors` + boucle de secours à 3 tentatives, sur les 4 téléchargements du job `map` (commit `9725961`). |
+| 2026-09-05 | Le job `map (2)` (boîte la plus terrestre) a pris 2 h 55 sur le run v1, dominé par des téléchargements CEDA lents (GEBCO), proche de la limite de 6 h d'un job Actions. | Accepté sans optimisation pour la v1 (ruling explicite) ; si un futur run dépasse la limite, relancer boîte par boîte avec `--min-level`. |
+| 2026-09-05 | `rclone copyto` a rencontré une erreur transitoire 501 `NotImplemented` sur les 4 petits objets du job `index` (2 tuiles niveau 0, `index.bin`, `manifest.json`), résolue au 2ᵉ essai par les retries internes de rclone. | Aucune action requise (le run a terminé vert) ; `--retries 5` explicite ajouté par précaution sur les deux `rclone copyto` concernés (`f18a90c`). |
+| 2026-09-05 | `cf-cache-status: DYNAMIC` persistant sur les requêtes `HEAD` (`curl -I`) contre `data.globelayers.com`, malgré une Cache Rule confirmée correcte côté plan de contrôle (API Request Trace). | Fausse alerte : les requêtes `HEAD` ne sont jamais mises en cache par Cloudflare. En `GET` réel, le comportement est `MISS` puis `HIT` avec `Age` croissant — vérifié par le contrôleur sur les tuiles et `index.bin`. |
+| 2026-09-05 | Dérive de la cible de caméra avec `zoomToCursor` activé : `OrbitControls` déplace la cible (`screenSpacePanning`), invalidant la garde de distance minimale à l'origine. | `zoomToCursor` retiré, caméra recentrée sur l'origine (§5) ; réimplémentation possible en spec 4 avec une cible fixe recalculée. |
+| 2026-09-05 | **Jupes des patches de tuiles inversées** (orientées vers l'intérieur au lieu de l'extérieur) dans le code fourni par le plan — prouvé par calcul (produit vectoriel des sommets) par le reviewer, pas par un test qui existait déjà. | Corrigé immédiatement (T11, pas reporté) avec un test d'orientation dédié (`eefd53b`) ; sans lui, des fissures seraient apparues entre patches adjacents à l'usage. |
+| 2026-09-05 | Un sous-agent d'implémentation avait ajouté `-z 40` (exagération verticale GDAL) pour faire passer une fixture de test au relief trop plat, réglant ainsi le code de production sur le test. | Rejeté en revue ; corrigé en rendant la fixture elle-même pentue (`-scale`, Float32) plutôt qu'en exagérant le rendu réel — un `-z` par niveau reste une option future si le hillshade grossier paraît trop doux à l'œil. |
+| 2026-09-05 | **Uniforms non renvoyés au GPU** avec un `ShaderMaterial` partagé entre patches : sans `uniformsNeedUpdate = true` avant chaque tirage, tous les patches affichaient la texture/les paramètres du dernier patch dessiné. Trouvé en revue finale (Important), pas par un test. | Corrigé (`ffc0d71`) : `uniformsNeedUpdate = true` posé juste avant chaque appel de rendu par patch. Leçon : partager un matériau entre objets qui varient par uniform exige de forcer explicitement leur re-synchronisation, Three.js ne le fait pas seul. |
+| 2026-09-05 | `ocean_only()` avec les réglages de rasterisation par défaut (sans `-at`, centre de pixel) manquait des îlots plus petits qu'un pixel de la sonde 64×64, les classant à tort comme océan pur (donc tuile non écrite alors qu'elle contient de la terre). Trouvé en revue finale (Important). | `all_touched=True` (`-at`) ajouté spécifiquement à la sonde de `ocean_only`, le masque terre normal (rendu des tuiles) reste inchangé ; test dédié avec un îlot de 0,002° (`f18a90c`). |
+| 2026-09-05 | Un run partiel (moins de 8 boîtes) avec `upload=true` aurait écrasé `index.bin`, le niveau 0 et `manifest.json` sur R2 avec un jeu incomplet, invalidant l'index pour tout le monde. Trouvé en revue finale (Important). | Step d'envoi R2 conditionné à `FULL_SET` (les 8 boîtes exactement) ; avertissement explicite sinon (`f18a90c`). |
 
 ## 7. Historique par plan (chronologie)
 
@@ -216,6 +284,8 @@ que par un test : ce sont eux qui se reproduisent.)*
 |---|---|---|---|---|
 | 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ mergé | `aa29c6f` | 94 local / 95 Actions |
 | 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | ✅ mergé, déployé | `fcaf208` | 60 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
+| 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
+| 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ exécuté, merge à venir | — | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 
 ## 8. Dette technique connue
 
@@ -224,7 +294,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 1 | ~~Cible d'hébergement non tranchée~~ | — | ✅ résolu 2026-08-29 : GitHub Actions + Cloudflare R2/Pages (§5) ; R2 mis en service le 2026-09-02 (dette n° 7) |
 | 2 | **`cfgrib` exige `eccodes`, sans roue Windows** (`eccodeslib` : Linux/macOS seulement) | `decode_grib` (`pipeline/grib_adapter.py`) ne tourne pas sur le PC de dev, skip local (`skipUnless`) | 🟡 contenu par l'approche A (§5) : `decode_grib` testé **réellement** sur Actions contre la fixture commitée `tests/fixtures/gfs_tmp2m.grib2` (test vert, pas un mock) — seul le poste Windows reste aveugle |
 | 3 | ~~Encodage température dupliqué en trois endroits~~ (Python, GLSL, JS) sans garde mécanique | — | ✅ résolu par construction le 2026-08-30 (pipeline) et **honorée côté front le 2026-09-02** : `web/src/data/metadata.ts` lit `encoding`/`grid` depuis les métadonnées publiées, aucune constante recopiée |
-| 4 | **Aucune source de heightmap fixée** — ETOPO 2022 ou heightmap NASA prête à l'emploi | Bloque la Phase 4 ; le choix conditionne le script de préparation et la profondeur de bits | 🔴 ouvert |
+| 4 | ~~Aucune source de heightmap fixée~~ | — | ✅ résolu 2026-09-05 : **GEBCO 2026** retenu (spec 3), relief encodé en hillshade GDAL (canal R des tuiles `map`), pas de displacement map séparée |
 | 5 | ~~Pas de CI~~ : les tests ne tournaient qu'à la main | — | ✅ résolu 2026-08-30 : `.github/workflows/test.yml` exécute pytest + `history_check` + un dry-run NOMADS réel sur chaque push/PR |
 | 6 | **GitHub désactive les workflows planifiés (`schedule`) après 60 jours sans commit** sur le dépôt | `pipeline.yml` s'arrêterait silencieusement si le dépôt reste inactif deux mois | 🔴 ouvert ; se réveille via un `workflow_dispatch` manuel ou un simple commit — à surveiller si le projet marque une pause |
 | 7 | ~~R2 non activé~~ | — | ✅ résolu 2026-09-02 : bucket `worldtemp`, `r2.dev`, CORS, token, 4 secrets GitHub posés ; **`pipeline.yml` réactivé** (`gh workflow enable`), premier run réel publié (§9) |
@@ -235,8 +305,84 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 12 | ~~`ImageBitmap` de la heatmap remplacée non fermé~~ | — | ✅ résolu 2026-09-02 (revue finale) : `close()` après `dispose()` de la texture précédente, test `loader` dédié |
 | 14 | **Reliquats mineurs de la revue finale de branche (2026-09-02)**, non corrigés : `uGridSize` semé à (1440, 721) dans `globe.ts` ; `resize()` ne réapplique pas `setPixelRatio` (changement d'écran) et n'a pas de garde `h = 0` ; boucle rAF et `setInterval` continuent après `webglcontextlost` ; échec de chargement de la Blue Marble → écran fatal au lieu du globe seul (cas absent de la table §7 de la spec) ; `#ad-slot` masqué sans hauteur réservée (spec §5 ambiguë, phase 6 tranchera) ; légende `min-width: 16rem` (224 px) au lieu de 256 px ; repères `stats` en texte aux extrémités, pas positionnés sur la barre ; regex de tier `Arc|Xe` trop courte (spec §4) ; asymétrie `num()`/`str()` dans `metadata.ts` ; pas de `concurrency` sur le job `deploy` ; `_headers` sans `nosniff`/`Referrer-Policy` | Polish, aucun impact sur les critères d'acceptation ; à prendre au fil des specs 3 et 4 | 🟡 ouvert |
 | 13 | **`navigator.hardwareConcurrency === 0` traité comme « aucun signal »** dans `web/src/gpu/tier.ts`, alors que la spec écrit littéralement « ≤ 4 → tier low » | Cas surtout théorique (peu de navigateurs renvoient 0 plutôt que `undefined`) ; un appareil qui renverrait 0 recevrait le tier `high` au lieu de `low` par ce seul critère | 🟡 théorique, ouvert |
+| 15 | **Volume réel des tuiles `map` ≈ 4,5 Go**, contre l'estimation initiale de la spec (< 1,5 Go) : PNG RGB peu compressible | Sous les 10 Go du plan R2 gratuit pour l'instant, mais la marge fond plus vite que prévu si un futur jeu de données s'ajoute | 🟡 ouvert — compression à revoir en v2 (palette indexée, quantification) |
+| 16 | **Hillshade calculé avec un `-s` (échelle degrés→mètres) constant**, alors que la distance réelle d'un degré de longitude diminue vers les pôles | Le relief est légèrement sous-estimé aux hautes latitudes (l'axe est-ouest y est compressé par rapport à l'axe nord-sud, non compensé) | 🟡 mineur, ouvert |
+| 17 | **Coutures possibles aux bords des 8 boîtes GEBCO** : chaque boîte est traitée indépendamment, sans marge de recouvrement au découpage | Non observé à l'œil lors de la validation T17 (les jonctions testées tombaient à l'intérieur d'une boîte), mais pas garanti à toutes les frontières de boîte | 🟡 ouvert — marge de recouvrement (`margin`) à ajouter en v2 si une couture est repérée |
+| 18 | **Les lacs restent classés « terre »** dans le masque terre/mer (canal G), faute de source dédiée — le masque vient des polygones de côtes OSM, qui ne découpent pas les lacs | Un lac apparaît hillshadé/coloré comme la terre environnante au lieu d'être traité comme de l'eau | 🟡 mineur, ouvert, documenté dans la spec §2 |
+| 19 | **Une tuile en échec de chargement n'est réessayée que si la caméra bouge** (aucune tentative périodique en arrière-plan) | Un blocage réseau transitoire peut laisser une tuile manquante affichée en repli sur l'ancêtre jusqu'au prochain mouvement de caméra | 🟡 mineur, ouvert |
+| 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | 🔴 ouvert — à couper après le merge de `feat/tiles` (critère 7 de la spec : `workers_dev: false`, retrait des règles CORS `r2.dev`/`workers.dev`) |
+| 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | 🟡 ouvert — à valider sur téléphone après le merge, comme le critère 6 de la spec 2 (résolu) |
+| 22 | **Mineurs différés de l'exécution de la spec 3** (liste non exhaustive, détail dans le ledger d'exécution git-ignoré) : `patchSphere` recalculé à chaque patch à chaque frame plutôt que mis en cache par `tileKey` ; `pump()` (chargeur de tuiles) retrie toute la file à chaque appel ; une promesse rejetée dans `loader.start()` (`onLoad` qui lève) n'est pas gérée ; `resize()` de la scène sans garde sur une largeur nulle ; `tiler/grid.py::tile_range` suppose une boîte déjà alignée sur la grille (arrondit silencieusement sinon) ; `HAS_GDAL` ne vérifie la présence que de `gdalwarp`/`ogr2ogr`, pas de `gdaldem`/`gdal_rasterize` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec 3 | 🟡 ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-05 — Spec 3 (tuiles) exécutée sur `feat/tiles` : pyramide, filtre température, domaine `globelayers.com`
+
+Brainstorming (`superpowers:brainstorming`) incluant un **audit du concurrent Ventusky**
+(spec §11) pour trancher le biais de perception satellite/température, puis spec
+(`docs/superpowers/specs/2026-09-05-tiles-design.md`) et plan
+(`docs/superpowers/plans/2026-09-05-tiles.md`, 20 tâches) écrits via
+`writing-plans`, exécutés en **subagent-driven development** sur la branche
+`feat/tiles` (base `fcc0a83`) : une revue par tâche, environ **6 tours de
+correction** au total (T5, T11, T13, T14-16 chacun 1 tour ; T8 débloquée par une
+PR séparée ; une vague de correctifs finale après la revue de branche complète).
+Dette n° 4 §8 tranchée (GEBCO retenu).
+
+Livré : `tiler/` (pyramide géodésique 512 px, index binaire WTIX, découpe de
+blocs, frontières, adaptateur GDAL, pyramide satellite, CLI/orchestration —
+§2, §3, §5) ; front `web/src/tiles/` (miroir TS de la pyramide, manifeste,
+index, sélection LOD, chargeur avec budget mémoire, géométrie de patches) et
+`web/src/render/globe.ts` réécrit en quadtree de patches (un seul
+`ShaderMaterial` partagé, bicubique Catmull-Rom, hillshade, composition
+satellite/carte, bouton « Température ») ; `.github/workflows/tiles.yml`
+(génération manuelle, 9 jobs) ; domaine `globelayers.com` (Cloudflare
+Registrar) avec `data.globelayers.com` en façade du bucket R2.
+
+- **Génération v1** (run
+  [33976497547](https://github.com/Haddepe/worldtemp/actions/runs/33976497547),
+  3 h 01) : **72 893 tuiles** (70 161 `map` niveaux 1-8 + 2 `map` niveau 0
+  assemblées + 2 730 `sat`), **≈ 4,5 Go** de PNG `map` + **≈ 60 Mo** de JPEG
+  `sat`. Détail des durées et volumes par boîte GEBCO :
+  `.superpowers/sdd/2026-09-05-tiles/task-8-report.md`.
+- **Validation visuelle et perf** (Chrome DevTools MCP, `task-17-report.md`) :
+  critères 2 (zoom Normandie net, 59,8 fps), 3 (Sahara ≈ Europe, ΔL ±2 % typ.),
+  4 (aucun losange bilinéaire) et 8 (premier chargement **1,70 Mo** < 2 Mo)
+  **✅ validés** ; critère 6 (tier `low`, pic mémoire **254,7 Mio**) **✅ simulé
+  desktop**, non testé sur téléphone réel.
+- **Domaine** (`task-18-19-report.md`) : `data.globelayers.com` actif
+  (custom domain R2 + CORS), `globelayers.com` en route `custom_domain` du
+  Worker, `www.globelayers.com` redirigé 301, Cache Rule « cache tout, TTL
+  origine » posée sur `data.globelayers.com`. Manifeste en ligne :
+  `https://data.globelayers.com/tiles/v1/manifest.json`.
+- **Revue finale de branche** : « Approve with fixes » (4 points Important —
+  îlots sous-résolution dans `ocean_only`, run partiel qui aurait écrasé
+  `index.bin`, fetch manifeste/index sans timeout, token de déploiement à
+  vérifier pour la route `custom_domain`) ; vague de correctifs unique
+  (`f18a90c`, `fba5d3d`, `528db70`) — détail complet dans
+  `.superpowers/sdd/2026-09-05-tiles/final-fix-report.md`.
+- **Tests :** `.venv/Scripts/python -m pytest -q` → **127 passed, 5 skipped**
+  local (4 tests GDAL + 1 test grib/eccodes, absents sous Windows) ; sur
+  Actions, les tests GDAL tournent réellement (**132 passed** attendu, GDAL
+  installé par `test.yml`). `npm --prefix web run test` → **91 passed**
+  (13 fichiers, dont 7 nouveaux `tiles-*.test.ts`).
+- **Build :** `vite build` OK, `dist/assets/index-*.js` 564,68 Ko (gzip
+  145,14 Ko).
+- **CI sur la branche :** run
+  [33991905265](https://github.com/Haddepe/worldtemp/actions/runs/33991905265)
+  — job `web` vert ; job `test` **rouge uniquement sur `history_check.py`**
+  (attendu et documenté : §3 ne nommait pas encore `tiler`/`tiles`, purgé par
+  cette mise à jour) ; job `deploy` sauté (dépend de `test`).
+- **Prochaine action :** merger `feat/tiles` → `master`
+  (`superpowers:finishing-a-development-branch`), puis vérifier le job
+  `deploy` sur `master` : la route `custom_domain: globelayers.com` exige que
+  le token `CLOUDFLARE_API_TOKEN` de la CI ait les permissions **Zone Workers
+  Routes** et **DNS Edit** sur la zone `globelayers.com` — sinon le déploiement
+  sera rouge (concern non levé, §6 point 4 de la revue finale, à corriger côté
+  utilisateur si besoin). Une fois vert : couper `r2.dev` et
+  `worldtemp.geoviz.workers.dev` (`workers_dev: false`, retrait des règles CORS
+  correspondantes — dette n° 20 §8, critère 7 de la spec), puis valider le
+  critère 6 sur un téléphone réel (dette n° 21 §8). Ensuite, brainstorming de
+  la **spec 4** (zoom vers le curseur, tooltip, étiquettes, filtres multiples).
 
 ### 2026-09-02 (3) — Merge, premier déploiement : le site est en ligne
 
@@ -491,7 +637,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
+**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 22 ouvertes, merge à venir)
+**Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
 **Entrée précédente :** 2026-08-30 (**pipeline GFS implémenté et mergé** — merge `aa29c6f`, 11 tâches subagent-driven + revue finale, 94 passed/1 skipped local, 95 sur Actions, dettes n° 3 et n° 5 résolues, R2 non activé, **cron `pipeline.yml` désactivé en attendant la Task 12**)
