@@ -311,8 +311,9 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 18 | **Les lacs restent classés « terre »** dans le masque terre/mer (canal G), faute de source dédiée — le masque vient des polygones de côtes OSM, qui ne découpent pas les lacs | Un lac apparaît hillshadé/coloré comme la terre environnante au lieu d'être traité comme de l'eau | 🟡 mineur, ouvert, documenté dans la spec §2 |
 | 19 | **Une tuile en échec de chargement n'est réessayée que si la caméra bouge** (aucune tentative périodique en arrière-plan) | Un blocage réseau transitoire peut laisser une tuile manquante affichée en repli sur l'ancêtre jusqu'au prochain mouvement de caméra | 🟡 mineur, ouvert |
 | 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | ✅ résolu 2026-09-05 (après merge) : `r2.dev` désactivé par API (401), origine `workers.dev` retirée du CORS, `workers_dev: false` déployé |
-| 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | 🟡 ouvert — à valider sur téléphone après le merge, comme le critère 6 de la spec 2 (résolu) |
+| 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | ✅ résolu 2026-09-05 (soir) : validé par l'utilisateur sur son téléphone — fluide la plupart du temps, léger lag occasionnel |
 | 22 | **Mineurs différés de l'exécution de la spec 3** (liste non exhaustive, détail dans le ledger d'exécution git-ignoré) : `patchSphere` recalculé à chaque patch à chaque frame plutôt que mis en cache par `tileKey` ; `pump()` (chargeur de tuiles) retrie toute la file à chaque appel ; une promesse rejetée dans `loader.start()` (`onLoad` qui lève) n'est pas gérée ; `resize()` de la scène sans garde sur une largeur nulle ; `tiler/grid.py::tile_range` suppose une boîte déjà alignée sur la grille (arrondit silencieusement sinon) ; `HAS_GDAL` ne vérifie la présence que de `gdalwarp`/`ogr2ogr`, pas de `gdaldem`/`gdal_rasterize` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec 3 | 🟡 ouvert |
+| 23 | **Zoom à deux doigts trop sensible sur téléphone** : de petits gestes de pincement zooment et dézooment vite (OrbitControls `zoomSpeed` 0,8, aucun réglage propre au tactile) | Navigation mobile moins confortable, zoom rapproché difficile à doser | 🟡 ouvert — constaté par l'utilisateur le 2026-09-05 ; à traiter en spec 4 (`zoomSpeed` réduit sur pointeurs tactiles ou courbe de zoom adoucie) |
 
 ## 9. État actuel & prochaine action
 
@@ -377,8 +378,9 @@ Registrar) avec `data.globelayers.com` en façade du bucket R2.
   `custom_domain` s'est attachée sans droit supplémentaire sur le token ; site sur
   https://globelayers.com (`www` → 301), `r2.dev` désactivé par API (401), origine
   `workers.dev` retirée du CORS, `workers_dev: false` (dette n° 20 résolue).
-- **Prochaine action :** valider le critère 6 sur un téléphone réel (dette n° 21 §8),
-  puis brainstorming de la **spec 4** (filtres multiples vent/nuages/humidité…,
+- **Critère 6 ✅** (utilisateur, téléphone, 2026-09-05 au soir) : fluide la plupart du temps,
+  léger lag occasionnel ; le zoom à deux doigts est jugé trop sensible (dette n° 23 §8).
+- **Prochaine action :** brainstorming de la **spec 4** (filtres multiples vent/nuages/humidité…,
   étiquettes villes/pays, tooltip via `sampling.ts`, zoom vers le curseur).
 
 ### 2026-09-02 (3) — Merge, premier déploiement : le site est en ligne
@@ -634,7 +636,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 21, 22 ouvertes, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
+**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
 **Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)
