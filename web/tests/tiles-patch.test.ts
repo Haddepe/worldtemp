@@ -59,4 +59,22 @@ describe("buildPatchGeometry", () => {
     expect(skirt.length()).toBeLessThan(1);
     expect(skirt.length()).toBeGreaterThan(0.98);
   });
+
+  it("jupes orientées vers l'extérieur de la tuile (faces avant visibles)", () => {
+    const t = { z: 3, x: 5, y: 2 };
+    const g = buildPatchGeometry(t, 4, 0.005);
+    const pos = g.getAttribute("position");
+    const idx = g.getIndex()!;
+    const center = patchSphere(t).center;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const firstSkirt = 3 * 2 * 16; // 2·segments² triangles de surface avant les jupes
+    for (let i = firstSkirt; i < idx.count; i += 3) {
+      a.fromBufferAttribute(pos, idx.getX(i));
+      b.fromBufferAttribute(pos, idx.getX(i + 1));
+      c.fromBufferAttribute(pos, idx.getX(i + 2));
+      const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+      const mid = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
+      expect(normal.dot(mid.clone().sub(center))).toBeGreaterThan(0);
+    }
+  });
 });

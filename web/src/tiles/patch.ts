@@ -96,7 +96,7 @@ export function buildPatchGeometry(t: TileId, segments: number, skirt = 0.005): 
       index.push(a, bIdx, d, a, d, c);
     }
   }
-  const quad = (s0: number, s1: number, k0: number, k1: number) => index.push(s0, k0, k1, s0, k1, s1);
+  const quad = (s0: number, s1: number, k0: number, k1: number) => index.push(s0, k1, k0, s0, s1, k1);
   for (let i = 0; i < segments; i++) {
     quad(i + 1, i, skirtStart[0]! + i + 1, skirtStart[0]! + i);                                   // sud
     quad(segments * n + i, segments * n + i + 1, skirtStart[1]! + i, skirtStart[1]! + i + 1);     // nord
