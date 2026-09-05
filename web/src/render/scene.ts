@@ -70,17 +70,23 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   };
 
   const loop = () => {
-    const moved = controls.update();
-    if (moved || dirty) {
-      dirty = false;
-      applyDistance();
-      camera.updateMatrixWorld(true);
-      // hauteur CSS, pas framebuffer : sur écran 2× on reste un niveau plus grossier, choix de budget (spec §5).
-      const view = viewStateFrom(camera, canvas.clientHeight);
-      for (const cb of viewListeners) cb(view);
-      renderer.render(scene, camera);
+    try {
+      const moved = controls.update();
+      if (moved || dirty) {
+        dirty = false;
+        applyDistance();
+        camera.updateMatrixWorld(true);
+        // hauteur CSS, pas framebuffer : sur écran 2× on reste un niveau plus grossier, choix de budget (spec §5).
+        const view = viewStateFrom(camera, canvas.clientHeight);
+        for (const cb of viewListeners) cb(view);
+        renderer.render(scene, camera);
+      }
+    } catch (e) {
+      // Un listener de vue qui lève (ex. sélection de tuiles) ne doit jamais arrêter la boucle de rendu.
+      console.error(e);
+    } finally {
+      requestAnimationFrame(loop);
     }
-    requestAnimationFrame(loop);
   };
 
   window.addEventListener("resize", resize);

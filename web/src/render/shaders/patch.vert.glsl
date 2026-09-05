@@ -1,6 +1,6 @@
 attribute vec2 lonlat;          // degrés, depuis tiles/patch.ts
 
-varying vec2 vUv;               // 0..1 dans la tuille, v = 0 au sud
+varying vec2 vUv;               // 0..1 dans la tuile, v = 0 au sud
 varying vec2 vLonLat;
 varying vec3 vNormal;
 

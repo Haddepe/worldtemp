@@ -15,10 +15,10 @@ import { createOverlay } from "./ui/overlay";
 const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "jpg", maxLevel: -1 }, map: { ext: "png", maxLevel: -1, index: "" } };
 
 async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex }> {
-  const m = await fetch(`${TILES_BASE_URL}/manifest.json`, { cache: "no-cache" });
+  const m = await fetch(`${TILES_BASE_URL}/manifest.json`, { cache: "no-cache", signal: AbortSignal.timeout(10_000) });
   if (!m.ok) throw new Error(`HTTP ${m.status} sur manifest.json`);
   const manifest = parseManifest(await m.json());
-  const i = await fetch(`${TILES_BASE_URL}/${manifest.map.index}`);
+  const i = await fetch(`${TILES_BASE_URL}/${manifest.map.index}`, { signal: AbortSignal.timeout(10_000) });
   if (!i.ok) throw new Error(`HTTP ${i.status} sur ${manifest.map.index}`);
   return { manifest, index: TileIndex.parse(await i.arrayBuffer()) };
 }

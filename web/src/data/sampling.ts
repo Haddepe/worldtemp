@@ -14,8 +14,8 @@ export interface Uv {
  * (0 en bas) : v = 1 − v_haut.
  *
  * MIROIR GLSL : `render/shaders/patch.frag.glsl` calcule la même chose depuis
- * vLonLat, où vUv.x = (lon + 180) / 360 et vUv.y = 1 − (90 − lat) / 180.
- * Modifier l'un impose de modifier l'autre.
+ * vLonLat : eq.x = (vLonLat.x + 180) / 360, eq.y = (vLonLat.y + 90) / 180, puis
+ * applique la même formule cellulaire. Modifier l'un impose de modifier l'autre.
  */
 export function heatmapUv(lon: number, lat: number, grid: Pick<Grid, "width" | "height">): Uv {
   const x = ((lon + 180) / 360) * grid.width; // colonne fractionnaire

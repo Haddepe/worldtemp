@@ -83,6 +83,7 @@ html, body {
   margin: 0; font-size: 0.7rem; color: var(--panel-muted); pointer-events: none;
   text-shadow: 0 0 4px #000;
 }
+#attribution a { color: inherit; pointer-events: auto; }
 #ad-slot { grid-column: 1 / -1; height: 90px; }
 
 #legend .bar { height: 0.75rem; border-radius: 0.25rem; }
