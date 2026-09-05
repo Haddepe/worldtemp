@@ -171,4 +171,14 @@ describe("TileLoader", () => {
     expect(l.get({ z: 0, x: 1, y: 0 })).toBeDefined();
     expect(l.usedBytes).toBe(2 * textureBytes(512, 512));
   });
+
+  it("configure remplace manifeste et index", () => {
+    const h = harness();
+    const l = loader(h, { index: null, manifest: { ...MANIFEST, sat: { ext: "jpg", maxLevel: -1 }, map: { ...MANIFEST.map, maxLevel: -1 } } });
+    l.update([{ z: 0, x: 0, y: 0 }], cam);
+    expect(h.calls.length).toBe(0);
+    l.configure(MANIFEST, index());
+    l.update([{ z: 0, x: 0, y: 0 }], cam);
+    expect(h.calls.length).toBe(2);
+  });
 });

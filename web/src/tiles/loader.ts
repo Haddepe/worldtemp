@@ -85,7 +85,7 @@ export class TileLoader {
   private tick = 0;
   usedBytes = 0;
 
-  constructor(private readonly opts: TileLoaderOptions) {
+  constructor(private opts: TileLoaderOptions) {
     this.deps = opts.deps ?? browserTileDeps;
     this.delays = opts.retryDelaysMs ?? [2000, 8000];
   }
@@ -103,6 +103,11 @@ export class TileLoader {
     const k = t.z - m;
     const q = k > 0 ? { z: m, x: t.x >> k, y: t.y >> k } : t;
     return !index.has(q.z, q.x, q.y);
+  }
+
+  /** Remplace manifeste et index (reprise après un repli sans tuiles). */
+  configure(manifest: TilesManifest, index: TileIndex | null): void {
+    this.opts = { ...this.opts, manifest, index };
   }
 
   resolve(t: TileId, set: TileSet): Resolved | null {
