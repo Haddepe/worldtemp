@@ -1,9 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Worker sans script : uniquement des assets statiques (spec §6).
+  // Worker sans script : uniquement des assets statiques (spec 2 §6). Domaine personnalisé (spec tuiles §4).
   "name": "worldtemp",
   "compatibility_date": "2026-09-02",
   "assets": {
     "directory": "./dist"
-  }
+  },
+  "routes": [{ "pattern": "globelayers.com", "custom_domain": true }],
+  "workers_dev": true
 }
