@@ -37,11 +37,12 @@ def dem_tif(tmp_path):
 
 @pytest.fixture
 def land_geojson(tmp_path):
+    """Terre sur le quart nord-ouest de la boîte (lon 0..1, lat 1..2) : distingue nord/sud et est/ouest."""
     p = tmp_path / "land.geojson"
     p.write_text(json.dumps({
         "type": "FeatureCollection",
         "features": [{"type": "Feature", "properties": {}, "geometry": {
-            "type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 2], [0, 2], [0, 0]]]}}],
+            "type": "Polygon", "coordinates": [[[0, 1], [1, 1], [1, 2], [0, 2], [0, 1]]]}}],
     }), encoding="utf-8")
     return p
 
@@ -71,7 +72,10 @@ def test_backend_hillshade_land_mask_and_ocean_only(tmp_path, dem_tif, land_geoj
     assert shade.min() < 120 and shade.max() > 136          # pentes vers et contre la lumière
     assert abs(int(shade[2, 2]) - 128) <= 3                  # coin plat ≈ 128
     land = backend.land_mask(Bounds(0, 2, 0, 2), 64, 64)
-    assert land.shape == (64, 64) and land[32, 8] == 255 and land[32, 56] == 0
+    assert land.shape == (64, 64)
+    assert land[16, 8] == 255                                # nord-ouest → row 0 = lat_max
+    assert land[16, 56] == 0                                 # nord-est
+    assert land[48, 8] == 0                                  # sud-ouest → détecterait un flip vertical
     assert backend.land_mask(Bounds(0, 2, 0, 2), 64, 32).shape == (32, 64)
     assert not backend.ocean_only(Bounds(0, 2, 0, 2))
     assert backend.ocean_only(Bounds(1.5, 2, 0, 2))

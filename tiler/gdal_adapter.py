@@ -43,10 +43,8 @@ def _fmt(path: Path) -> str:
 def clip_vector(src: Path, bounds: Bounds, out: Path, margin: float = 1.0) -> Path:
     """Découpe un jeu vectoriel à la boîte (+ marge en degrés) avec ogr2ogr."""
     out = Path(out)
-    if out.exists():
-        out.unlink()
     _run([
-        "ogr2ogr", "-q", "-f", _fmt(out),
+        "ogr2ogr", "-q", "-overwrite", "-f", _fmt(out),
         "-clipsrc", str(bounds.lon_min - margin), str(bounds.lat_min - margin),
         str(bounds.lon_max + margin), str(bounds.lat_max + margin),
         str(out), str(src),
