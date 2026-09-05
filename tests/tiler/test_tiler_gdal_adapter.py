@@ -18,14 +18,20 @@ pytestmark = pytest.mark.skipif(not HAS_GDAL, reason="GDAL absent (attendu sous 
 
 @pytest.fixture
 def dem_tif(tmp_path):
-    """Cône de 64×64 sur la boîte lon 0..2, lat 0..2 (EPSG:4326), via PNG + world file + gdal_translate."""
+    """Cône de 64×64 sur la boîte lon 0..2, lat 0..2 (EPSG:4326), via PNG + world file + gdal_translate.
+
+    Le cône culmine à 25 500 m sur un rayon d'environ 1° (~111 km, -scale 0 255 0 25500),
+    soit des pentes de l'ordre de 25 à 45 % : nettement ombrées par gdaldem hillshade, sans
+    exagération verticale (-z), tout en laissant le coin de la boîte plat.
+    """
     yy, xx = np.mgrid[0:64, 0:64]
     cone = np.clip(255 - np.hypot(xx - 32, yy - 32) * 8, 0, 255).astype(np.uint8)
     png = tmp_path / "dem.png"
     Image.fromarray(cone, "L").save(png)
     (tmp_path / "dem.pgw").write_text("0.03125\n0\n0\n-0.03125\n0.015625\n1.984375\n", encoding="utf-8")
     out = tmp_path / "dem.tif"
-    subprocess.run(["gdal_translate", "-q", "-a_srs", "EPSG:4326", str(png), str(out)], check=True)
+    subprocess.run(["gdal_translate", "-q", "-a_srs", "EPSG:4326", "-ot", "Float32",
+                    "-scale", "0", "255", "0", "25500", str(png), str(out)], check=True)
     return out
 
 

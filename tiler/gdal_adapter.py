@@ -78,9 +78,7 @@ class GdalBackend:
         _run(["gdalwarp", "-q", "-overwrite", *self._te(bounds), "-ts", str(width), str(height),
               "-r", "cubic", "-ot", "Float32", str(self.dem), str(dem)])
         # -alt 30 : un terrain plat vaut 255·sin(30°) = 127,5 → 128 (spec §2). -s 111120 : degrés → mètres.
-        # -z 40 : exagération verticale — le relief GEBCO est très doux à l'échelle d'un bloc de tuiles
-        # (mètres de dénivelé sur des kilomètres) ; sans exagération le rendu serait quasi plat.
-        _run(["gdaldem", "hillshade", "-q", "-az", "315", "-alt", "30", "-s", "111120", "-z", "40",
+        _run(["gdaldem", "hillshade", "-q", "-az", "315", "-alt", "30", "-s", "111120",
               "-compute_edges", str(dem), str(shade)])
         return read_gray(shade)
 
