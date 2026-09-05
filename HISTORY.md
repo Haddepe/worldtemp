@@ -285,7 +285,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-08-30 | feat/pipeline-gfs — pipeline GFS → texture (spec + plan superpowers) | ✅ mergé | `aa29c6f` | 94 local / 95 Actions |
 | 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | ✅ mergé, déployé | `fcaf208` | 60 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
-| 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ exécuté, merge à venir | — | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
+| 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 
 ## 8. Dette technique connue
 
@@ -310,7 +310,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 17 | **Coutures possibles aux bords des 8 boîtes GEBCO** : chaque boîte est traitée indépendamment, sans marge de recouvrement au découpage | Non observé à l'œil lors de la validation T17 (les jonctions testées tombaient à l'intérieur d'une boîte), mais pas garanti à toutes les frontières de boîte | 🟡 ouvert — marge de recouvrement (`margin`) à ajouter en v2 si une couture est repérée |
 | 18 | **Les lacs restent classés « terre »** dans le masque terre/mer (canal G), faute de source dédiée — le masque vient des polygones de côtes OSM, qui ne découpent pas les lacs | Un lac apparaît hillshadé/coloré comme la terre environnante au lieu d'être traité comme de l'eau | 🟡 mineur, ouvert, documenté dans la spec §2 |
 | 19 | **Une tuile en échec de chargement n'est réessayée que si la caméra bouge** (aucune tentative périodique en arrière-plan) | Un blocage réseau transitoire peut laisser une tuile manquante affichée en repli sur l'ancêtre jusqu'au prochain mouvement de caméra | 🟡 mineur, ouvert |
-| 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | 🔴 ouvert — à couper après le merge de `feat/tiles` (critère 7 de la spec : `workers_dev: false`, retrait des règles CORS `r2.dev`/`workers.dev`) |
+| 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | ✅ résolu 2026-09-05 (après merge) : `r2.dev` désactivé par API (401), origine `workers.dev` retirée du CORS, `workers_dev: false` déployé |
 | 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | 🟡 ouvert — à valider sur téléphone après le merge, comme le critère 6 de la spec 2 (résolu) |
 | 22 | **Mineurs différés de l'exécution de la spec 3** (liste non exhaustive, détail dans le ledger d'exécution git-ignoré) : `patchSphere` recalculé à chaque patch à chaque frame plutôt que mis en cache par `tileKey` ; `pump()` (chargeur de tuiles) retrie toute la file à chaque appel ; une promesse rejetée dans `loader.start()` (`onLoad` qui lève) n'est pas gérée ; `resize()` de la scène sans garde sur une largeur nulle ; `tiler/grid.py::tile_range` suppose une boîte déjà alignée sur la grille (arrondit silencieusement sinon) ; `HAS_GDAL` ne vérifie la présence que de `gdalwarp`/`ogr2ogr`, pas de `gdaldem`/`gdal_rasterize` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec 3 | 🟡 ouvert |
 
@@ -372,17 +372,14 @@ Registrar) avec `data.globelayers.com` en façade du bucket R2.
   — job `web` vert ; job `test` **rouge uniquement sur `history_check.py`**
   (attendu et documenté : §3 ne nommait pas encore `tiler`/`tiles`, purgé par
   cette mise à jour) ; job `deploy` sauté (dépend de `test`).
-- **Prochaine action :** merger `feat/tiles` → `master`
-  (`superpowers:finishing-a-development-branch`), puis vérifier le job
-  `deploy` sur `master` : la route `custom_domain: globelayers.com` exige que
-  le token `CLOUDFLARE_API_TOKEN` de la CI ait les permissions **Zone Workers
-  Routes** et **DNS Edit** sur la zone `globelayers.com` — sinon le déploiement
-  sera rouge (concern non levé, §6 point 4 de la revue finale, à corriger côté
-  utilisateur si besoin). Une fois vert : couper `r2.dev` et
-  `worldtemp.geoviz.workers.dev` (`workers_dev: false`, retrait des règles CORS
-  correspondantes — dette n° 20 §8, critère 7 de la spec), puis valider le
-  critère 6 sur un téléphone réel (dette n° 21 §8). Ensuite, brainstorming de
-  la **spec 4** (zoom vers le curseur, tooltip, étiquettes, filtres multiples).
+- **Fait le soir même (après cette entrée) :** merge `dcca866` (conflit `tiles.yml`
+  résolu côté branche), run CI 33992492978 vert (`test`, `web`, `deploy`) — la route
+  `custom_domain` s'est attachée sans droit supplémentaire sur le token ; site sur
+  https://globelayers.com (`www` → 301), `r2.dev` désactivé par API (401), origine
+  `workers.dev` retirée du CORS, `workers_dev: false` (dette n° 20 résolue).
+- **Prochaine action :** valider le critère 6 sur un téléphone réel (dette n° 21 §8),
+  puis brainstorming de la **spec 4** (filtres multiples vent/nuages/humidité…,
+  étiquettes villes/pays, tooltip via `sampling.ts`, zoom vers le curseur).
 
 ### 2026-09-02 (3) — Merge, premier déploiement : le site est en ligne
 
@@ -637,7 +634,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 22 ouvertes, merge à venir)
+**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 21, 22 ouvertes, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
 **Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)

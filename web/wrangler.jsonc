@@ -7,5 +7,5 @@
     "directory": "./dist"
   },
   "routes": [{ "pattern": "globelayers.com", "custom_domain": true }],
-  "workers_dev": true
+  "workers_dev": false
 }
