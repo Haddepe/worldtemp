@@ -56,12 +56,12 @@ jobs:
           pip install -r tiler/requirements.txt
       - name: Sources (GEBCO 4,2 Go, OSM land polygons 925 Mo, Natural Earth)
         run: |
-          curl -fsSL --retry 5 -o gebco.zip https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip
+          curl -fSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o gebco.zip https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip
           python -m tiler.main extract-gebco --zip gebco.zip --box ${{ matrix.box }} --out dem
           rm gebco.zip
-          curl -fsSL --retry 5 -o land.zip https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip
+          curl -fSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o land.zip https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip
           unzip -q land.zip && rm land.zip
-          curl -fsSL --retry 5 -o ne.zip https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_boundary_lines_land.zip
+          curl -fSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o ne.zip https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_boundary_lines_land.zip
           ogr2ogr -f GeoJSON borders.geojson /vsizip/ne.zip/ne_10m_admin_0_boundary_lines_land.shp
           df -h .
       - name: Tuiles map, boîte ${{ matrix.box }}
@@ -98,7 +98,12 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q rclone
           pip install -r tiler/requirements.txt
       - name: Blue Marble 21600×10800 (190 Mo)
-        run: curl -fsSL --retry 5 -o bmng.png https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73776/world.topo.bathy.200408.3x21600x10800.png
+        run: |
+          for i in 1 2 3; do
+            curl -fSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o bmng.png https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73776/world.topo.bathy.200408.3x21600x10800.png && break
+            sleep 30
+          done
+          test -s bmng.png
       - name: Tuiles sat
         run: python -m tiler.main sat --source bmng.png --out out --max-level 5 && du -sh out/sat
       - name: Envoi sur R2
