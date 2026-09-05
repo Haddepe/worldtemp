@@ -67,6 +67,22 @@ html, body {
 #status { grid-column: 1 / -1; justify-self: center; align-self: start; color: #ffd166; }
 #legend { grid-row: 3; grid-column: 1; align-self: end; justify-self: start; min-width: 16rem; }
 #controls { grid-row: 3; grid-column: 2; align-self: end; display: flex; gap: 0.5rem; align-items: center; }
+#filter-temperature {
+  font: inherit;
+  color: var(--panel-fg);
+  background: transparent;
+  border: 1px solid var(--panel-muted);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+}
+#filter-temperature[aria-pressed="true"] { background: #ffd166; color: #1a1400; border-color: #ffd166; }
+#legend[hidden] { display: none; }
+#attribution {
+  grid-row: 3; grid-column: 1 / -1; justify-self: center; align-self: end;
+  margin: 0; font-size: 0.7rem; color: var(--panel-muted); pointer-events: none;
+  text-shadow: 0 0 4px #000;
+}
 #ad-slot { grid-column: 1 / -1; height: 90px; }
 
 #legend .bar { height: 0.75rem; border-radius: 0.25rem; }
@@ -106,7 +122,8 @@ html, body {
 }
 
 @media (max-width: 600px) {
-  #overlay { grid-template-rows: auto 1fr auto auto; }
+  #overlay { grid-template-rows: auto 1fr auto auto auto; }
   #legend { min-width: 0; width: calc(100vw - 1.5rem); grid-row: 3; grid-column: 1 / -1; }
   #controls { grid-row: 4; grid-column: 1 / -1; justify-self: stretch; }
+  #attribution { grid-row: 5; }
 }
