@@ -97,7 +97,12 @@ export class TileLoader {
   }
 
   isOcean(t: TileId): boolean {
-    return this.opts.index !== null && !this.opts.index.has(t.z, t.x, t.y);
+    const index = this.opts.index;
+    if (index === null) return false;
+    const m = index.maxLevel;
+    const k = t.z - m;
+    const q = k > 0 ? { z: m, x: t.x >> k, y: t.y >> k } : t;
+    return !index.has(q.z, q.x, q.y);
   }
 
   resolve(t: TileId, set: TileSet): Resolved | null {

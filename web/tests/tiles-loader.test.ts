@@ -56,13 +56,14 @@ describe("TileLoader", () => {
   it("demande les feuilles et leurs ancêtres, niveau grossier d'abord, jeux selon manifeste et index", () => {
     const h = harness();
     const l = loader(h);
-    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    l.update([{ z: 2, x: 0, y: 0 }, { z: 1, x: 1, y: 0 }], cam);
     const urls = h.calls.map((c) => c.url);
     expect(urls[0]).toMatch(/\/(sat|map)\/0\/0\/0\.(jpg|png)$/);
     expect(urls).toContain("https://t.test/tiles/v1/sat/0/0/0.jpg");
     expect(urls).toContain("https://t.test/tiles/v1/map/0/0/0.png");
     expect(urls).toContain("https://t.test/tiles/v1/sat/1/0/0.jpg");
     expect(urls).toContain("https://t.test/tiles/v1/map/2/0/0.png");
+    expect(urls).toContain("https://t.test/tiles/v1/sat/1/1/0.jpg");       // tuile sélectionnée : sat toujours demandé
     expect(urls).not.toContain("https://t.test/tiles/v1/sat/2/0/0.jpg"); // sat s'arrête au niveau 1
     expect(urls.filter((u) => u.includes("/map/1/1/"))).toEqual([]);      // absent de l'index
   });
@@ -72,6 +73,8 @@ describe("TileLoader", () => {
     const l = loader(h);
     expect(l.isOcean({ z: 1, x: 1, y: 0 })).toBe(true);
     expect(l.isOcean({ z: 1, x: 0, y: 0 })).toBe(false);
+    expect(l.isOcean({ z: 4, x: 1, y: 1 })).toBe(false); // sous la profondeur de l'index : ancêtre 2/0/0 présent
+    expect(l.isOcean({ z: 4, x: 4, y: 0 })).toBe(true);  // ancêtre 2/1/0 absent
     l.update([{ z: 1, x: 1, y: 0 }], cam);
     expect(h.calls.map((c) => c.url)).not.toContain("https://t.test/tiles/v1/map/1/1/0.png");
   });
@@ -156,9 +159,12 @@ describe("TileLoader", () => {
     await flush();
     const old = l.get({ z: 0, x: 0, y: 0 })!;
     const disposeSat = vi.spyOn(old.sat!, "dispose");
-    l.update([{ z: 0, x: 1, y: 0 }], cam);          // + 2 textures voulues → 4 > 3 : évince 0/0/0
-    for (const c of h.calls) if (c.url.includes("/0/1/0.")) c.resolve(bitmap());
-    await flush();
+    l.update([{ z: 0, x: 1, y: 0 }], cam);          // + 2 textures voulues
+    h.calls.find((c) => c.url.includes("/sat/0/1/0."))!.resolve(bitmap());
+    await flush();                                   // usedBytes = 3, pas encore d'éviction
+    l.get({ z: 0, x: 0, y: 0 });                     // la tuile non voulue redevient la plus récente
+    h.calls.find((c) => c.url.includes("/map/0/1/0."))!.resolve(bitmap());
+    await flush();                                   // usedBytes 4 > 3 : évince 0/0/0 (non voulue), pas 0/1/0
     expect(l.get({ z: 0, x: 0, y: 0 })).toBeUndefined();
     expect(disposeSat).toHaveBeenCalled();
     expect((old.sat!.image as ImageBitmap).close).toHaveBeenCalled();
