@@ -20,8 +20,10 @@ jobs:
           cache-dependency-path: |
             pipeline/requirements.txt
             pipeline/requirements-grib.txt
+      - name: GDAL (test réel de tiler/gdal_adapter.py)
+        run: sudo apt-get update -q && sudo apt-get install -y -q gdal-bin
       - name: Dépendances (avec cfgrib/eccodes)
-        run: pip install -r pipeline/requirements.txt -r pipeline/requirements-grib.txt pytest
+        run: pip install -r pipeline/requirements.txt -r pipeline/requirements-grib.txt -r tiler/requirements.txt pytest
       - name: Tests (niveaux 1 et 2)
         run: python -m pytest -v
       - name: Contrôle HISTORY.md
