@@ -37,7 +37,7 @@ DOC_NAME = "HISTORY.md"
 # Racines de code dont §3 doit nommer les sous-dossiers. Elles suivent la
 # structure du plan (docs/PLAN.md) ; une racine encore inexistante est ignorée
 # sans bruit, ce qui laisse le contrôle vert sur un dépôt qui démarre.
-CODE_ROOTS = ("pipeline", "web/src", "tools", "tests")
+CODE_ROOTS = ("pipeline", "tiler", "web/src", "tools", "tests")
 
 # Extensions du projet : Python côté pipeline, JS/GLSL côté web, plus les formats
 # de données et de configuration. Une extension absente d'ici est simplement
