@@ -75,6 +75,7 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uniforms.uMap.value = p.map;
     uniforms.uMapRect.value.copy(p.mapRect);
     uniforms.uHasMap.value = p.map ? 1 : 0;
+    material.uniformsNeedUpdate = true;
   };
 
   const meshFor = (t: TileId): THREE.Mesh => {

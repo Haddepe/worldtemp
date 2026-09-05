@@ -13,8 +13,8 @@ export interface Uv {
  * lat = 90 − 0,25·y (721 lignes, pôles inclus). v est en convention Three.js
  * (0 en bas) : v = 1 − v_haut.
  *
- * MIROIR GLSL : `render/shaders/globe.frag.glsl` calcule la même chose depuis
- * vUv, où vUv.x = (lon + 180) / 360 et vUv.y = 1 − (90 − lat) / 180.
+ * MIROIR GLSL : `render/shaders/patch.frag.glsl` calcule la même chose depuis
+ * vLonLat, où vUv.x = (lon + 180) / 360 et vUv.y = 1 − (90 − lat) / 180.
  * Modifier l'un impose de modifier l'autre.
  */
 export function heatmapUv(lon: number, lat: number, grid: Pick<Grid, "width" | "height">): Uv {

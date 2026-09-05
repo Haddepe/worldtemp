@@ -43,7 +43,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   controls.minDistance = MIN_DISTANCE;
   controls.maxDistance = MAX_DISTANCE;
   controls.zoomSpeed = 0.8;
-  controls.zoomToCursor = true;
+  // zoomToCursor déplace la cible d'OrbitControls (spec 4 : zoom vers le curseur à réimplémenter en gardant la cible au centre).
 
   let dirty = true;
   let cap = 2;
@@ -75,6 +75,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       dirty = false;
       applyDistance();
       camera.updateMatrixWorld(true);
+      // hauteur CSS, pas framebuffer : sur écran 2× on reste un niveau plus grossier, choix de budget (spec §5).
       const view = viewStateFrom(camera, canvas.clientHeight);
       for (const cb of viewListeners) cb(view);
       renderer.render(scene, camera);
