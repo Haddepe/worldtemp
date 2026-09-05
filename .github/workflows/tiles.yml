@@ -1,0 +1,142 @@
+name: tiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dossier de destination tiles/<version>/ (immutable : changer de version pour régénérer)"
+        type: string
+        default: "v1"
+      max_level:
+        description: "Niveau max du jeu map (8 = zoom Normandie)"
+        type: string
+        default: "8"
+      boxes:
+        description: "Boîtes GEBCO à générer (JSON, 0..7)"
+        type: string
+        default: "[0,1,2,3,4,5,6,7]"
+      upload:
+        description: "Envoyer sur R2 (décocher pour un essai)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tiles
+  cancel-in-progress: false
+
+env:
+  RCLONE_CONFIG_R2_TYPE: s3
+  RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+  RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+  IMMUTABLE: "Cache-Control: public, max-age=31536000, immutable"
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        box: ${{ fromJSON(inputs.boxes) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gdal-bin rclone unzip
+          pip install -r tiler/requirements.txt
+      - name: Sources (GEBCO 4,2 Go, OSM land polygons 925 Mo, Natural Earth)
+        run: |
+          curl -fsSL --retry 5 -o gebco.zip https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip
+          python -m tiler.main extract-gebco --zip gebco.zip --box ${{ matrix.box }} --out dem
+          rm gebco.zip
+          curl -fsSL --retry 5 -o land.zip https://osmdata.openstreetmap.de/download/land-polygons-split-4326.zip
+          unzip -q land.zip && rm land.zip
+          curl -fsSL --retry 5 -o ne.zip https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_boundary_lines_land.zip
+          ogr2ogr -f GeoJSON borders.geojson /vsizip/ne.zip/ne_10m_admin_0_boundary_lines_land.shp
+          df -h .
+      - name: Tuiles map, boîte ${{ matrix.box }}
+        run: |
+          python -m tiler.main map --box ${{ matrix.box }} \
+            --dem "$(ls dem/*.tif)" --land land-polygons-split-4326/land_polygons.shp \
+            --borders borders.geojson --out out --work work --min-level 1 --max-level ${{ inputs.max_level }}
+          du -sh out/map
+          mkdir -p level1/map && cp -r out/map/1 level1/map/1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: index-${{ matrix.box }}
+          path: out/index-partial.bin
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map1-${{ matrix.box }}
+          path: level1/
+          retention-days: 7
+      - name: Envoi sur R2
+        if: ${{ inputs.upload }}
+        run: rclone copy out/map "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/map" --transfers 32 --checkers 32 --header-upload "$IMMUTABLE" --stats 1m --stats-one-line
+
+  sat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q rclone
+          pip install -r tiler/requirements.txt
+      - name: Blue Marble 21600×10800 (190 Mo)
+        run: curl -fsSL --retry 5 -o bmng.png https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73776/world.topo.bathy.200408.3x21600x10800.png
+      - name: Tuiles sat
+        run: python -m tiler.main sat --source bmng.png --out out --max-level 5 && du -sh out/sat
+      - name: Envoi sur R2
+        if: ${{ inputs.upload }}
+        run: rclone copy out/sat "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/sat" --transfers 32 --checkers 32 --header-upload "$IMMUTABLE" --stats 1m --stats-one-line
+
+  index:
+    needs: [map, sat]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -q && sudo apt-get install -y -q rclone && pip install -r tiler/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: index-*
+          path: partial
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map1-*
+          path: level1
+          merge-multiple: true
+      - name: Niveau 0, fusion des index, manifeste
+        run: |
+          python -m tiler.main merge-index --inputs partial/*/index-partial.bin --out-dir out \
+            --version ${{ inputs.version }} --sat-max 5 --map-max ${{ inputs.max_level }} --level1-dir level1
+          ls -la out out/map/0/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: index-merged
+          path: out/
+          retention-days: 30
+      - name: Envoi sur R2 (niveau 0, index immutable, manifeste revalidé à 5 min)
+        if: ${{ inputs.upload }}
+        run: |
+          rclone copy out/map "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/map" --header-upload "$IMMUTABLE"
+          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/index.bin" --header-upload "$IMMUTABLE"
+          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/manifest.json" --header-upload "Cache-Control: public, max-age=300"
