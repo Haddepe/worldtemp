@@ -61,7 +61,7 @@ format → `tiles/v2/` (les tuiles sont servies `immutable`, un an).
 | Jeu | Contenu | Niveaux | Volume estimé |
 |---|---|---|---|
 | `sat/{z}/{x}/{y}.jpg` | Blue Marble RGB, JPEG qualité 85. Source NASA BMNG 21600×10800 (60 px/degré, native au niveau 5). | 0–5 | 2 730 tuiles ≈ 160 Mo |
-| `map/{z}/{x}/{y}.png` | PNG RGB 8 bits, 3 canaux de données : **R** ombrage du relief (128 = plat, azimut 315°, altitude 45°), **G** masque terre anti-aliasé (0 mer et lacs, 255 terre), **B** intensité de frontière (0..255, trait ≈ 1,5 px à chaque niveau). | 0–8 | ≈ 50 000 tuiles terre ≈ 750 Mo |
+| `map/{z}/{x}/{y}.png` | PNG RGB 8 bits, 3 canaux de données : **R** ombrage du relief (128 = plat : `gdaldem hillshade -alt 30`, car 255·sin 30° = 127,5 ; azimut 315°), **G** masque terre anti-aliasé (0 mer et lacs, 255 terre), **B** intensité de frontière (0..255, trait ≈ 1,5 px à chaque niveau). | 0–8 | ≈ 50 000 tuiles terre ≈ 750 Mo |
 
 - Une tuile `map` dont les canaux G et B sont **nuls partout** (océan pur) n'est **pas
   générée**. L'index (ci-dessous) l'indique ; le client la rend en océan uniforme
@@ -88,7 +88,7 @@ format → `tiles/v2/` (les tuiles sont servies `immutable`, un an).
     "map": { "ext": "png", "max_level": 8, "index": "index.bin" }
   },
   "generated_at": "2026-09-06T14:00:00Z",
-  "sources": ["NASA BMNG", "GEBCO 2024", "OpenStreetMap land polygons (ODbL)", "Natural Earth 10m"]
+  "sources": ["NASA BMNG", "GEBCO 2026", "OpenStreetMap land polygons (ODbL)", "Natural Earth 10m"]
 }
 ```
 
@@ -98,8 +98,8 @@ Le client ne suppose rien de ces valeurs (même principe que `latest.json`).
 
 | Donnée | Source | Licence | Note |
 |---|---|---|---|
-| Satellite | NASA Blue Marble Next Generation, 21600×10800 (image Visible Earth 73801, `world.topo.bathy.200407.3x21600x10800`) | domaine public | ~300 Mo, un seul fichier |
-| Relief | GEBCO 2024, grille 15″ (≈ 450 m), 8 dalles GeoTIFF de 90°×90° | libre | agrandi ×3 au niveau 8, lissé |
+| Satellite | NASA Blue Marble Next Generation, 21600×10800 (Visible Earth 73776, `world.topo.bathy.200408.3x21600x10800.png`, 190 Mo) | domaine public | un seul fichier PNG |
+| Relief | GEBCO 2026 (dernière version), grille 15″ (≈ 450 m), zip GeoTIFF de 4,2 Go contenant 8 dalles de 90°×90° | libre | agrandi ×3 au niveau 8, lissé |
 | Côtes, lacs | OSM land polygons (`land-polygons-split-4326`, osmdata.openstreetmap.de) | ODbL | attribution « © OpenStreetMap contributors » obligatoire dans l'interface |
 | Frontières | Natural Earth 10 m `admin_0_boundary_lines_land` | domaine public | pays seulement, pas de régions |
 
@@ -118,15 +118,16 @@ minutes illimitées sur dépôt public) :
 - 8 jobs `map`, un par dalle GEBCO (boîtes de 90°×90° : lon −180/−90/0/90 × hémisphère
   N/S) ;
 - 1 job `sat` (niveaux 0–5 depuis la Blue Marble entière) ;
-- 1 job `index` après les 9 autres (`needs`), qui fusionne les index partiels, écrit
-  `index.bin` et `manifest.json`.
+- 1 job `index` après les 9 autres (`needs`), qui **assemble les 2 tuiles de niveau 0**
+  depuis les 8 tuiles de niveau 1 (artefacts, océan plat si absente), fusionne les index
+  partiels, écrit `index.bin` et `manifest.json`.
 
 Un job `map` :
 
 1. `apt install gdal-bin python3-gdal rclone` ; `pip install numpy pillow`.
-2. Télécharge sa dalle GEBCO (~1 Go), les polygones terre OSM (~700 Mo, découpés à la
+2. Télécharge le zip GEBCO (4,2 Go, supprimé après extraction de sa dalle de ~1 Go par `zipfile`), les polygones terre OSM (925 Mo, découpés à la
    boîte par `ogr2ogr -clipsrc`), les lignes Natural Earth (quelques Mo).
-3. Pour chaque niveau 0–8, parcourt la boîte par **blocs de 8×8 tuiles** (4096² px ;
+3. Pour chaque niveau **1**–8 (une tuile de niveau 1 = une boîte ; le niveau 0 chevauche quatre boîtes), parcourt la boîte par **blocs de 8×8 tuiles** (4096² px ;
    jamais la boîte entière en mémoire). Par bloc :
    - test rapide « bloc entièrement océan » sur le masque terre rasterisé en basse
      résolution → bloc sauté avant tout autre calcul ;
@@ -226,7 +227,9 @@ la distance caméra–centre de tuile et à la hauteur du viewport en pixels.
 
 ### Chargement (`loader.ts`)
 
-- File de priorité : niveau grossier d'abord, puis distance au centre de l'écran.
+- Les feuilles sélectionnées **et leurs ancêtres** sont demandés (raffinement progressif,
+  jamais d'écran vide) ; file de priorité : niveau grossier d'abord, puis distance au
+  centre de l'écran.
 - Concurrence : 8 en `high`, 4 en `low`. `fetch` + `createImageBitmap`
   (`colorSpaceConversion: "none"` pour `map`, `imageOrientation: "flipY"` comme la
   heatmap), textures avec mipmaps et anisotropie pour `sat`, mipmaps sans anisotropie
@@ -288,8 +291,8 @@ uniforms `uFilter` (0/1), `uMapStyle` (0..1), `uLightDir`.
 
 ### Heatmap bicubique
 
-`t` est lu en **bicubique Catmull-Rom** via **4 prélèvements bilinéaires** (technique
-GPU Gems 2, ch. 20) sur `uHeatmap`, en coordonnées de grille cellulaire de la spec
+`t` est lu en **bicubique Catmull-Rom** via **9 prélèvements bilinéaires** (Catmull-Rom
+« 9 taps ») sur `uHeatmap`, en coordonnées de grille cellulaire de la spec
 pipeline §4 (formule `heatmapUv` conservée, appliquée au centre des 4 prélèvements).
 `sampling.ts` reste bilinéaire : il sert aux lectures ponctuelles (tooltip, spec 4),
 le lissage visuel est une affaire de rendu.
