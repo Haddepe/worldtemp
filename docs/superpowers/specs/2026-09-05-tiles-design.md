@@ -293,7 +293,7 @@ uniforms `uFilter` (0/1), `uMapStyle` (0..1), `uLightDir`.
 
 `t` est lu en **bicubique Catmull-Rom** via **9 prélèvements bilinéaires** (Catmull-Rom
 « 9 taps ») sur `uHeatmap`, en coordonnées de grille cellulaire de la spec
-pipeline §4 (formule `heatmapUv` conservée, appliquée au centre des 4 prélèvements).
+pipeline §4 (formule `heatmapUv` conservée, puis passage en coordonnées texel `hm · uGridSize`).
 `sampling.ts` reste bilinéaire : il sert aux lectures ponctuelles (tooltip, spec 4),
 le lissage visuel est une affaire de rendu.
 
