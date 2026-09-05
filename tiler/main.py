@@ -92,7 +92,11 @@ def build_level0(level1_dir: Path, out_dir: Path, index: TileIndex) -> int:
         for dy in (0, 1):
             for dx in (0, 1):
                 p = Path(level1_dir) / "map" / "1" / str(2 * x0 + dx) / f"{dy}.png"
-                tile = np.asarray(Image.open(p).convert("RGB"), dtype=np.uint8) if p.exists() else ocean
+                if p.exists():
+                    with Image.open(p) as im:
+                        tile = np.asarray(im.convert("RGB"), dtype=np.uint8)
+                else:
+                    tile = ocean
                 big[dy * TILE_SIZE : (dy + 1) * TILE_SIZE, dx * TILE_SIZE : (dx + 1) * TILE_SIZE] = tile
         small = np.asarray(Image.fromarray(big, "RGB").reduce(2), dtype=np.uint8)
         if is_ocean_tile(small):

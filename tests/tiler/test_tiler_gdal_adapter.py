@@ -47,6 +47,20 @@ def land_geojson(tmp_path):
     return p
 
 
+@pytest.fixture
+def islet_geojson(tmp_path):
+    """Îlot de 0,002° × 0,002° à (1,7, 0,5) : plus petit qu'un pixel de la sonde ocean_only 64×64."""
+    p = tmp_path / "islet.geojson"
+    p.write_text(json.dumps({
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "properties": {}, "geometry": {
+            "type": "Polygon", "coordinates": [[
+                [1.7, 0.5], [1.702, 0.5], [1.702, 0.502], [1.7, 0.502], [1.7, 0.5],
+            ]]}}],
+    }), encoding="utf-8")
+    return p
+
+
 def test_extract_gebco_tile_by_pattern(tmp_path):
     z = tmp_path / "gebco.zip"
     with zipfile.ZipFile(z, "w") as zf:
@@ -79,3 +93,14 @@ def test_backend_hillshade_land_mask_and_ocean_only(tmp_path, dem_tif, land_geoj
     assert backend.land_mask(Bounds(0, 2, 0, 2), 64, 32).shape == (32, 64)
     assert not backend.ocean_only(Bounds(0, 2, 0, 2))
     assert backend.ocean_only(Bounds(1.5, 2, 0, 2))
+
+
+def test_ocean_only_catches_subpixel_islet(tmp_path, dem_tif, islet_geojson):
+    """Un îlot plus petit que la résolution de la sonde ne doit jamais être sauté définitivement (all_touched)."""
+    backend = gdal_adapter.GdalBackend(dem_tif, islet_geojson, tmp_path / "work")
+    bounds = Bounds(1.5, 2, 0, 1)
+    assert backend.ocean_only(bounds) is False
+    # La sonde normale (anti-aliasée, sans -at) peut manquer l'îlot : pas d'assertion contraire, juste
+    # la démonstration que land_mask seule ne suffirait pas à garantir la détection.
+    without_at = backend.land_mask(bounds, 64, 64)
+    assert without_at.shape == (64, 64)

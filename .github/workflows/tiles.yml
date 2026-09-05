@@ -63,6 +63,7 @@ jobs:
           unzip -q land.zip && rm land.zip
           curl -fSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o ne.zip https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_boundary_lines_land.zip
           ogr2ogr -f GeoJSON borders.geojson /vsizip/ne.zip/ne_10m_admin_0_boundary_lines_land.shp
+          rm ne.zip
           df -h .
       - name: Tuiles map, boîte ${{ matrix.box }}
         run: |
@@ -114,6 +115,10 @@ jobs:
     needs: [map, sat]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Un run partiel (boxes != les 8) ne doit jamais publier un index.bin ou un niveau 0 incomplets :
+      # index.bin est immutable, une correction imposerait de changer de version.
+      FULL_SET: ${{ inputs.boxes == '[0,1,2,3,4,5,6,7]' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -139,9 +144,12 @@ jobs:
           name: index-merged
           path: out/
           retention-days: 30
+      - name: Avertissement run partiel (rien publié)
+        if: ${{ inputs.upload && env.FULL_SET != 'true' }}
+        run: echo "::warning::Run partiel (boxes=${{ inputs.boxes }}) : index.bin, niveau 0 et manifest.json NON envoyés — relancer avec les 8 boîtes pour publier l'index"
       - name: Envoi sur R2 (niveau 0, index immutable, manifeste revalidé à 5 min)
-        if: ${{ inputs.upload }}
+        if: ${{ inputs.upload && env.FULL_SET == 'true' }}
         run: |
           rclone copy out/map "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/map" --header-upload "$IMMUTABLE"
-          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/index.bin" --header-upload "$IMMUTABLE"
-          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/manifest.json" --header-upload "Cache-Control: public, max-age=300"
+          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/index.bin" --header-upload "$IMMUTABLE" --retries 5
+          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/${{ inputs.version }}/manifest.json" --header-upload "Cache-Control: public, max-age=300" --retries 5

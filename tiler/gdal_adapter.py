@@ -80,14 +80,20 @@ class GdalBackend:
               "-compute_edges", str(dem), str(shade)])
         return read_gray(shade)
 
-    def land_mask(self, bounds: Bounds, width: int, height: int) -> np.ndarray:
+    def land_mask(self, bounds: Bounds, width: int, height: int, *, all_touched: bool = False) -> np.ndarray:
         raw = self.work / "land_block.tif"
         if raw.exists():
             raw.unlink()
-        _run(["gdal_rasterize", "-q", "-burn", "255", "-ot", "Byte", "-init", "0", *self._te(bounds),
-              "-ts", str(width * 2), str(height * 2), str(self.land), str(raw)])
+        cmd = ["gdal_rasterize", "-q", "-burn", "255", "-ot", "Byte", "-init", "0", *self._te(bounds),
+               "-ts", str(width * 2), str(height * 2)]
+        if all_touched:
+            cmd.append("-at")
+        cmd += [str(self.land), str(raw)]
+        _run(cmd)
         with Image.open(raw) as im:
             return np.asarray(im.convert("L").reduce(2), dtype=np.uint8)
 
     def ocean_only(self, bounds: Bounds) -> bool:
-        return not self.land_mask(bounds, 64, 64).any()
+        # -at (all_touched) : une île plus petite que la résolution de la sonde (probe 64×64,
+        # règle du centre de pixel par défaut) ne doit jamais être sautée définitivement.
+        return not self.land_mask(bounds, 64, 64, all_touched=True).any()
