@@ -12,7 +12,7 @@ export interface Overlay {
   showFatal(text: string, options?: { reload?: boolean }): void;
 }
 
-function byId<T extends HTMLElement>(id: string): T {
+export function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`élément #${id} introuvable`);
   return el as T;
