@@ -65,7 +65,8 @@ l'overlay ne couvre pas le canvas en `pointer-events`, mais ses panneaux si.
 - État : altitude courante `a = d − 1`, altitude cible `aTarget`, ancre optionnelle.
   Bornes `[A_MIN ; A_MAX] = [MIN_DISTANCE − 1 ; MAX_DISTANCE − 1] = [0,042 ; 3]`,
   importées de `scene.ts`.
-- **Molette** : `aTarget *= WHEEL_BASE ^ (deltaY / 100)` avec `WHEEL_BASE = 0,885`.
+- **Molette** : `aTarget *= WHEEL_BASE ^ (−deltaY / 100)` avec `WHEEL_BASE = 0,885`
+  (`deltaY < 0` = rapprochement, convention OrbitControls).
   Trajet complet `A_MAX → A_MIN` = `ln(3 / 0,042) / ln(1 / 0,885)` ≈ **35 crans** de
   100 unités, comme aujourd'hui, mais répartis uniformément en altitude.
   `deltaMode` normalisé : `DOM_DELTA_LINE` × 16, `DOM_DELTA_PAGE` × 400
@@ -98,9 +99,13 @@ Une ancre = `{ point: Vector3 (unitaire, sur la sphère), screen: { x, y } }`.
      changement d'altitude), arrêter là.
   3. `q = Quaternion.setFromUnitVectors(p₂, point)` ; `camera.position.applyQuaternion(q)` ;
      `camera.lookAt(0, 0, 0)`.
-  4. Répéter 2–3 une seconde fois : OrbitControls réimpose `up = +y` à l'`update()`
-     suivant, ce qui annule le roulis introduit par `q` et décale légèrement le point ;
-     deux itérations ramènent l'erreur sous 0,5 px dans les cas testés.
+  4. Répéter 2–3 jusqu'à **4 itérations**, arrêt anticipé quand l'erreur de
+     reprojection passe sous 0,1 px : `lookAt` avec `up = +y` annule le roulis
+     introduit par `q` et décale le point (convergence linéaire). Mesuré le
+     2026-09-06 (viewport 1000×800, caméra en `d = 3`) : point à 30° du centre,
+     zoom à `a = 0,3` → 12 px après 1 itération, 0,25 après 2, 0,005 après 3 ;
+     point à 80° (limbe) → 171 / 9,8 / 0,7 / 0,05 px. Quatre `pickSphere` par frame
+     restent négligeables.
   5. `controls.update()` (fait par la boucle) relit la position ; la borne polaire
      d'OrbitControls (`minPolarAngle`/`maxPolarAngle`, défauts 0/π) reste appliquée.
 
@@ -244,7 +249,8 @@ Vitest, logique pure uniquement (règle du projet : rendu et gestes validés à 
   négatif inverse) ; `pinchAltitude` (écart ×2 → altitude ÷2, bornes) ;
   `anchorRotate` : pour une caméra en `(0,0,3)` et un point à 30° du centre,
   après passage à `a = 0,3` le point reprojeté à moins de **0,5 px** de sa position
-  écran initiale (viewport 1000 × 800), cas ancre `null`, cas limbe (80°) ;
+  écran initiale (viewport 1000 × 800), cas ancre `null`, cas limbe (80°, < 0,5 px
+  aussi), cas ancre sortie du globe (zoom arrière, rotation sautée) ;
   `PinchTracker` : début au second doigt, fin au retrait, troisième doigt ignoré.
 - `sampling.test.ts` : centre de cellule exact (valeur du pixel), milieu de deux
   cellules = moyenne, bouclage colonne 1439 ↔ 0, pôles bornés, orientation (ligne 0
