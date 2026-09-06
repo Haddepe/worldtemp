@@ -72,7 +72,7 @@ l'overlay ne couvre pas le canvas en `pointer-events`, mais ses panneaux si.
   Trajet complet `A_MAX → A_MIN` = `ln(3 / 0,042) / ln(1 / 0,885)` ≈ **35 crans** de
   100 unités, comme aujourd'hui, mais répartis uniformément en altitude.
   `deltaMode` normalisé : `DOM_DELTA_LINE` × 16, `DOM_DELTA_PAGE` × 400
-  (fonction pure `normalizeWheel(event) → px`). `deltaY` borné à ±300 par événement
+  (fonction pure `normalizeWheel(deltaY, deltaMode) → px`). `deltaY` borné à ±300 par événement
   (trackpads inertiels).
 - **Pincement** : `a = a₀ · (dist₀ / dist)` où `dist` est l'écart des deux doigts en
   px CSS et `a₀`, `dist₀` ses valeurs au début du geste. Doubler l'écart divise
@@ -214,7 +214,7 @@ modèle pour les deux modes ; seule l'entrée diffère :
 - Le tooltip s'affiche **filtre Température actif ou non** (la valeur a un sens sur
   le satellite aussi).
 - DOM : `#tooltip` (`.panel`, `pointer-events: none`, `role="status"`,
-  `aria-live="polite"`), positionné en `position: fixed`, centré horizontalement
+  `aria-live` dynamique : « polite » en mode `pin`, « off » en mode `hover`), positionné en `position: fixed`, centré horizontalement
   **au-dessus** du point avec un décalage de 14 px, retourné **en dessous** si le
   point est à moins de 48 px du haut du canvas. `#marker` : cercle de 12 px, bordure
   blanche 2 px, fond `#ffd166`, `pointer-events: none`, visible seulement en mode
