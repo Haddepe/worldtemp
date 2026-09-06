@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { PinchTracker, WHEEL_BASE, anchorRotate, nextAltitude, normalizeWheel, pinchAltitude, type Anchor } from "../src/controls/zoom";
+import { PinchTracker, WHEEL_BASE, anchorRotate, keepAnchor, nextAltitude, normalizeWheel, pinchAltitude, type Anchor } from "../src/controls/zoom";
 import { pickSphere, projectToScreen } from "../src/render/pick";
 
 const A_MIN = 0.042;
@@ -49,6 +49,22 @@ describe("pinchAltitude", () => {
     expect(pinchAltitude(0.05, 100, 10000, A_MIN, A_MAX)).toBe(A_MIN);
     expect(pinchAltitude(2, 100, 1, A_MIN, A_MAX)).toBe(A_MAX);
     expect(pinchAltitude(1, 100, 0, A_MIN, A_MAX)).toBe(1);
+  });
+});
+
+describe("keepAnchor", () => {
+  const anchor: Anchor = { point: new THREE.Vector3(0, 0, 1), screen: { x: 100, y: 100 } };
+  it("geste inactif → false", () => {
+    expect(keepAnchor(false, anchor, 100, 100)).toBe(false);
+  });
+  it("geste actif, curseur à la même position → true", () => {
+    expect(keepAnchor(true, anchor, 100, 100)).toBe(true);
+  });
+  it("geste actif, curseur déplacé de 5 px → false", () => {
+    expect(keepAnchor(true, anchor, 104, 103)).toBe(false);
+  });
+  it("geste actif mais ancre nulle → false", () => {
+    expect(keepAnchor(true, null, 100, 100)).toBe(false);
   });
 });
 
@@ -129,7 +145,7 @@ describe("anchorRotate", () => {
     expect(Math.hypot(s.x - anchor.screen.x, s.y - anchor.screen.y)).toBeLessThan(0.5);
     expect(err).toBeLessThan(0.5);
   });
-  it("limbe (80°) : < 0,5 px en 4 itérations", () => {
+  it("limbe (80°) : < 0,5 px en 6 itérations", () => {
     const cam = cameraAt(new THREE.Vector3(0, 0, 3));
     const anchor = anchorAt(80, cam);
     zoomTo(cam, 0.3);

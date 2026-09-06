@@ -122,12 +122,14 @@ export function createTooltip(): Tooltip {
     setReading(r, m) {
       reading = r;
       mode = m;
+      tip.setAttribute("aria-live", m === "pin" ? "polite" : "off"); // hover ne doit pas annoncer à chaque mouvement de souris
       if (r) lonLatToVec3(r.lon, r.lat, point);
       else hide();
       refreshText();
     },
     setData(d) {
-      data = d;
+      // ignore un tampon incohérent : sinon noUncheckedIndexedAccess dans sampleTemperature retombe silencieusement sur min_c
+      data = d && d.pixels.length === d.grid.width * d.grid.height * 4 ? d : null;
       refreshText();
     },
     update(camera, width, height) {

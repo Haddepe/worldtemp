@@ -28,6 +28,7 @@ export function bitmapPixels(bitmap: ImageBitmap): Uint8ClampedArray | null {
     const c = context(width, height);
     if (!c) return null;
     c.save();
+    c.clearRect(0, 0, width, height); // le canvas est réutilisé : éviter le mélange avec un futur PNG non opaque
     c.scale(1, -1);
     c.drawImage(bitmap, 0, -height);
     c.restore();

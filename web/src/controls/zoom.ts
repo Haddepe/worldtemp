@@ -80,6 +80,11 @@ export interface Anchor {
   screen: { x: number; y: number };
 }
 
+/** Garde d'ancre (critère 1) : conserver l'ancre pendant un geste actif tant que le curseur bouge de moins de `eps` px. */
+export function keepAnchor(active: boolean, anchor: Anchor | null, x: number, y: number, eps = 1): boolean {
+  return active && anchor !== null && Math.hypot(x - anchor.screen.x, y - anchor.screen.y) < eps;
+}
+
 const ANCHOR_EPS_PX = 1e-3;
 const p2 = new THREE.Vector3();
 const q = new THREE.Quaternion();
@@ -161,7 +166,7 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
     // Curseur (quasi) immobile pendant un geste déjà en cours : garder l'ancre plutôt que la
     // reprendre à chaque cran — sinon le résidu de convergence de anchorRotate (< ANCHOR_EPS_PX)
     // est capturé comme nouveau point d'ancrage et amplifié par le zoom restant.
-    if (!(wasActive && anchor && Math.hypot(c.x - anchor.screen.x, c.y - anchor.screen.y) < 1)) {
+    if (!keepAnchor(wasActive, anchor, c.x, c.y)) {
       anchor = anchorAt(c.x, c.y, c.w, c.h);
     }
     opts.requestRender();
@@ -219,9 +224,11 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
-  // Capture, pas bubble : OrbitControls écoute pointerup/pointercancel sur ce même canvas en
-  // bubble (constructeur). En capture, onPinch(false) restaure enableRotate avant qu'OrbitControls
-  // ne relise l'état et ré-arme _rotateStart pour le doigt restant — sinon saut au prochain move.
+  // Capture, pas bubble : seul pointercancel est enregistré sur ce même canvas, au constructeur
+  // (OrbitControls.js ~ligne 500) ; pointerup est enregistré sur ownerDocument depuis onPointerDown,
+  // donc la capture importe pour pointercancel et n'est que symétrique pour pointerup. En capture,
+  // onPinch(false) restaure enableRotate avant qu'OrbitControls ne relise l'état et ré-arme
+  // _rotateStart pour le doigt restant — sinon saut au prochain move.
   canvas.addEventListener("pointerup", onPointerUp, { capture: true });
   canvas.addEventListener("pointercancel", onPointerCancel, { capture: true });
 
