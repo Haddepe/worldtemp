@@ -155,4 +155,14 @@ describe("anchorRotate", () => {
     expect(anchorRotate(cam, anchor, W, H)).toBe(Number.POSITIVE_INFINITY);
     expect(cam.position.distanceTo(before)).toBe(0);
   });
+  it("reprise d'ancre stable : deux zooms successifs avec la même ancre ne dérivent pas", () => {
+    const cam = cameraAt(new THREE.Vector3(0, 0, 3));
+    const anchor = anchorAt(30, cam);
+    zoomTo(cam, 1.5);
+    anchorRotate(cam, anchor, W, H);
+    zoomTo(cam, 0.3);
+    anchorRotate(cam, anchor, W, H);
+    const s = projectToScreen(anchor.point, cam, W, H);
+    expect(Math.hypot(s.x - anchor.screen.x, s.y - anchor.screen.y)).toBeLessThan(0.05);
+  });
 });

@@ -80,13 +80,13 @@ export interface Anchor {
   screen: { x: number; y: number };
 }
 
-const ANCHOR_EPS_PX = 0.1;
+const ANCHOR_EPS_PX = 1e-3;
 const p2 = new THREE.Vector3();
 const q = new THREE.Quaternion();
 
 /**
  * Tourne la caméra autour de l'origine pour ramener `anchor.point` sous `anchor.screen`.
- * Convergence linéaire (`lookAt` annule le roulis) : jusqu'à `maxIterations`, arrêt sous 0,1 px.
+ * Convergence linéaire (`lookAt` annule le roulis) : jusqu'à `maxIterations`, arrêt sous 1e-3 px.
  * Renvoie l'erreur résiduelle en px, `Infinity` si l'ancre est sortie du globe.
  */
 export function anchorRotate(
@@ -94,7 +94,7 @@ export function anchorRotate(
   anchor: Anchor,
   width: number,
   height: number,
-  maxIterations = 4,
+  maxIterations = 6,
 ): number {
   const ndc = ndcFromCanvas(anchor.screen.x, anchor.screen.y, width, height);
   let err = Number.POSITIVE_INFINITY;
@@ -153,11 +153,17 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (pinchBase) return; // un pincement est en cours : ignorer la molette (trackpad + pincement simultanés)
-    const base = wheelActive ? aTarget : altitude();
+    const wasActive = wheelActive;
+    const base = wasActive ? aTarget : altitude();
     aTarget = nextAltitude(base, normalizeWheel(e.deltaY, e.deltaMode), opts.aMin, opts.aMax);
     wheelActive = true;
     const c = canvasPoint(e.clientX, e.clientY);
-    anchor = anchorAt(c.x, c.y, c.w, c.h);
+    // Curseur (quasi) immobile pendant un geste déjà en cours : garder l'ancre plutôt que la
+    // reprendre à chaque cran — sinon le résidu de convergence de anchorRotate (< ANCHOR_EPS_PX)
+    // est capturé comme nouveau point d'ancrage et amplifié par le zoom restant.
+    if (!(wasActive && anchor && Math.hypot(c.x - anchor.screen.x, c.y - anchor.screen.y) < 1)) {
+      anchor = anchorAt(c.x, c.y, c.w, c.h);
+    }
     opts.requestRender();
   };
 
