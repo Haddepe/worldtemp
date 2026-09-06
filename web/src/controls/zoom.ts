@@ -121,6 +121,8 @@ export interface ZoomOptions {
   requestRender(): void;
   aMin: number;
   aMax: number;
+  /** Appelé au début (`true`) et à la fin (`false`) d'un pincement à deux doigts. */
+  onPinch?(active: boolean): void;
 }
 
 const SMOOTHING = 0.25;
@@ -150,6 +152,7 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
+    if (pinchBase) return; // un pincement est en cours : ignorer la molette (trackpad + pincement simultanés)
     const base = wheelActive ? aTarget : altitude();
     aTarget = nextAltitude(base, normalizeWheel(e.deltaY, e.deltaMode), opts.aMin, opts.aMax);
     wheelActive = true;
@@ -168,10 +171,13 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
       pinchBase = { a0: altitude(), dist0: g.dist, key };
       anchor = anchorAt(g.mid.x - r.left, g.mid.y - r.top, r.width, r.height);
       wheelActive = false;
+      opts.onPinch?.(true);
     } else {
       pinchBase = null;
       anchor = null;
       pinchA = null;
+      anchorMoved = false;
+      opts.onPinch?.(false);
     }
   };
 
@@ -200,7 +206,7 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
   };
   const onPointerCancel = (e: PointerEvent) => {
     if (e.pointerType !== "touch") return;
-    pinch.reset();
+    pinch.up(e.pointerId); // n'oublier que le pointeur annulé, pas les deux doigts
     syncPinch();
   };
 

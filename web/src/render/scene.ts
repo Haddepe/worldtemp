@@ -58,6 +58,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     },
     aMin: MIN_DISTANCE - 1,
     aMax: MAX_DISTANCE - 1,
+    // Pendant un pincement, `attachZoom` ancre déjà la rotation depuis le milieu des deux doigts :
+    // laisser OrbitControls tourner aussi ferait un saut au premier mouvement puis une double rotation.
+    onPinch: (active) => {
+      controls.enableRotate = !active;
+    },
   });
 
   /** near/far et vitesse de rotation suivent l'altitude (spec tuiles §5). */
