@@ -309,7 +309,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | ✅ mergé, déployé | `fcaf208` | 60 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
-| 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé | *(sha dans l'entrée §9 du merge)* | 146 vitest + 127 pytest local (5 skipped) |
+| 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
 
 ## 8. Dette technique connue
 
@@ -385,7 +385,8 @@ l'altitude, ancre, pincement, `keepAnchor`), `data/pixels.ts` + `sampleTemperatu
 - **Critères 3 et 5 (téléphone réel) : à valider par l'utilisateur après déploiement**
   (pincement dosable près du sol, lieu sous les doigts stable ; tap pose/retire le
   marqueur). Dette n° 23 fermée côté code, confirmation téléphone attendue.
-- **Prochaine action :** merge `feat/navigation` → `master`, push, suivre le run
+- **Fait le soir même :** merge `aa4ab6e` (`--no-ff`), 146 vitest verts sur le résultat, push `master`.
+- **Prochaine action :** suivre le run
   `test.yml` (`deploy`), test téléphone par l'utilisateur, puis brainstorming du lot B
   (couches multiples) ou C (étiquettes).
 
