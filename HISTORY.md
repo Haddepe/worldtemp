@@ -387,9 +387,12 @@ l'altitude, ancre, pincement, `keepAnchor`), `data/pixels.ts` + `sampleTemperatu
   (pincement dosable près du sol, lieu sous les doigts stable ; tap pose/retire le
   marqueur). Dette n° 23 fermée côté code, confirmation téléphone attendue.
 - **Fait le soir même :** merge `aa4ab6e` (`--no-ff`), 146 vitest verts sur le résultat, push `master`.
-- **Prochaine action :** suivre le run
-  `test.yml` (`deploy`), test téléphone par l'utilisateur, puis brainstorming du lot B
-  (couches multiples) ou C (étiquettes).
+- **CI :** run 34054142043 vert (`test`, `web`, `deploy`), site en 200. En passant : `tiles.yml`
+  était **invalide** depuis `f18a90c` (scalaire YAML nu avec « : », ligne 149) — run rouge de 0 s à
+  chaque push et toute régénération manuelle aurait échoué ; corrigé (`95f3160`, dette n° 29 §8).
+- **Session arrêtée le 2026-09-06 au soir.** Prochaine action : verdict téléphone de l'utilisateur
+  (critères 3 et 5) à consigner ici, puis brainstorming du lot B (couches multiples) ou C
+  (étiquettes).
 
 ### 2026-09-05 — Spec 3 (tuiles) exécutée sur `feat/tiles` : pyramide, filtre température, domaine `globelayers.com`
 
