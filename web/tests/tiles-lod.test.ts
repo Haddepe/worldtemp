@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { TILE_SIZE, tileAt, tileKey } from "../src/tiles/grid";
-import { isBeyondHorizon, mapStyleFor, projectedSidePx, selectTiles, viewStateFrom } from "../src/tiles/lod";
+import { isBeyondHorizon, MAP_FADE_END, MAP_FADE_START, mapStyleFor, projectedSidePx, selectTiles, viewStateFrom } from "../src/tiles/lod";
 import { lonLatToVec3, patchSphere } from "../src/tiles/patch";
 
 function camera(position: THREE.Vector3, viewportHeight = 900): ReturnType<typeof viewStateFrom> {
@@ -61,11 +61,13 @@ describe("selectTiles", () => {
 });
 
 describe("mapStyleFor", () => {
-  it("0 loin, 1 près, linéaire entre 1,25 et 1,12", () => {
+  it("0 loin, 1 près, linéaire entre MAP_FADE_START (1,20) et MAP_FADE_END (1,14)", () => {
+    expect(MAP_FADE_START).toBe(1.2);
+    expect(MAP_FADE_END).toBe(1.14);
     expect(mapStyleFor(3)).toBe(0);
-    expect(mapStyleFor(1.25)).toBe(0);
-    expect(mapStyleFor(1.12)).toBe(1);
+    expect(mapStyleFor(MAP_FADE_START)).toBe(0);
+    expect(mapStyleFor(MAP_FADE_END)).toBe(1);
     expect(mapStyleFor(1.042)).toBe(1);
-    expect(mapStyleFor(1.185)).toBeCloseTo(0.5, 6);
+    expect(mapStyleFor(1.17)).toBeCloseTo(0.5, 6);
   });
 });

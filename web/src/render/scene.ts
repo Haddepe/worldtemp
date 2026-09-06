@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { attachZoom } from "../controls/zoom";
 import { type ViewState, viewStateFrom } from "../tiles/lod";
 import { lonLatToVec3 } from "../tiles/patch";
 
@@ -42,14 +43,27 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   controls.enablePan = false;
   controls.minDistance = MIN_DISTANCE;
   controls.maxDistance = MAX_DISTANCE;
-  controls.zoomSpeed = 0.8;
-  // zoomToCursor déplace la cible d'OrbitControls (spec 4 : zoom vers le curseur à réimplémenter en gardant la cible au centre).
+  // Zoom maison sur l'altitude, ancré sous le curseur (spec navigation §4) ; la cible reste à l'origine.
+  controls.enableZoom = false;
 
   let dirty = true;
   let cap = 2;
   const viewListeners: Array<(view: ViewState) => void> = [];
 
   const applyPixelRatio = () => renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
+
+  const zoom = attachZoom(canvas, camera, {
+    requestRender: () => {
+      dirty = true;
+    },
+    aMin: MIN_DISTANCE - 1,
+    aMax: MAX_DISTANCE - 1,
+    // Pendant un pincement, `attachZoom` ancre déjà la rotation depuis le milieu des deux doigts :
+    // laisser OrbitControls tourner aussi ferait un saut au premier mouvement puis une double rotation.
+    onPinch: (active) => {
+      controls.enableRotate = !active;
+    },
+  });
 
   /** near/far et vitesse de rotation suivent l'altitude (spec tuiles §5). */
   const applyDistance = () => {
@@ -71,7 +85,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   const loop = () => {
     try {
-      const moved = controls.update();
+      const zoomed = zoom.beforeUpdate();
+      const moved = controls.update() || zoomed;
       if (moved || dirty) {
         dirty = false;
         applyDistance();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMetadata } from "../src/data/metadata";
-import { formatAgo, formatBanner, legendTicks } from "../src/ui/format";
+import { formatAgo, formatBanner, formatTemperature, legendTicks } from "../src/ui/format";
 import { SAMPLE } from "./fixtures";
 
 const META = parseMetadata(SAMPLE);
@@ -30,5 +30,16 @@ describe("legendTicks", () => {
     expect(ticks.map((t) => t.c)).toEqual([-40, -30, -20, -10, 0, 10, 20, 30, 40]);
     expect(ticks[0]?.pct).toBeCloseTo(((-40 + 90) / 150) * 100, 6);
     expect(ticks[4]?.pct).toBeCloseTo(60, 6);
+  });
+});
+
+describe("formatTemperature", () => {
+  it("une décimale, virgule, signe moins typographique", () => {
+    expect(formatTemperature(23.44)).toBe("23,4 °C");
+    expect(formatTemperature(-3)).toBe("−3,0 °C");
+    expect(formatTemperature(0)).toBe("0,0 °C");
+  });
+  it("jamais « −0,0 »", () => {
+    expect(formatTemperature(-0.04)).toBe("0,0 °C");
   });
 });

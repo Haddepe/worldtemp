@@ -69,9 +69,11 @@ docs/
     specs/2026-08-30-pipeline-gfs-design.md   # contrat pipeline (spec)
     specs/2026-09-02-globe-heatmap-design.md  # contrat globe + heatmap (spec 2)
     specs/2026-09-05-tiles-design.md          # pyramide de tuiles, filtre, domaine (spec 3, §11 audit Ventusky)
+    specs/2026-09-06-navigation-design.md     # zoom ancré sur l'altitude, pincement, tooltip, fondu (spec 4 lot A)
     plans/2026-08-30-pipeline-gfs.md          # plan d'exécution (12 tâches)
     plans/2026-09-02-globe-heatmap.md         # plan d'exécution (10 tâches)
     plans/2026-09-05-tiles.md                 # plan d'exécution (20 tâches)
+    plans/2026-09-06-navigation.md            # plan d'exécution (10 tâches)
 tiler/                          # génération des tuiles, Actions seulement (dépend de GDAL)
   __init__.py
   grid.py                       # pyramide géodésique 512 px : tile_at, tile_bounds, tile_range, box_for_job
@@ -118,7 +120,7 @@ HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
 .gitignore
 web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
-  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/slider), #fatal
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
   tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler
@@ -128,31 +130,36 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap : scène, globe tuilé, DataLoader, tiles loader, tier GPU, vue par URL, overlay
+    main.ts                    # bootstrap : scène, globe tuilé, DataLoader, tiles loader, tier GPU, vue par URL, overlay, tooltip (survol souris / tap tactile), crochet `window.__worldtemp` en dev
     config.ts                  # DATA_BASE_URL/TILES_BASE_URL (data.globelayers.com), REFRESH_MS, STALE_AFTER_MS
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), attribution avec lien OSM
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), attribution avec lien OSM, #tooltip/#marker fixes
+    controls/
+      zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     data/
       metadata.ts               # parseMetadata : contrat des métadonnées publiées par le pipeline (encoding, grid, valid_time…)
-      sampling.ts                # heatmapUv : formules d'échantillonnage lat/lon → UV (miroir du GLSL)
-      loader.ts                  # DataLoader : fetch + cache-busting + refresh 15 min, non réentrant
+      sampling.ts                # heatmapUv (miroir du GLSL) ; sampleTemperature : lecture bilinéaire CPU en °C pour le tooltip
+      loader.ts                  # DataLoader : fetch + cache-busting + refresh 15 min, non réentrant ; expose `pixels` (lecture CPU) à côté de la texture
+      pixels.ts                  # bitmapPixels : ImageBitmap → RGBA nord en haut via canvas 2D réutilisé (null si impossible)
     gpu/
       tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
     tiles/                       # spec 3 : pyramide géodésique de tuiles (miroir TS de tiler/)
       grid.ts                    # miroir de tiler/grid.py : tileBounds, tileSpan, children, parent, tileKey, subRect
       manifest.ts                # lecture du manifeste JSON des tuiles (TilesManifest {sat, map})
       index.ts                   # lecture de l'index binaire WTIX (isOcean par ancêtre le plus profond couvert)
-      lod.ts                     # selectTiles (frustum, horizon, taille projetée en px CSS), mapStyleFor, ViewState
+      lod.ts                     # selectTiles (frustum, horizon, taille projetée en px CSS), mapStyleFor (MAP_FADE_START/END 1,20 → 1,14), ViewState
       loader.ts                  # chargeur de tuiles : priorité, concurrence par tier, tentatives, LRU par budget mémoire
       patch.ts                   # géométrie des patches (quadtree) avec jupes orientées vers l'extérieur, lonLatToVec3
     render/
-      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls, rendu à la demande, sélection en hauteur CSS
+      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande
+      pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
       globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch
       colormap.ts                # arrêts de couleur, LUT 256×1 sRGB, dégradé CSS de la légende
       shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
       shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT (remplace l'ancien fragment shader du globe, retiré)
     ui/
-      format.ts                  # formatBanner, legendTicks : mise en forme texte/heure/graduations
-      overlay.ts                 # createOverlay : bandeau, statut, légende conditionnelle, bouton Température, repliage mobile
+      format.ts                  # formatBanner, legendTicks, formatTemperature (« 23,4 °C », signe U+2212)
+      overlay.ts                 # createOverlay : bandeau, statut, légende conditionnelle, bouton Température, repliage mobile ; exporte byId
+      tooltip.ts                 # TapDetector, placeTooltip, createTooltip : une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode
   tests/
     fixtures.ts                  # SAMPLE : métadonnées de test (même contrat que le pipeline), réutilisées par plusieurs suites
     metadata.test.ts
@@ -168,6 +175,10 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     tiles-lod.test.ts
     tiles-loader.test.ts          # concurrence, éviction LRU, isOcean clampé
     tiles-globe.test.ts
+    pick.test.ts                  # rayon → sphère, inverse de lonLatToVec3, horizon
+    zoom.test.ts                  # courbe (35 crans), pincement, PinchTracker, keepAnchor, convergence d'ancre (< 0,5 px)
+    pixels.test.ts
+    tooltip.test.ts               # TapDetector, placeTooltip
 ```
 
 ## 4. Architecture & principe directeur
@@ -250,6 +261,14 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Génération des tuiles sur GitHub Actions** (`tiles.yml`, `workflow_dispatch` manuel, 8 jobs `map` matriciels + `sat` + `index`, ~3 h au total) plutôt qu'en local | GDAL n'a pas de roue Windows simple pour ce pipeline (même raison que `eccodes`, dette n° 2) ; matricer les 8 boîtes GEBCO en jobs parallèles ramène le temps total (3 h 01 mesuré) au temps du job le plus long plutôt qu'à leur somme (~15 h). |
 | **Domaine personnalisé `globelayers.com` (Cloudflare Registrar)**, `data.globelayers.com` en front du bucket R2 | `r2.dev` est documenté par Cloudflare comme réservé au développement (« dev only », pas de garantie de disponibilité) ; un domaine personnalisé est nécessaire avant toute mise en production sérieuse, et regroupe site + données sous un même nom de marque. |
 | **Cache Rule Cloudflare « cache tout, TTL selon `Cache-Control` d'origine » sur `data.globelayers.com`** | Un domaine personnalisé R2 ne met rien en cache edge par défaut (seuls certains types de fichiers le sont) ; sans cette règle, chaque lecture de tuile retourne à R2 au lieu d'être servie depuis le edge Cloudflare, ce qui coûte des lectures R2 (quota gratuit 10 M/mois) et de la latence. |
+| **Dolly maison sur l'altitude `a = d − 1`** (`controls/zoom.ts`, `enableZoom = false`), OrbitControls conservé pour la rotation *(2026-09-06)* | OrbitControls multiplie la distance au centre `d` (`radius *= scale`) : à `d = 1,1` un pincement de 10 % double l'altitude, à `d = 4` il ne fait rien — cause structurelle de la dette n° 23. Une courbe en altitude donne 35 crans uniformes du globe entier au zoom Normandie (mesuré : rapports d'agrandissement 1,44 à `d` = 3, 1,5 et 1,1). Forker OrbitControls (1 900 lignes) ou tout réécrire aurait coûté plus pour 30 lignes changées. |
+| **Zoom ancré par rotation de la caméra autour de l'origine** (`anchorRotate`, ≤ 6 itérations, arrêt sous 1e-3 px), cible OrbitControls jamais déplacée *(2026-09-06)* | `zoomToCursor` déplace la cible et casse la garde d'altitude (spec 3). Ramener le point saisi sous le curseur par `setFromUnitVectors` puis `lookAt(0,0,0)` garde la cible à l'origine ; `lookAt` annule le roulis et décale le point, d'où l'itération (convergence linéaire mesurée : 12 / 0,25 / 0,005 px à 30° du centre). |
+| **Ancre conservée pendant un geste de molette tant que le curseur bouge de moins de 1 px** (`keepAnchor`) *(2026-09-06, validation navigateur)* | Reprendre l'ancre à chaque cran grave le résidu de convergence dans la nouvelle ancre, amplifié ensuite par le zoom restant (×71 en altitude) : dérive mesurée de 5 à 198 px au cadrage final selon la cadence des crans, 0,0002–0,3 px avec la garde. |
+| **`enableRotate` d'OrbitControls coupé pendant un pincement** (`onPinch`), écouteurs `pointerup`/`pointercancel` de `attachZoom` en phase de capture *(2026-09-06, trouvés en revue, §6)* | À deux doigts avec `enableZoom` et `enablePan` faux, OrbitControls reste en état `TOUCH_ROTATE` et tourne depuis le milieu des doigts (saut au début du geste, double rotation). La capture fait passer `onPinch(false)` avant l'écouteur `pointercancel` d'OrbitControls (enregistré le premier sur le canvas), qui réarme sinon la rotation depuis une position périmée. |
+| **Picking analytique sur la sphère unité** (`render/pick.ts`), pas de raycast sur les meshes *(2026-09-06)* | Indépendant des patches chargés, des jupes et de `frustumCulled = false` ; une intersection rayon–sphère coûte quelques multiplications, un raycast parcourt le quadtree. |
+| **Valeurs du tooltip lues sur le CPU dans les pixels du PNG heatmap** (canvas 2D réutilisé, `bitmapPixels`, ≈ 4 Mo par rafraîchissement) plutôt qu'un `readPixels` WebGL *(2026-09-06)* | Une lecture GPU par frame bloque le pipeline de rendu ; le PNG est déjà décodé en `ImageBitmap`, le redessiner une fois toutes les 15 min dans un canvas 2D coûte une fraction de seconde et sert toutes les lectures suivantes. Le bitmap étant créé `flipY`, le dessin re-retourne pour livrer des lignes nord en haut, comme le PNG. |
+| **Un seul modèle de tooltip** : une lecture `{lon, lat}` ancrée sur le globe, projetée à chaque rendu ; seule l'entrée diffère (survol souris, tap tactile) *(2026-09-06)* | Le tooltip suit le globe quand on tourne et disparaît derrière l'horizon sans code spécifique par mode ; `aria-live` « polite » seulement en mode épinglé (un survol annoncerait chaque mouvement de souris au lecteur d'écran). |
+| **Fondu satellite → carte resserré à `d` ∈ [1,20 ; 1,14]** (constantes `MAP_FADE_START/END`) *(2026-09-06)* | Plage 1,25 → 1,12 jugée molle ; validé à l'œil (satellite pur à 1,20, carte pure à 1,14, aucun réglage supplémentaire). |
 | **Volume mesuré ≈ 4,5 Go accepté pour la v1** (70 161 tuiles `map`, PNG RGB peu compressible) malgré l'estimation initiale de la spec (< 1,5 Go) | Reste sous les 10 Go du plan R2 gratuit ; compression (palette/quantification) à revoir en v2 plutôt que de retarder la v1 pour une optimisation non bloquante. |
 
 ## 6. Problèmes rencontrés & solutions
@@ -276,6 +295,10 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | Un sous-agent d'implémentation avait ajouté `-z 40` (exagération verticale GDAL) pour faire passer une fixture de test au relief trop plat, réglant ainsi le code de production sur le test. | Rejeté en revue ; corrigé en rendant la fixture elle-même pentue (`-scale`, Float32) plutôt qu'en exagérant le rendu réel — un `-z` par niveau reste une option future si le hillshade grossier paraît trop doux à l'œil. |
 | 2026-09-05 | **Uniforms non renvoyés au GPU** avec un `ShaderMaterial` partagé entre patches : sans `uniformsNeedUpdate = true` avant chaque tirage, tous les patches affichaient la texture/les paramètres du dernier patch dessiné. Trouvé en revue finale (Important), pas par un test. | Corrigé (`ffc0d71`) : `uniformsNeedUpdate = true` posé juste avant chaque appel de rendu par patch. Leçon : partager un matériau entre objets qui varient par uniform exige de forcer explicitement leur re-synchronisation, Three.js ne le fait pas seul. |
 | 2026-09-05 | `ocean_only()` avec les réglages de rasterisation par défaut (sans `-at`, centre de pixel) manquait des îlots plus petits qu'un pixel de la sonde 64×64, les classant à tort comme océan pur (donc tuile non écrite alors qu'elle contient de la terre). Trouvé en revue finale (Important). | `all_touched=True` (`-at`) ajouté spécifiquement à la sonde de `ocean_only`, le masque terre normal (rendu des tuiles) reste inchangé ; test dédié avec un îlot de 0,002° (`f18a90c`). |
+| 2026-09-06 | **OrbitControls reste en `TOUCH_ROTATE` à deux doigts** quand `enableZoom` et `enablePan` sont faux (`_onTouchStart` cas 2 retourne avant de changer l'état) : pendant un pincement, il tournait depuis le milieu des doigts, avec un saut d'environ 20° au premier mouvement. Trouvé en revue T3 (Important), prouvé sur la source vendorisée, pas par un test. | `ZoomOptions.onPinch(active)` → `controls.enableRotate = !active` (`f5f041a`). Leçon : désactiver une fonction d'OrbitControls ne vide pas sa machine à états ; lire le code du gestionnaire concerné avant de coexister avec lui sur le même canvas. |
+| 2026-09-06 | Ordre des écouteurs : sur `pointercancel`, l'écouteur d'OrbitControls (enregistré le premier sur le canvas) réarmait `_rotateStart` pendant que `enableRotate` était encore faux, puis notre `onPinch(false)` le rétablissait — saut au prochain mouvement du doigt survivant. Trouvé en re-revue. | Écouteurs `pointerup`/`pointercancel` de `attachZoom` en phase de capture (`ab888e7`) : sur la cible elle-même, la capture précède les écouteurs bubble quel que soit l'ordre d'enregistrement. |
+| 2026-09-06 | **Dérive du zoom ancré au cadrage final** (critère 1 en échec : 5 px à 1 cran/500 ms, 16 px à 60 ms, 198 px à 30 ms) alors que l'erreur par cran restait sous 0,1 px. Trouvé par la validation navigateur (DevTools MCP), reconstruit arithmétiquement (Σ résidu × a_i/a_final ≈ 13,9 vs 14,0 mesuré). | Garde `keepAnchor` (ancre conservée si le curseur bouge de moins de 1 px) + ε 0,1 → 1e-3 px, 6 itérations (`3ee3c2a`) : 0,0002 px re-mesuré. Leçon : un critère « < 2 px » se mesure avec le geste réel (cadence des crans), pas seulement par cran. |
+| 2026-09-06 | Revue finale : la spec décrivait encore « nouvelle ancre à chaque événement », 4 itérations / 0,1 px, et ignorait `onPinch`, `keepAnchor`, `hitMarker`, `ndcFromCanvas`, la capture — six écarts nés des rulings d'exécution. | Spec resynchronisée (`2454f3e`) ; leçon : chaque ruling de revue qui change un comportement documenté doit toucher la spec dans le même round, sinon la « source de vérité » contredit le code. |
 | 2026-09-05 | Un run partiel (moins de 8 boîtes) avec `upload=true` aurait écrasé `index.bin`, le niveau 0 et `manifest.json` sur R2 avec un jeu incomplet, invalidant l'index pour tout le monde. Trouvé en revue finale (Important). | Step d'envoi R2 conditionné à `FULL_SET` (les 8 boîtes exactement) ; avertissement explicite sinon (`f18a90c`). |
 
 ## 7. Historique par plan (chronologie)
@@ -286,6 +309,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-02 | feat/globe-heatmap — spec 2 globe + heatmap (spec + plan superpowers) | ✅ mergé, déployé | `fcaf208` | 60 vitest + 94 pytest local (1 skipped) / 95 pytest Actions |
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
+| 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé | *(sha dans l'entrée §9 du merge)* | 146 vitest + 127 pytest local (5 skipped) |
 
 ## 8. Dette technique connue
 
@@ -313,9 +337,57 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | ✅ résolu 2026-09-05 (après merge) : `r2.dev` désactivé par API (401), origine `workers.dev` retirée du CORS, `workers_dev: false` déployé |
 | 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | ✅ résolu 2026-09-05 (soir) : validé par l'utilisateur sur son téléphone — fluide la plupart du temps, léger lag occasionnel |
 | 22 | **Mineurs différés de l'exécution de la spec 3** (liste non exhaustive, détail dans le ledger d'exécution git-ignoré) : `patchSphere` recalculé à chaque patch à chaque frame plutôt que mis en cache par `tileKey` ; `pump()` (chargeur de tuiles) retrie toute la file à chaque appel ; une promesse rejetée dans `loader.start()` (`onLoad` qui lève) n'est pas gérée ; `resize()` de la scène sans garde sur une largeur nulle ; `tiler/grid.py::tile_range` suppose une boîte déjà alignée sur la grille (arrondit silencieusement sinon) ; `HAS_GDAL` ne vérifie la présence que de `gdalwarp`/`ogr2ogr`, pas de `gdaldem`/`gdal_rasterize` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec 3 | 🟡 ouvert |
-| 23 | **Zoom à deux doigts trop sensible sur téléphone** : de petits gestes de pincement zooment et dézooment vite (OrbitControls `zoomSpeed` 0,8, aucun réglage propre au tactile) | Navigation mobile moins confortable, zoom rapproché difficile à doser | 🟡 ouvert — constaté par l'utilisateur le 2026-09-05 ; à traiter en spec 4 (`zoomSpeed` réduit sur pointeurs tactiles ou courbe de zoom adoucie) |
+| 23 | ~~Zoom à deux doigts trop sensible sur téléphone~~ (cause : OrbitControls multiplie `d`, pas l'altitude) | — | ✅ résolu 2026-09-06 côté code (dolly sur l'altitude, spec 4 lot A, §5) ; pincement réel sur téléphone à confirmer par l'utilisateur après déploiement (critères 3 et 5 de la spec) |
+| 24 | **Le tooltip et le marqueur ignorent les `safe-area-inset-*`** : `placeTooltip` borne au canvas seul (`#overlay`, lui, respecte les insets) | Sur un téléphone à encoche, un tooltip près du bord haut ou d'un bord en paysage peut passer sous l'encoche | 🟡 ouvert — marges par côté alimentées par `env(safe-area-inset-*)` |
+| 25 | **Reflows forcés sur les chemins chauds** : `getBoundingClientRect()` à chaque frame d'ancre (`zoom.ts`) et par doigt par mouvement (`main.ts`), `offsetWidth/Height` du tooltip à chaque survol | Jusqu'à ~4 reflows par événement d'entrée ; aucun jank mesuré (0 draw call au repos), assurance à prendre en cachant le rect du canvas pendant un geste | 🟡 mineur, ouvert |
+| 26 | **Pincement trackpad macOS non compensé** : il arrive en `wheel` avec `ctrlKey` et de petits deltas (OrbitControls multiplie par 10 dans ce cas, `normalizeWheel` non) | Zoom trackpad ~10× moins sensible que voulu ; le défilement à deux doigts (geste usuel) n'est pas touché | 🟡 ouvert, hors périmètre spec 4 lot A |
+| 27 | **Colorimétrie de la lecture CPU vérifiée sur Chrome seul** : le bitmap `colorSpaceConversion: "none"` traverse un canvas 2D `srgb` ; ±0,02 °C mesuré sur Chrome | Un décodage géré en couleur (Firefox/Safari) décalerait toutes les valeurs du tooltip | 🟡 ouvert — contrôle d'une valeur sur Firefox et Safari après déploiement |
+| 28 | **Mineurs différés de l'exécution de la spec 4 lot A** (détail dans le ledger git-ignoré) : `ZoomControl.dispose()` sans appelant (pas de teardown de scène) ; moitié événementielle de `attachZoom`, `createTooltip` et câblage `main.ts` sans test (règle Vitest logique pure) ; test « limbe 80° » qui démarre derrière l'horizon ; `TapDetector` : `up` d'un id inconnu décrémente le compteur sans resynchroniser ; convergence molette testée sur `aNew` (facteur 4/3) ; `projectToScreen` sans test `ndc.z ≥ −1` | Polish, aucun impact sur les critères d'acceptation | 🟡 ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-06 — Spec 4 lot A (navigation) exécutée sur `feat/navigation` : zoom ancré, pincement, tooltip, fondu
+
+Reprise du backlog : brainstorming (`superpowers:brainstorming`) découpant la
+spec 4 en trois lots (A navigation, B couches multiples, C étiquettes) ; lot A
+retenu. Cause structurelle de la dette n° 23 identifiée avant la spec (OrbitControls
+multiplie `d`, pas l'altitude), convergence de l'ancre mesurée numériquement avant
+d'écrire le plan (2 itérations insuffisantes au limbe → 4, puis 6 après validation).
+Spec `docs/superpowers/specs/2026-09-06-navigation-design.md`, plan
+`docs/superpowers/plans/2026-09-06-navigation.md` (10 tâches), exécutés en
+**subagent-driven development** sur `feat/navigation` (base `c038e68`) : une revue par
+tâche, **4 rounds de correction** (T3 ×2, T4 ×1, T9/C1 ×1) + une vague finale.
+
+Livré : `render/pick.ts` (picking analytique), `controls/zoom.ts` (dolly sur
+l'altitude, ancre, pincement, `keepAnchor`), `data/pixels.ts` + `sampleTemperature`,
+`ui/tooltip.ts` (survol souris, tap tactile, marqueur, `aria-live` par mode), fondu
+`[1,20 ; 1,14]` — §3, §5, §6.
+
+- **Validation navigateur** (Chrome DevTools MCP, viewport 1000×800, rapport
+  `.superpowers/sdd/2026-09-06-navigation/validation-report.md`) : critère 1 d'abord
+  **en échec** (dérive 5 à 198 px au cadrage final selon la cadence des crans),
+  corrigé (`3ee3c2a`) et re-mesuré à **0,0002 px** (60 et 30 ms) / **0,299 px**
+  (500 ms) ; critère 2 : **35 crans** exactement, rapports d'agrandissement
+  1,4385 / 1,4433 / 1,4429 ; critère 4 : tooltip à **±0,02 °C** du recalcul sur
+  `latest.png` ; critère 5 (synthétique) : tap pose / retire / déplace, glisser ne pose
+  rien ; critère 6 : satellite pur à 1,20, carte pure à 1,14, aucun réglage ;
+  critère 8 : **0 draw call** au repos et après un survol ; bornes `d` 4,0000 / 1,0420 ;
+  console propre.
+- **Revue finale de branche** : « With fixes » (spec désynchronisée sur six points,
+  garde d'ancre non testée) ; vague unique (`2454f3e`, `4b72ec1`) : spec resynchronisée,
+  `keepAnchor` extrait et testé, `clearRect` avant dessin, `aria-live` par mode, garde de
+  taille du tampon, commentaire de capture corrigé. Mineurs restants → dettes n° 24–28.
+- **Tests :** `npm --prefix web run test` → **146 passed** (17 fichiers, dont 4 nouveaux) ;
+  `.venv/Scripts/python -m pytest -q` → **127 passed, 5 skipped** (inchangé) ; typecheck
+  et build OK.
+- **Build :** `dist/assets/index-*.js` **572,65 Ko** (gzip **148,21 Ko**), +8 Ko bruts
+  par rapport à la spec 3.
+- **Critères 3 et 5 (téléphone réel) : à valider par l'utilisateur après déploiement**
+  (pincement dosable près du sol, lieu sous les doigts stable ; tap pose/retire le
+  marqueur). Dette n° 23 fermée côté code, confirmation téléphone attendue.
+- **Prochaine action :** merge `feat/navigation` → `master`, push, suivre le run
+  `test.yml` (`deploy`), test téléphone par l'utilisateur, puis brainstorming du lot B
+  (couches multiples) ou C (étiquettes).
 
 ### 2026-09-05 — Spec 3 (tuiles) exécutée sur `feat/tiles` : pyramide, filtre température, domaine `globelayers.com`
 
@@ -636,7 +708,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
+**Dernière mise à jour :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
+**Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
 **Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
 **Entrée précédente :** 2026-09-02 (**R2 en service, premier run réel publié** — Task 12 : bucket `worldtemp` + `r2.dev` + CORS par MCP Cloudflare, token et secrets par l'utilisateur, `pipeline.yml` réactivé, critères 4 et 5 ✅, critère 6 reporté en dette n° 9, prochaine étape spec 2 globe)

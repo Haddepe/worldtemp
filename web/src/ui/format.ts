@@ -37,3 +37,10 @@ export function legendTicks(minC: number, maxC: number, step = 10): { c: number;
   }
   return out;
 }
+
+/** « 23,4 °C » (spec navigation §6) : une décimale, virgule, signe « − » U+2212, jamais « −0,0 ». */
+export function formatTemperature(celsius: number): string {
+  let s = celsius.toFixed(1);
+  if (s === "-0.0") s = "0.0";
+  return `${s.replace("-", "−").replace(".", ",")} °C`;
+}

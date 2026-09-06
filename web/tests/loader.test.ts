@@ -20,13 +20,14 @@ function fakeBitmap(width = 1440, height = 721): ImageBitmap {
   return { width, height, close: vi.fn() } as unknown as ImageBitmap;
 }
 
-function deps(json: unknown, bitmap: ImageBitmap = fakeBitmap()): LoaderDeps & {
+function deps(json: unknown, bitmap: ImageBitmap = fakeBitmap(), pixels: (b: ImageBitmap) => Uint8ClampedArray | null = () => new Uint8ClampedArray(4)): LoaderDeps & {
   fetchJson: ReturnType<typeof vi.fn>;
   fetchBitmap: ReturnType<typeof vi.fn>;
 } {
   return {
     fetchJson: vi.fn(async () => JSON.parse(JSON.stringify(json))),
     fetchBitmap: vi.fn(async () => bitmap),
+    bitmapPixels: pixels,
   };
 }
 
@@ -137,7 +138,7 @@ describe("DataLoader.refresh", () => {
     });
     const fetchJson = vi.fn(() => jsonPromise);
     const fetchBitmap = vi.fn(async () => fakeBitmap());
-    const loader = new DataLoader(BASE, { fetchJson, fetchBitmap });
+    const loader = new DataLoader(BASE, { fetchJson, fetchBitmap, bitmapPixels: () => new Uint8ClampedArray(4) });
 
     const p1 = loader.refresh();
     const p2 = loader.refresh();
@@ -149,5 +150,26 @@ describe("DataLoader.refresh", () => {
     expect(got2).toBe(got1);
     expect(fetchJson).toHaveBeenCalledTimes(1);
     expect(fetchBitmap).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DataLoader.refresh — pixels", () => {
+  it("expose les pixels lus par bitmapPixels", async () => {
+    const px = new Uint8ClampedArray([1, 2, 3, 4]);
+    const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => px));
+    const d = await loader.refresh();
+    expect(d?.pixels).toBe(px);
+  });
+  it("bitmapPixels qui lève → pixels null, texture valide", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => { throw new Error("boom"); }));
+      const d = await loader.refresh();
+      expect(d?.pixels).toBeNull();
+      expect(d?.texture).toBeInstanceOf(THREE.Texture);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

@@ -4,12 +4,14 @@ import { DataLoader, isStale } from "./data/loader";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STOPS, buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
+import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { formatBanner } from "./ui/format";
 import { createOverlay } from "./ui/overlay";
+import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
 
 /** Manifeste vide : aucune tuile demandée (mode repli, spec tuiles §8). */
 const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "jpg", maxLevel: -1 }, map: { ext: "png", maxLevel: -1, index: "" } };
@@ -41,9 +43,11 @@ async function boot(): Promise<void> {
   console.info(`[worldtemp] tier ${decision.tier} — ${decision.reason}`);
   sceneHandle.setPixelRatioCap(PIXEL_RATIO_CAP[decision.tier]);
   const profile = TIER_PROFILE[decision.tier];
+  const tooltip = createTooltip();
 
   canvas.addEventListener("webglcontextlost", (ev) => {
     ev.preventDefault();
+    tooltip.setReading(null, "hover");
     ui.showFatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.", { reload: true });
   });
 
@@ -73,8 +77,56 @@ async function boot(): Promise<void> {
     sceneHandle.requestRender();
   });
   sceneHandle.scene.add(globe.group);
+
+  const tap = new TapDetector();
+
+  const canvasPoint = (e: PointerEvent) => {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height };
+  };
+  const readingAt = (x: number, y: number, w: number, h: number): Reading | null => {
+    const ndc = ndcFromCanvas(x, y, w, h);
+    const p = pickSphere(ndc.x, ndc.y, sceneHandle.camera);
+    return p ? vec3ToLonLat(p) : null;
+  };
+  const tapInput = (type: "down" | "move" | "up" | "cancel", e: PointerEvent) => {
+    const c = canvasPoint(e);
+    const hit = tap.feed({ type, id: e.pointerId, x: c.x, y: c.y, t: e.timeStamp });
+    if (!hit) return;
+    tooltip.setReading(tooltip.hitMarker(hit.x, hit.y) ? null : readingAt(hit.x, hit.y, c.w, c.h), "pin");
+    tooltip.update(sceneHandle.camera, c.w, c.h);
+  };
+
+  // Crochet de validation (T9, critère 1) : lecture lon/lat sous un pixel depuis la console, dev seulement.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __worldtemp: unknown }).__worldtemp = { readingAt, camera: sceneHandle.camera };
+  }
+
+  canvas.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") {
+      tapInput("move", e);
+      return;
+    }
+    const c = canvasPoint(e);
+    tooltip.setReading(readingAt(c.x, c.y, c.w, c.h), "hover");
+    tooltip.update(sceneHandle.camera, c.w, c.h);
+  });
+  canvas.addEventListener("pointerleave", (e) => {
+    if (e.pointerType !== "touch") tooltip.setReading(null, "hover");
+  });
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") tapInput("down", e);
+  });
+  canvas.addEventListener("pointerup", (e) => {
+    if (e.pointerType === "touch") tapInput("up", e);
+  });
+  canvas.addEventListener("pointercancel", (e) => {
+    if (e.pointerType === "touch") tapInput("cancel", e);
+  });
+
   sceneHandle.onViewChange((view) => {
     globe.update(view);
+    tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
   });
 
   let tilesReady = false;
@@ -142,6 +194,7 @@ async function boot(): Promise<void> {
         }
         ui.setLegend(encoding.min_c, encoding.max_c, stats);
         globe.setHeatmap(fresh.texture, grid.width, grid.height);
+        tooltip.setData(fresh.pixels ? { pixels: fresh.pixels, grid, encoding } : null);
         sceneHandle.requestRender();
         console.info(`[worldtemp] données ${fresh.meta.run} f${fresh.meta.forecast_hour}, valides ${fresh.meta.valid_time_utc}`);
       }

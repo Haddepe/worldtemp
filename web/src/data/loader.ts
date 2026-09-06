@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { parseMetadata, type LatestMetadata } from "./metadata";
+import { bitmapPixels } from "./pixels";
 
 export class TextureError extends Error {
   constructor(message: string) {
@@ -11,11 +12,14 @@ export class TextureError extends Error {
 export interface LoaderDeps {
   fetchJson(url: string): Promise<unknown>;
   fetchBitmap(url: string): Promise<ImageBitmap>;
+  /** Lecture CPU des pixels (tooltip). `null` = tooltip indisponible, rendu inchangé. */
+  bitmapPixels(bitmap: ImageBitmap): Uint8ClampedArray | null;
 }
 
 export interface LoadedData {
   meta: LatestMetadata;
   texture: THREE.Texture;
+  pixels: Uint8ClampedArray | null;
 }
 
 /** URL du PNG avec cache-busting `?v=<generated_at>` (spec pipeline §4). */
@@ -71,6 +75,7 @@ export const browserDeps: LoaderDeps = {
       colorSpaceConversion: "none",
     });
   },
+  bitmapPixels,
 };
 
 export class DataLoader {
@@ -103,8 +108,14 @@ export class DataLoader {
       if (!needsTextureFetch(this.current?.meta ?? null, meta)) return null;
       const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, meta));
       const texture = bitmapToTexture(bitmap, meta);
+      let pixels: Uint8ClampedArray | null = null;
+      try {
+        pixels = this.deps.bitmapPixels(bitmap);
+      } catch (e) {
+        console.warn("[worldtemp] lecture des pixels de la heatmap impossible :", e);
+      }
       const previous = this.current;
-      this.current = { meta, texture };
+      this.current = { meta, texture, pixels };
       const img = previous?.texture.image as ImageBitmap | undefined;
       previous?.texture.dispose();
       if (img && typeof img.close === "function") img.close();
