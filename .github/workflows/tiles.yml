@@ -146,7 +146,8 @@ jobs:
           retention-days: 30
       - name: Avertissement run partiel (rien publié)
         if: ${{ inputs.upload && env.FULL_SET != 'true' }}
-        run: echo "::warning::Run partiel (boxes=${{ inputs.boxes }}) : index.bin, niveau 0 et manifest.json NON envoyés — relancer avec les 8 boîtes pour publier l'index"
+        run: |
+          echo "::warning::Run partiel (boxes=${{ inputs.boxes }}) : index.bin, niveau 0 et manifest.json NON envoyés — relancer avec les 8 boîtes pour publier l'index"
       - name: Envoi sur R2 (niveau 0, index immutable, manifeste revalidé à 5 min)
         if: ${{ inputs.upload && env.FULL_SET == 'true' }}
         run: |
