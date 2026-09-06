@@ -54,6 +54,8 @@ Fondation partagée par le zoom et le tooltip. Fonctions pures, sans état :
   px depuis le coin haut-gauche du canvas ; `visible` = devant l'horizon
   (`dot(p̂, ĉ) > 1 / d`, même test que `tiles/lod.ts::isBeyondHorizon`, avec `p̂`
   unitaire donc rayon 0) **et** dans le viewport.
+- `ndcFromCanvas(x, y, width, height) → { x, y }` : conversion px CSS canvas → NDC
+  `[-1 ; 1]`, partagée par le zoom et le picking.
 
 Les coordonnées NDC viennent du canvas (`getBoundingClientRect`), pas de la fenêtre :
 l'overlay ne couvre pas le canvas en `pointer-events`, mais ses panneaux si.
@@ -86,9 +88,14 @@ l'overlay ne couvre pas le canvas en `pointer-events`, mais ses panneaux si.
 
 Une ancre = `{ point: Vector3 (unitaire, sur la sphère), screen: { x, y } }`.
 
-- Molette : à **chaque** événement, `pickSphere` sous le curseur → nouvelle ancre
-  (le curseur peut bouger entre deux crans). Curseur hors globe → ancre `null` :
-  zoom vers le centre sans rotation.
+- Molette : à chaque événement, si le geste est déjà actif et que le curseur s'est
+  déplacé de moins de 1 px depuis l'écran de l'ancre courante, l'ancre est conservée
+  (prédicat `keepAnchor`) ; sinon nouvelle ancre sous le curseur. Sans cette garde,
+  le résidu de convergence (< ε) est gravé dans chaque nouvelle ancre puis amplifié
+  par le zoom restant (×71 de `d` = 4 à 1,042) : dérive mesurée de 5 à 198 px au
+  cadrage final selon la cadence des crans (validation du 2026-09-06), 0,0002–0,3 px
+  avec la garde. Curseur hors globe → ancre `null` : zoom vers le centre sans
+  rotation.
 - Pincement : ancre prise **au début du geste** sous le milieu des doigts ; `screen`
   mis à jour à chaque `pointermove` avec le milieu courant. Résultat : le lieu saisi
   suit les doigts, ce qui donne le déplacement à deux doigts sans code
@@ -99,8 +106,8 @@ Une ancre = `{ point: Vector3 (unitaire, sur la sphère), screen: { x, y } }`.
      changement d'altitude), arrêter là.
   3. `q = Quaternion.setFromUnitVectors(p₂, point)` ; `camera.position.applyQuaternion(q)` ;
      `camera.lookAt(0, 0, 0)`.
-  4. Répéter 2–3 jusqu'à **4 itérations**, arrêt anticipé quand l'erreur de
-     reprojection passe sous 0,1 px : `lookAt` avec `up = +y` annule le roulis
+  4. Répéter 2–3 jusqu'à **6 itérations**, arrêt anticipé quand l'erreur de
+     reprojection passe sous **1e-3 px** : `lookAt` avec `up = +y` annule le roulis
      introduit par `q` et décale le point (convergence linéaire). Mesuré le
      2026-09-06 (viewport 1000×800, caméra en `d = 3`) : point à 30° du centre,
      zoom à `a = 0,3` → 12 px après 1 itération, 0,25 après 2, 0,005 après 3 ;
@@ -122,6 +129,10 @@ sur la sphère visible). Aucune garde supplémentaire.
   pincement continue avec les deux premiers.
 - Pas de `setPointerCapture` (OrbitControls l'appelle déjà sur le même canvas ; un
   second capture sur le même pointeur est sans effet).
+- `pointerup`/`pointercancel` sont écoutés en phase de capture, pour que
+  `onPinch(false)` s'exécute avant l'écouteur `pointercancel` d'OrbitControls
+  (enregistré sur le canvas au constructeur), qui sinon ré-arme la rotation depuis
+  le milieu des doigts restants et provoque un saut au début du pincement.
 - `zoomSpeed` d'OrbitControls devient sans objet ; la ligne et son commentaire
   « spec 4 » disparaissent de `scene.ts`.
 
@@ -133,12 +144,22 @@ export interface ZoomControl {
   beforeUpdate(): boolean;
   dispose(): void;
 }
-export function attachZoom(canvas, camera, opts: { requestRender(): void; aMin: number; aMax: number }): ZoomControl;
+export interface ZoomOptions {
+  requestRender(): void;
+  aMin: number;
+  aMax: number;
+  onPinch?(active: boolean): void;
+}
+export function attachZoom(canvas, camera, opts: ZoomOptions): ZoomControl;
 ```
 
+`scene.ts` fait `controls.enableRotate = !active` dans `onPinch` car OrbitControls
+reste en état `TOUCH_ROTATE` à deux doigts quand `enableZoom` et `enablePan` sont
+faux (rotation depuis le milieu des doigts, sinon saut au début du pincement).
+
 La logique de courbe, d'ancre et de détection de pincement vit dans des fonctions
-pures exportées (`normalizeWheel`, `nextAltitude`, `pinchAltitude`, `anchorRotate`,
-`PinchTracker`) ; `attachZoom` ne fait que brancher les événements.
+pures exportées (`normalizeWheel`, `nextAltitude`, `pinchAltitude`, `keepAnchor`,
+`anchorRotate`, `PinchTracker`) ; `attachZoom` ne fait que brancher les événements.
 
 ## 5. Lecture des valeurs (`web/src/data/pixels.ts`, `sampling.ts`)
 
@@ -208,8 +229,13 @@ export interface Tooltip {
   setData(d: { pixels: Uint8ClampedArray; grid: Grid; encoding: Encoding } | null): void;
   /** Reprojection après un rendu. */
   update(camera: THREE.PerspectiveCamera, width: number, height: number): void;
+  /** Vrai si (x, y) est à moins de `radiusPx` du marqueur affiché (mode pin). */
+  hitMarker(x: number, y: number, radiusPx?: number): boolean;
 }
 ```
+
+`aria-live` vaut « polite » en mode `pin` et « off » en mode `hover` : un survol
+souris ne doit pas déclencher une annonce du lecteur d'écran à chaque mouvement.
 
 `main.ts` branche : `pointermove`/`pointerleave` souris → `setReading(…, "hover")`,
 `TapDetector` → `setReading(…, "pin")`, `applyData` → `setData`, `onViewChange` →
@@ -232,7 +258,7 @@ ici et dans HISTORY.
 | Curseur hors globe (molette) | Zoom vers le centre, pas de rotation |
 | Ancre sortie du globe après changement d'altitude | Rotation sautée pour cette frame |
 | Deux doigts puis un seul | Fin du pincement ; OrbitControls reprend la rotation à un doigt |
-| `pointercancel` (appel, geste système) | Table des pointeurs vidée, `TapDetector` réinitialisé |
+| `pointercancel` (appel, geste système) | Seul le pointeur annulé est oublié (un geste à trois doigts survit à une annulation) ; `TapDetector` réinitialisé |
 | Données absentes ou en échec | Tooltip masqué ; lecture conservée, affichée à l'arrivée des données |
 | `webglcontextlost` | Inchangé (`showFatal`) ; le tooltip est masqué avec l'overlay |
 
