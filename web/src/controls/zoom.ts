@@ -213,8 +213,11 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
-  canvas.addEventListener("pointerup", onPointerUp);
-  canvas.addEventListener("pointercancel", onPointerCancel);
+  // Capture, pas bubble : OrbitControls écoute pointerup/pointercancel sur ce même canvas en
+  // bubble (constructeur). En capture, onPinch(false) restaure enableRotate avant qu'OrbitControls
+  // ne relise l'état et ré-arme _rotateStart pour le doigt restant — sinon saut au prochain move.
+  canvas.addEventListener("pointerup", onPointerUp, { capture: true });
+  canvas.addEventListener("pointercancel", onPointerCancel, { capture: true });
 
   return {
     beforeUpdate() {
@@ -248,11 +251,12 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
       return moved;
     },
     dispose() {
+      if (pinchBase) opts.onPinch?.(false); // ne pas laisser enableRotate coincé à false
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("pointerup", onPointerUp, { capture: true });
+      canvas.removeEventListener("pointercancel", onPointerCancel, { capture: true });
     },
   };
 }
