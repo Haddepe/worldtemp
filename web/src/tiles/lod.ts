@@ -64,9 +64,12 @@ export function selectTiles(view: ViewState, opts: LodOptions): TileId[] {
   return out;
 }
 
-/** Fondu vers le style carte selon la distance caméra–centre (spec §6) : 0 au-delà de 1,25, 1 sous 1,12. */
+/** Fondu satellite → carte (spec navigation §7) : 0 au-delà de MAP_FADE_START, 1 sous MAP_FADE_END. */
+export const MAP_FADE_START = 1.2;
+export const MAP_FADE_END = 1.14;
+
 export function mapStyleFor(distance: number): number {
-  // Dénominateur dérivé de 1,25 et 1,12 (plutôt que le littéral 0,13) pour que la borne haute
-  // retombe exactement sur 1 en double précision IEEE-754 (1,25 − 1,12 ≠ 0,13 en binaire).
-  return Math.min(1, Math.max(0, (1.25 - distance) / (1.25 - 1.12)));
+  // Dénominateur dérivé des deux bornes (pas un littéral) pour que la borne basse retombe
+  // exactement sur 1 en double précision IEEE-754.
+  return Math.min(1, Math.max(0, (MAP_FADE_START - distance) / (MAP_FADE_START - MAP_FADE_END)));
 }
