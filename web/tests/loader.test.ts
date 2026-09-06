@@ -161,9 +161,15 @@ describe("DataLoader.refresh — pixels", () => {
     expect(d?.pixels).toBe(px);
   });
   it("bitmapPixels qui lève → pixels null, texture valide", async () => {
-    const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => { throw new Error("boom"); }));
-    const d = await loader.refresh();
-    expect(d?.pixels).toBeNull();
-    expect(d?.texture).toBeInstanceOf(THREE.Texture);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => { throw new Error("boom"); }));
+      const d = await loader.refresh();
+      expect(d?.pixels).toBeNull();
+      expect(d?.texture).toBeInstanceOf(THREE.Texture);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
