@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PinchTracker, WHEEL_BASE, nextAltitude, normalizeWheel, pinchAltitude } from "../src/controls/zoom";
+import * as THREE from "three";
+import { PinchTracker, WHEEL_BASE, anchorRotate, nextAltitude, normalizeWheel, pinchAltitude, type Anchor } from "../src/controls/zoom";
+import { pickSphere, projectToScreen } from "../src/render/pick";
 
 const A_MIN = 0.042;
 const A_MAX = 3;
@@ -89,5 +91,68 @@ describe("PinchTracker", () => {
     const t = new PinchTracker();
     t.move(9, 1, 1);
     expect(t.pair()).toBeNull();
+  });
+});
+
+const W = 1000;
+const H = 800;
+
+function cameraAt(position: THREE.Vector3): THREE.PerspectiveCamera {
+  const cam = new THREE.PerspectiveCamera(45, W / H, 0.01, 10);
+  cam.position.copy(position);
+  cam.lookAt(0, 0, 0);
+  cam.updateMatrixWorld(true);
+  cam.updateProjectionMatrix();
+  return cam;
+}
+
+/** Point de la sphère à `angleDeg` du centre de l'écran, en diagonale (exerce le roulis). */
+function anchorAt(angleDeg: number, cam: THREE.PerspectiveCamera): Anchor {
+  const s = Math.sin((angleDeg * Math.PI) / 180);
+  const point = new THREE.Vector3(s * Math.SQRT1_2, s * Math.SQRT1_2, Math.cos((angleDeg * Math.PI) / 180)).normalize();
+  const { x, y } = projectToScreen(point, cam, W, H);
+  return { point, screen: { x, y } };
+}
+
+function zoomTo(cam: THREE.PerspectiveCamera, a: number): void {
+  cam.position.setLength(1 + a);
+  cam.updateMatrixWorld(true);
+}
+
+describe("anchorRotate", () => {
+  it("point à 30° du centre, zoom de a = 2 à 0,3 : reprojeté à < 0,5 px", () => {
+    const cam = cameraAt(new THREE.Vector3(0, 0, 3));
+    const anchor = anchorAt(30, cam);
+    zoomTo(cam, 0.3);
+    const err = anchorRotate(cam, anchor, W, H);
+    const s = projectToScreen(anchor.point, cam, W, H);
+    expect(Math.hypot(s.x - anchor.screen.x, s.y - anchor.screen.y)).toBeLessThan(0.5);
+    expect(err).toBeLessThan(0.5);
+  });
+  it("limbe (80°) : < 0,5 px en 4 itérations", () => {
+    const cam = cameraAt(new THREE.Vector3(0, 0, 3));
+    const anchor = anchorAt(80, cam);
+    zoomTo(cam, 0.3);
+    anchorRotate(cam, anchor, W, H);
+    const s = projectToScreen(anchor.point, cam, W, H);
+    expect(Math.hypot(s.x - anchor.screen.x, s.y - anchor.screen.y)).toBeLessThan(0.5);
+  });
+  it("la caméra reste à la même distance et regarde l'origine", () => {
+    const cam = cameraAt(new THREE.Vector3(0, 0, 3));
+    const anchor = anchorAt(30, cam);
+    zoomTo(cam, 0.3);
+    anchorRotate(cam, anchor, W, H);
+    expect(cam.position.length()).toBeCloseTo(1.3, 9);
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    expect(forward.dot(cam.position.clone().normalize())).toBeCloseTo(-1, 9);
+  });
+  it("ancre sortie du globe (zoom arrière) : rotation sautée, erreur Infinity", () => {
+    const cam = cameraAt(new THREE.Vector3(0, 0, 3));
+    const anchor = anchorAt(45, cam);
+    zoomTo(cam, 2.5); // le point visé n'est plus sous le curseur : le rayon manque la sphère
+    const before = cam.position.clone();
+    expect(pickSphere((anchor.screen.x / W) * 2 - 1, 1 - (anchor.screen.y / H) * 2, cam)).toBeNull();
+    expect(anchorRotate(cam, anchor, W, H)).toBe(Number.POSITIVE_INFINITY);
+    expect(cam.position.distanceTo(before)).toBe(0);
   });
 });
