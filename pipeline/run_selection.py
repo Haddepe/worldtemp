@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from pipeline import config
+from pipeline.sources import SourceSpec
 
 
 @dataclass(frozen=True)
@@ -19,8 +20,8 @@ class Candidate:
         return self.run + timedelta(hours=self.forecast_hour)
 
 
-def _floor_to_hour(dt: datetime) -> datetime:
-    return dt.replace(minute=0, second=0, microsecond=0)
+def _floor_to_step(dt: datetime, step_hours: int) -> datetime:
+    return dt.replace(hour=(dt.hour // step_hours) * step_hours, minute=0, second=0, microsecond=0)
 
 
 def _floor_to_run(dt: datetime) -> datetime:
@@ -30,18 +31,22 @@ def _floor_to_run(dt: datetime) -> datetime:
 def candidates(
     now_utc: datetime,
     *,
+    step_hours: int = 1,
     delay: timedelta = config.RUN_AVAILABILITY_DELAY,
     max_candidates: int = config.MAX_CANDIDATES,
     max_forecast_hour: int = config.MAX_FORECAST_HOUR,
 ) -> list[Candidate]:
-    """Candidats du plus récent au plus ancien, tous valides à `now` tronqué à l'heure.
+    """Candidats du plus récent au plus ancien, tous valides à `now` arrondi au
+    multiple inférieur de `step_hours` (1 h pour GFS, 3 h pour GEFS-chem).
 
     Un run n'est retenu que s'il a eu `delay` pour apparaître sur NOMADS ; un 404
     en aval couvre l'imprécision de ce délai dans les deux sens.
     """
     if now_utc.tzinfo is None:
         raise ValueError("now_utc doit être tz-aware (UTC)")
-    target = _floor_to_hour(now_utc.astimezone(timezone.utc))
+    if step_hours < 1 or 24 % step_hours:
+        raise ValueError(f"step_hours {step_hours} doit diviser 24")
+    target = _floor_to_step(now_utc.astimezone(timezone.utc), step_hours)
     run = _floor_to_run(target - delay)
     found: list[Candidate] = []
     for _ in range(max_candidates):
@@ -50,3 +55,13 @@ def candidates(
             found.append(Candidate(run, fh))
         run -= timedelta(hours=6)
     return found
+
+
+def candidates_for(source: SourceSpec, now_utc: datetime) -> list[Candidate]:
+    return candidates(
+        now_utc,
+        step_hours=source.step_hours,
+        delay=source.availability_delay,
+        max_candidates=source.max_candidates,
+        max_forecast_hour=source.max_forecast_hour,
+    )
