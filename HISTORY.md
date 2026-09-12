@@ -347,7 +347,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
-| 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | revue finale / merge en cours | à compléter au merge | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
+| 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -452,11 +452,19 @@ câblage complet dans `main.ts` (`ManifestLoader`, `LayerCache` LRU 2,
   suivre. En prod, `layers/latest.json` sera publié au premier run du pipeline après le merge
   (`gh workflow run pipeline.yml` en `workflow_dispatch`, comme pour la mise en service R2 du
   2026-09-02).
+- **Fait le soir même :** dette n° 37 corrigée avant merge (`1c5aad1`), trailers des 27 commits
+  réécrits puis branche republiée, merge `cd667bd` (`--no-ff`), 173 pytest + 171 vitest sur le
+  résultat, push `master`, CI `test`/`web`/`deploy` vertes (run 34721020579), `pipeline.yml`
+  déclenché à la main (run 34721035725) : `layers/latest.json` en 200 avec **7 couches** (run 12z
+  f009 ; pm25 max 2 246,7 et dust max 11 432,8 µg/m³, pression max 1 070,7 hPa au-delà de
+  l'encodage 1 060 → saturé), 7 PNG en 200, legacy `gfs/latest.json` en 200, site
+  « GlobeLayers — météo mondiale en 3D » en 200 avec le bundle pointant sur
+  `data.globelayers.com/layers`.
 - **Dettes :** n° 30 à 37 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
   `gfs/latest.*`, saturation d'encodage pm25/dust, `except Exception` large,
   `_message_keys` avale les exceptions eccodes, validation 400 px non mesurée
   (plancher outil 500 px), mineurs différés.
-- **Prochaine action :** merge de `feat/layers` sur `master`, puis brainstorming
+- **Prochaine action :** brainstorming
   du **lot B2** (vent animé, champ vectoriel U/V, particules).
 
 ### 2026-09-06 — Spec 4 lot A (navigation) exécutée sur `feat/navigation` : zoom ancré, pincement, tooltip, fondu
@@ -827,7 +835,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 ouverte, merge à suivre)
+**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
 **Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
