@@ -223,8 +223,12 @@ async function boot(): Promise<void> {
       console.warn(`[worldtemp] couche ${id} indisponible :`, e);
       failed.add(id!);
       menu.setDisabled(id!, true);
-      ui.setStatus("Couche indisponible");
-      if (activeId === id) await activate(previous !== id ? previous : null, fromUser);
+      if (activeId === id) {
+        ui.setStatus("Couche indisponible");
+        const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
+        await activate(fallback, fromUser);
+        refreshBanner();
+      }
       return;
     }
     if (activeId !== id) return; // l'utilisateur a changé d'avis pendant le chargement
