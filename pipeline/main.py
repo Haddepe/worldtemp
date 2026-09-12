@@ -126,7 +126,7 @@ def run(
             if source.primary:
                 log.error("%s", exc)
                 return exc.exit_code
-            log.warning("%s — couches %s reportées depuis le manifeste courant", exc, [s.id for s in specs])
+            log.warning("%s — couches %s reportées depuis le manifeste courant", exc, [s.id for s in specs], exc_info=True)
             outputs[source.id] = SourceOutput(_current_entries(current, [s.id for s in specs]), {}, False)
 
     if not any(o.fresh for o in outputs.values()):
