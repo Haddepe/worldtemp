@@ -17,11 +17,15 @@ export function createLayersMenu(container: HTMLElement, onChange: (id: string |
 
   const idOf = (key: string) => (key === NONE ? null : key);
 
+  // Le tabindex roulant doit toujours désigner un bouton activé : sinon, une couche
+  // indisponible sélectionnée rendrait le groupe radio inatteignable au clavier.
   const render = () => {
+    const enabled = [...buttons].filter(([, b]) => !b.disabled).map(([k]) => k);
+    const activeKey = active ?? NONE;
+    const focusKey = enabled.includes(activeKey) ? activeKey : enabled[0];
     for (const [key, b] of buttons) {
-      const on = key === (active ?? NONE);
-      b.setAttribute("aria-checked", String(on));
-      b.tabIndex = on ? 0 : -1;
+      b.setAttribute("aria-checked", String(key === activeKey));
+      b.tabIndex = key === focusKey ? 0 : -1;
     }
   };
 

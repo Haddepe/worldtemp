@@ -92,5 +92,7 @@ describe("createTiledGlobe", () => {
     expect(u.uLayer!.value).toBeNull();
     expect(material.fragmentShader).toContain("uIsoStep");
     expect(material.fragmentShader).not.toContain("uFilter");
+    // `step` est une fonction native GLSL : la masquer en paramètre casse la compilation sur certains pilotes.
+    expect(material.fragmentShader).toContain("float isoline(float t, float spacing)");
   });
 });

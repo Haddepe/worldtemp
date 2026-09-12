@@ -46,9 +46,9 @@ vec4 catmullRom(sampler2D tex, vec2 uv, vec2 texSize) {
 }
 
 // Isoligne anti-aliasée : 1 sur le trait, 0 ailleurs (spec couches §10). WebGL2 : fwidth natif.
-float isoline(float t, float step) {
-  float f = fract(t / step);
-  float d = min(f, 1.0 - f) * step;
+float isoline(float t, float spacing) {
+  float f = fract(t / spacing);
+  float d = min(f, 1.0 - f) * spacing;
   float w = 1.5 * fwidth(t);
   return 1.0 - smoothstep(0.0, w, d);
 }
