@@ -164,8 +164,15 @@ async function boot(): Promise<void> {
   let activeId: string | null = null;
   let hadManifest = false;
   let active: LoadedLayer | null = null;
+  /** Id dont la texture est actuellement liée à `uLayer` (spec couches §10) — distinct de
+   * `activeId` pendant un chargement : protège cette entrée contre l'éviction du cache. */
+  let activeShownId: string | null = null;
   let updateFailed = false;
-  const failed = new Set<string>();
+  /** Statut d'échec de couche (spec §13), prioritaire sur les autres statuts tant que non nul. */
+  let layerNotice: string | null = null;
+  /** id → generated_at de l'entrée qui a échoué ; un generated_at différent au manifeste
+   * suivant rend la couche retentable (M1). */
+  const failed = new Map<string, string>();
 
   const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {
     const enc = manifest.layers[def.id]!.encoding;
@@ -179,21 +186,29 @@ async function boot(): Promise<void> {
   };
 
   const refreshBanner = () => {
+    if (manifests.manifest === null) {
+      ui.setBanner("GlobeLayers");
+      ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
+      return;
+    }
     const def = activeId ? layerDef(activeId) : undefined;
     if (!def || !active) {
       ui.setBanner("GlobeLayers");
-      ui.setStatus(updateFailed ? "Mise à jour impossible, nouvel essai dans 15 min" : tilesReady ? null : "Détail de la carte indisponible");
+      ui.setStatus(
+        layerNotice ?? (updateFailed ? "Mise à jour impossible, nouvel essai dans 15 min" : tilesReady ? null : "Détail de la carte indisponible"),
+      );
       return;
     }
     ui.setBanner(formatBanner(active.entry, Date.now()));
     ui.setStatus(
-      updateFailed
-        ? "Mise à jour impossible, nouvel essai dans 15 min"
-        : isStale(active.entry, Date.now(), STALE_AFTER_MS)
-          ? "Données anciennes"
-          : tilesReady
-            ? null
-            : "Détail de la carte indisponible",
+      layerNotice ??
+        (updateFailed
+          ? "Mise à jour impossible, nouvel essai dans 15 min"
+          : isStale(active.entry, Date.now(), STALE_AFTER_MS)
+            ? "Données anciennes"
+            : tilesReady
+              ? null
+              : "Détail de la carte indisponible"),
     );
   };
 
@@ -208,6 +223,7 @@ async function boot(): Promise<void> {
     const entry = id && manifest ? manifest.layers[id] : undefined;
     if (!def || !entry || !manifest) {
       active = null;
+      activeShownId = null;
       globe.setLayer(null, 1440, 721);
       globe.setIsoStep(0);
       ui.setLegendVisible(false);
@@ -216,15 +232,15 @@ async function boot(): Promise<void> {
       refreshBanner();
       return;
     }
-    const layerLoader = cache.get(id!);
+    const layerLoader = cache.get(id!, activeShownId);
     try {
       await layerLoader.load(entry, manifest.grid);
     } catch (e) {
       console.warn(`[worldtemp] couche ${id} indisponible :`, e);
-      failed.add(id!);
+      failed.set(id!, entry.generated_at);
       menu.setDisabled(id!, true);
       if (activeId === id) {
-        ui.setStatus("Couche indisponible");
+        layerNotice = "Couche indisponible";
         const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
         await activate(fallback, fromUser);
         refreshBanner();
@@ -237,6 +253,8 @@ async function boot(): Promise<void> {
     const enc = entry.encoding;
     globe.setLut(lutFor(def, manifest));
     globe.setLayer(active.texture, manifest.grid.width, manifest.grid.height);
+    activeShownId = id;
+    layerNotice = null;
     globe.setIsoStep(def.isoStep !== null ? def.isoStep / (enc.max - enc.min) : 0);
     ui.setLegend(def, enc, entry.stats);
     ui.setLegendVisible(true);
@@ -252,10 +270,14 @@ async function boot(): Promise<void> {
       const fresh = await manifests.refresh();
       updateFailed = false;
       if (fresh) {
-        const defs = orderedLayers(LAYERS, fresh).filter((d) => !failed.has(d.id));
+        for (const [id, failedAt] of failed) {
+          const entry = fresh.layers[id];
+          if (entry && entry.generated_at !== failedAt) failed.delete(id); // retentable (M1)
+        }
+        const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
         menu.setLayers(defs);
-        for (const id of failed) menu.setDisabled(id, true);
-        const available = defs.map((d) => d.id);
+        for (const id of failed.keys()) menu.setDisabled(id, true);
+        const available = defs.map((d) => d.id).filter((id) => !failed.has(id));
         const firstLoad = !hadManifest;
         hadManifest = true;
         const target = firstLoad
@@ -271,12 +293,7 @@ async function boot(): Promise<void> {
     } catch (e) {
       console.warn("[worldtemp] manifeste indisponible :", e);
       updateFailed = manifests.manifest !== null;
-      if (!manifests.manifest) {
-        ui.setBanner("GlobeLayers");
-        ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
-      } else {
-        refreshBanner();
-      }
+      refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)
     }
   };
 

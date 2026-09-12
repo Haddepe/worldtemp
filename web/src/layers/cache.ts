@@ -17,14 +17,17 @@ export class LayerCache<T extends { dispose(): void }> {
     return [...this.items.keys()];
   }
 
-  get(id: string): T {
+  /** `pinned` (couche affichée) n'est jamais évincé ; si c'est le seul candidat, la capacité est
+   * temporairement dépassée d'un plutôt que de disposer la texture en cours d'affichage. */
+  get(id: string, pinned: string | null = null): T {
     let it = this.items.get(id);
     if (it) {
       this.items.delete(id); // re-insertion en fin = plus récent
     } else {
       it = this.factory(id);
       while (this.items.size >= this.capacity) {
-        const oldest = this.items.keys().next().value as string;
+        const oldest = [...this.items.keys()].find((k) => k !== pinned);
+        if (oldest === undefined) break; // seul(s) restant(s) : l'id épinglé
         this.items.get(oldest)!.dispose();
         this.items.delete(oldest);
       }

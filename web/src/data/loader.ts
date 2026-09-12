@@ -105,6 +105,9 @@ export class ManifestLoader {
 export class LayerLoader {
   private current: LoadedLayer | null = null;
   private inflight: Promise<LoadedLayer | null> | null = null;
+  /** Posé par `dispose()` : un chargement en vol libère son résultat au lieu de le stocker
+   * (cache LRU §10 — un loader évincé pendant son chargement ne doit pas fuir). */
+  private disposed = false;
 
   constructor(
     readonly id: string,
@@ -128,6 +131,11 @@ export class LayerLoader {
       } catch (e) {
         console.warn(`[worldtemp] lecture des pixels de la couche ${this.id} impossible :`, e);
       }
+      if (this.disposed) {
+        texture.dispose();
+        if (typeof bitmap.close === "function") bitmap.close();
+        return null;
+      }
       this.release();
       this.current = { entry, texture, pixels };
       return this.current;
@@ -148,6 +156,7 @@ export class LayerLoader {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.release();
   }
 }

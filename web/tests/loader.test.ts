@@ -130,4 +130,22 @@ describe("LayerLoader", () => {
     await expect(ll.load(TEMP, GRID)).rejects.toThrowError(TextureError);
     expect(ll.data).toBeNull();
   });
+
+  it("dispose pendant un load en vol libère le résultat au lieu de le stocker (I1)", async () => {
+    const bitmap = fakeBitmap();
+    let resolveFetch!: (b: ImageBitmap) => void;
+    const d: LoaderDeps = {
+      fetchJson: vi.fn(),
+      fetchBitmap: vi.fn(() => new Promise<ImageBitmap>((resolve) => { resolveFetch = resolve; })),
+      bitmapPixels: () => new Uint8ClampedArray(4),
+    };
+    const ll = new LayerLoader("temp", BASE, d);
+    const pending = ll.load(TEMP, GRID);
+    ll.dispose(); // évincé du cache pendant que le PNG est encore en vol
+    resolveFetch(bitmap);
+    const result = await pending;
+    expect(result).toBeNull();
+    expect(ll.data).toBeNull(); // pas d'instance orpheline retenant texture + pixels
+    expect(bitmap.close).toHaveBeenCalled();
+  });
 });

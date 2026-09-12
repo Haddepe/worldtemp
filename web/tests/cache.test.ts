@@ -30,4 +30,24 @@ describe("LayerCache — LRU de capacité 2 (spec couches §10)", () => {
   it("capacité < 1 refusée", () => {
     expect(() => new LayerCache(0, item)).toThrowError();
   });
+
+  it("n'évince jamais l'id épinglé (I1) : passe à l'entrée suivante", () => {
+    const c = new LayerCache(2, item);
+    const temp = c.get("temp"); // temp affichée : épinglée
+    const clouds = c.get("clouds", "temp"); // temp, clouds — plein
+    const rain = c.get("rain", "temp"); // évince clouds (non épinglé), pas temp
+    expect(c.ids()).toEqual(["temp", "rain"]);
+    expect(temp.dispose).not.toHaveBeenCalled();
+    expect(clouds.dispose).toHaveBeenCalledTimes(1);
+    expect(rain.id).toBe("rain");
+  });
+
+  it("seul candidat évincable épinglé : capacité dépassée d'un plutôt que d'évincer", () => {
+    const c = new LayerCache(1, item);
+    const temp = c.get("temp"); // seule entrée, épinglée (couche affichée)
+    const clouds = c.get("clouds", "temp"); // rien à évincer sans toucher temp
+    expect(c.ids()).toEqual(["temp", "clouds"]);
+    expect(temp.dispose).not.toHaveBeenCalled();
+    expect(clouds.id).toBe("clouds");
+  });
 });

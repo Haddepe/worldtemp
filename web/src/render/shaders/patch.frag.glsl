@@ -46,10 +46,12 @@ vec4 catmullRom(sampler2D tex, vec2 uv, vec2 texSize) {
 }
 
 // Isoligne anti-aliasée : 1 sur le trait, 0 ailleurs (spec couches §10). WebGL2 : fwidth natif.
+// `w` est borné à 1e-4 : sur un plateau 8 bits (t constant), fwidth(t) ≈ 0 et
+// smoothstep(0, 0, 0) est indéfini, ce qui assombrit toute la zone plate.
 float isoline(float t, float spacing) {
   float f = fract(t / spacing);
   float d = min(f, 1.0 - f) * spacing;
-  float w = 1.5 * fwidth(t);
+  float w = max(1.5 * fwidth(t), 1e-4);
   return 1.0 - smoothstep(0.0, w, d);
 }
 
@@ -79,7 +81,9 @@ void main() {
     vec4 heat = texture2D(uLut, vec2(t, 0.5));
     vec3 layer = heat.rgb * mix(1.0, tone, land);           // relief conservé sur la couche
     layer *= 0.85 + 0.15 * lambert;
-    if (uIsoStep > 0.0) layer *= 1.0 - 0.45 * isoline(t, uIsoStep);
+    // Décalage d'un quart d'octet (0,12 hPa, invisible) : évite qu'une isobare tombe
+    // exactement sur une valeur d'octet entière, où le plateau 8 bits ferait échouer isoline.
+    if (uIsoStep > 0.0) layer *= 1.0 - 0.45 * isoline(t + 0.25 / 255.0, uIsoStep);
     color = mix(background, layer, heat.a);
     color = mix(color, vec3(1.0), border * 0.7);
   } else {
