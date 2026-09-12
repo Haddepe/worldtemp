@@ -347,7 +347,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
-| 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | revue finale / merge en cours | à compléter au merge | 173 passed / 9 skipped pytest local (Windows) ; 168 vitest (21 fichiers) |
+| 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | revue finale / merge en cours | à compléter au merge | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -389,6 +389,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 34 | **`grib_adapter.py::_message_keys` avale les exceptions eccodes** (mandaté par le plan) | Une clé GRIB manquante ou un message corrompu se traduit en clé absente plutôt qu'en erreur explicite, potentiellement masquant un problème de fichier NOMADS | 🟡 mineur, ouvert |
 | 35 | **Disposition mobile validée à 500 px, pas 400 px** : le pont `mcp__brave-devtools__*` impose une largeur de fenêtre minimale de 500 px (`resize_page(400, …)` retombe à 500) | Le point de rupture CSS (`@media (max-width: 600px)`, `web/src/style.css:158`) rend le comportement à 400 px identique en théorie (pas de rupture intermédiaire), mais non mesuré directement | 🟡 ouvert — à re-tester avec un outillage sans plancher de largeur si disponible |
 | 36 | **Mineurs différés de l'exécution de la spec couches** (liste courte, détail dans le ledger git-ignoré) : `config.RUN_AVAILABILITY_DELAY`/`MAX_CANDIDATES`/`MAX_FORECAST_HOUR` dupliquent `sources.GFS` ; `pressure` sans `stepType` dans `grib_keys` ; `validate_range` non défensive sur NaN (couverte par `validate_grid` en amont) ; `upload_r2` avec liste vide non testé ; casts `as Rgba` (`colormap.ts`) et `as string` (éviction `LayerCache`) ; `lutFor` ré-indexe l'encodage à chaque appel ; `render()` de `layers-menu.ts` sans aucun bouton activé ; `setLegendVisible(false)` ajouté hors brief ; `setActive(id inconnu)` laisse tout le groupe à `tabIndex -1` ; `cursor: not-allowed` redondant sur un bouton déjà `disabled` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec couches | 🟡 ouvert |
+| 37 | **Statut « Couche indisponible » (spec §13) invisible quand le repli réussit** : `activate()` pose `layerNotice` puis appelle le repli, dont le chemin nominal remet `layerNotice` à `null` avant tout `refreshBanner()` ; le message n'apparaît que si aucun repli valide n'existe | L'utilisateur voit le bouton se griser et la vue revenir en arrière sans explication ; trouvé par la revue finale (I3), resté ouvert après la vague de correction unique | 🟡 ouvert — correctif de deux lignes : poser `layerNotice` après le retour du repli, avant le dernier `refreshBanner()` |
 
 ## 9. État actuel & prochaine action
 
@@ -438,12 +439,20 @@ câblage complet dans `main.ts` (`ManifestLoader`, `LayerCache` LRU 2,
   chronométré séparément ; **8** (`gfs/latest.*` schema 1 toujours publié et
   valide) ✅ **vérifié par les tests et le dry-run** (`build_legacy`, ordre
   d'upload testés).
-- **État :** branche `feat/layers` poussée, HEAD `51c5d4a`, CI `test`/`web` vertes
-  (seul `history_check` restait rouge avant cette session, attendu, T16) ; revue
-  finale et merge à suivre. En prod, `layers/latest.json` sera publié au premier
-  run du pipeline après le merge (`gh workflow run pipeline.yml` en
-  `workflow_dispatch`, comme pour la mise en service R2 du 2026-09-02).
-- **Dettes :** n° 30 à 36 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
+- **Revue finale de branche** (modèle le plus capable, `b6db64b..51c5d4a`) : « With fixes » —
+  I1 éviction LRU pouvant disposer la texture *affichée* pendant un chargement (+ loader évincé en
+  vol qui fuit), I2 « Données indisponibles » effacé en ≤ 60 s sans manifeste (fenêtre
+  déploiement → premier run), I3 « Couche indisponible » jamais visible ; mineurs promus M1
+  (`failed` jamais vidé), M2 (isoligne sur octet entier → plateau assombri), M3 (traceback du
+  report chem). Vague de correction unique (`c0e87d9`, `c83de07`) : cache épinglé sur la couche
+  affichée, loader disposé en vol, bandeau sans manifeste, `failed` retentable par `generated_at`,
+  isoligne décalée d'un quart d'octet + `fwidth` borné, `exc_info=True` ; 3 tests ajoutés
+  (**171 vitest**). Re-revue ciblée : I1, I2, M1–M3 réglés ; **I3 reste ouvert** (dette n° 37).
+- **État :** branche `feat/layers` poussée, HEAD `c83de07`, CI `test`/`web` vertes ; merge à
+  suivre. En prod, `layers/latest.json` sera publié au premier run du pipeline après le merge
+  (`gh workflow run pipeline.yml` en `workflow_dispatch`, comme pour la mise en service R2 du
+  2026-09-02).
+- **Dettes :** n° 30 à 37 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
   `gfs/latest.*`, saturation d'encodage pm25/dust, `except Exception` large,
   `_message_keys` avale les exceptions eccodes, validation 400 px non mesurée
   (plancher outil 500 px), mineurs différés.
@@ -818,7 +827,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 168 vitest, bundle gzip 150,70 Ko, validation brave-devtools 9/9, revue finale et merge à suivre)
+**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 ouverte, merge à suivre)
 **Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
