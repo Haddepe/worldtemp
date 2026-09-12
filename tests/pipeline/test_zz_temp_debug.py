@@ -17,8 +17,26 @@ def _grib_stack_available() -> bool:
 
 
 @pytest.mark.skipif(not _grib_stack_available(), reason="eccodes indisponible")
-def test_zz_dump_chem_messages():
-    from pipeline.grib_adapter import list_messages
+def test_zz_dump_chem_units():
+    import eccodes
 
-    msgs = list_messages(CHEM_FIXTURE.read_bytes())
-    pytest.fail("Messages du fichier chem :\n" + "\n".join(map(str, msgs)))
+    from pipeline.grib_adapter import _with_temp_file
+
+    out = []
+
+    def visit(gid):
+        info = {}
+        for key in ("shortName", "aerosolType", "units", "name", "parameterUnits", "cfVarName", "packingType"):
+            try:
+                if eccodes.codes_is_defined(gid, key):
+                    info[key] = eccodes.codes_get(gid, key)
+            except Exception as exc:
+                info[key] = f"ERR:{exc}"
+        vals = eccodes.codes_get_values(gid)
+        info["min"] = float(vals.min())
+        info["max"] = float(vals.max())
+        info["mean"] = float(vals.mean())
+        out.append(info)
+
+    _with_temp_file(CHEM_FIXTURE.read_bytes(), visit)
+    pytest.fail("Unités du fichier chem :\n" + "\n".join(map(str, out)))
