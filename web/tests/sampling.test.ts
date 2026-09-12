@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { heatmapUv, sampleTemperature } from "../src/data/sampling";
+import { decode, type Encoding } from "../src/data/encoding";
+import { heatmapUv, sampleValue } from "../src/data/sampling";
 
 const grid = { width: 1440, height: 721 };
 const EPS = 1e-12;
@@ -36,38 +37,40 @@ function pixels4x3(values: number[][]): Uint8ClampedArray {
   return px;
 }
 const G = { width: 4, height: 3 };
-const E = { min_c: -90, max_c: 60 }; // pas de 150 °C sur 255 niveaux
+const LIN: Encoding = { bits: 8, min: -90, max: 60, scale: "linear" };
+const SQRT: Encoding = { bits: 8, min: 0, max: 50, scale: "sqrt" };
 const px = pixels4x3([
   [0, 51, 102, 153],
   [204, 255, 0, 51],
   [102, 153, 204, 255],
 ]);
-const toC = (v: number) => E.min_c + (v / 255) * (E.max_c - E.min_c);
+const lin = (t: number) => decode(t, LIN);
 
-describe("sampleTemperature — spec navigation §5", () => {
-  it("centre de cellule exact : lon -180, lat 90 → pixel (0,0) ; lon -90, lat 0 → (1,1)", () => {
-    expect(sampleTemperature(px, G, E, -180, 90)).toBeCloseTo(toC(0), 9);
-    expect(sampleTemperature(px, G, E, -90, 0)).toBeCloseTo(toC(255), 9);
+describe("sampleValue — spec navigation §5 généralisée (spec couches §11)", () => {
+  it("centre de cellule exact", () => {
+    expect(sampleValue(px, G, LIN, -180, 90)).toBeCloseTo(lin(0), 9);
+    expect(sampleValue(px, G, LIN, -90, 0)).toBeCloseTo(lin(255), 9);
   });
-  it("ligne 0 = nord (lat 90), dernière ligne = sud", () => {
-    expect(sampleTemperature(px, G, E, 0, 90)).toBeCloseTo(toC(102), 9);
-    expect(sampleTemperature(px, G, E, 0, -90)).toBeCloseTo(toC(204), 9);
+  it("ligne 0 = nord, dernière ligne = sud", () => {
+    expect(sampleValue(px, G, LIN, 0, 90)).toBeCloseTo(lin(102), 9);
+    expect(sampleValue(px, G, LIN, 0, -90)).toBeCloseTo(lin(204), 9);
   });
-  it("milieu de deux cellules = moyenne", () => {
-    expect(sampleTemperature(px, G, E, -135, 90)).toBeCloseTo(toC(25.5), 9);
-    expect(sampleTemperature(px, G, E, -180, 45)).toBeCloseTo(toC(102), 9);
+  it("milieu de deux cellules = moyenne des octets, puis décodage", () => {
+    expect(sampleValue(px, G, LIN, -135, 90)).toBeCloseTo(lin(25.5), 9);
+    expect(sampleValue(px, G, LIN, -180, 45)).toBeCloseTo(lin(102), 9);
   });
-  it("bouclage : lon 135 interpole la dernière colonne avec la première", () => {
-    expect(sampleTemperature(px, G, E, 135, 90)).toBeCloseTo(toC((153 + 0) / 2), 9);
-    expect(sampleTemperature(px, G, E, 180, 90)).toBeCloseTo(toC(0), 9);
-    expect(sampleTemperature(px, G, E, -270, 90)).toBeCloseTo(toC(153), 9); // −270 ≡ 90 → colonne 3
+  it("bouclage en longitude", () => {
+    expect(sampleValue(px, G, LIN, 135, 90)).toBeCloseTo(lin(76.5), 9);
+    expect(sampleValue(px, G, LIN, 180, 90)).toBeCloseTo(lin(0), 9);
+    expect(sampleValue(px, G, LIN, -270, 90)).toBeCloseTo(lin(153), 9);
   });
-  it("latitudes hors bornes sont bornées aux pôles", () => {
-    expect(sampleTemperature(px, G, E, -180, 95)).toBeCloseTo(toC(0), 9);
-    expect(sampleTemperature(px, G, E, -180, -95)).toBeCloseTo(toC(102), 9);
+  it("latitudes hors bornes bornées aux pôles", () => {
+    expect(sampleValue(px, G, LIN, -180, 95)).toBeCloseTo(lin(0), 9);
+    expect(sampleValue(px, G, LIN, -180, -95)).toBeCloseTo(lin(102), 9);
   });
-  it("encodage : 0 → min_c, 255 → max_c", () => {
-    expect(sampleTemperature(px, G, E, -180, 90)).toBeCloseTo(-90, 9);
-    expect(sampleTemperature(px, G, E, -90, 0)).toBeCloseTo(60, 9);
+  it("racine : l'interpolation se fait sur l'octet, le décodage ensuite", () => {
+    // milieu de 0 et 51 → octet 25,5 → 50·(25,5/255)² = 0,5 mm/h
+    expect(sampleValue(px, G, SQRT, -135, 90)).toBeCloseTo(50 * (25.5 / 255) ** 2, 9);
+    expect(sampleValue(px, G, SQRT, -90, 0)).toBeCloseTo(50, 9);
   });
 });

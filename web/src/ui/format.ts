@@ -1,4 +1,6 @@
-import type { LatestMetadata } from "../data/metadata";
+import { encode, type Encoding } from "../data/encoding";
+import type { LayerEntry } from "../data/manifest";
+import type { LayerDef } from "../layers/registry";
 
 function hhmm(isoUtc: string, timeZone: string): string {
   return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(
@@ -15,32 +17,42 @@ export function formatAgo(isoUtc: string, nowMs: number): string {
   return `il y a ${h} h ${String(m).padStart(2, "0")}`;
 }
 
-/** Bandeau (spec §5). `locale`/`timeZone` injectables pour les tests. */
+/** Libellés des modèles du manifeste (champ `model`) ; repli sur l'id. */
+export const SOURCE_LABELS: Record<string, string> = {
+  gfs_0p25: "NOAA GFS 0,25°",
+  gefs_chem_0p25: "NOAA GEFS-Aerosols 0,25°",
+};
+
+export function sourceLabel(model: string): string {
+  return SOURCE_LABELS[model] ?? model;
+}
+
+/** Bandeau (spec couches §11) : source de la couche active, son run, sa validité, sa fraîcheur. */
 export function formatBanner(
-  meta: LatestMetadata,
+  _def: LayerDef,
+  entry: LayerEntry,
   nowMs: number,
-  _locale: string = navigator.language,
   timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): string {
-  const run = hhmm(meta.run, "UTC");
-  const validUtc = hhmm(meta.valid_time_utc, "UTC");
-  const validLocal = hhmm(meta.valid_time_utc, timeZone);
+  const run = hhmm(entry.run, "UTC");
+  const validUtc = hhmm(entry.valid_time_utc, "UTC");
+  const validLocal = hhmm(entry.valid_time_utc, timeZone);
   const local = validLocal === validUtc ? "" : ` (${validLocal} locale)`;
-  return `NOAA GFS 0,25° · run ${run} UTC · valide ${validUtc} UTC${local} · ${formatAgo(meta.generated_at, nowMs)}`;
+  return `${sourceLabel(entry.model)} · run ${run} UTC · valide ${validUtc} UTC${local} · ${formatAgo(entry.generated_at, nowMs)}`;
 }
 
-/** Graduations de la légende : tous les `step` °C dans [-40, 40], en % de [minC, maxC]. */
-export function legendTicks(minC: number, maxC: number, step = 10): { c: number; pct: number }[] {
-  const out: { c: number; pct: number }[] = [];
-  for (let c = -40; c <= 40; c += step) {
-    out.push({ c, pct: ((c - minC) / (maxC - minC)) * 100 });
-  }
-  return out;
+/** Libellé court d'une graduation : entier si entier, sinon une décimale avec virgule. */
+function tickLabel(v: number): string {
+  return (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace("-", "−").replace(".", ",");
 }
 
-/** « 23,4 °C » (spec navigation §6) : une décimale, virgule, signe « − » U+2212, jamais « −0,0 ». */
-export function formatTemperature(celsius: number): string {
-  let s = celsius.toFixed(1);
-  if (s === "-0.0") s = "0.0";
-  return `${s.replace("-", "−").replace(".", ",")} °C`;
+/** Graduations de la légende : valeurs du registre, positions encode(v)/255 (spec couches §11). */
+export function legendTicks(def: LayerDef, enc: Encoding): { v: number; label: string; pct: number }[] {
+  return def.ticks.map((v) => ({ v, label: tickLabel(v), pct: (encode(v, enc) / 255) * 100 }));
+}
+
+/** Texte du tooltip : « — » sous le seuil de la couche, sinon son format. */
+export function formatReading(def: LayerDef, v: number): string {
+  if (def.tooltipMin !== null && v < def.tooltipMin) return "—";
+  return def.format(v);
 }
