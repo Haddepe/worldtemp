@@ -1,54 +1,109 @@
-"""Orchestration (spec §3, §6). Les effets sont injectés : `run` se teste sans
-réseau ni cfgrib. Règle : échouer bruyamment ou publier une texture valide,
-jamais entre les deux."""
+"""Orchestration (spec couches §8). Les effets sont injectés : `run` se teste sans
+réseau ni eccodes. Règle : la source primaire échoue bruyamment ou publie valide ;
+la source secondaire en échec reporte ses couches précédentes."""
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from pipeline import config, nomads, publish, texture
 from pipeline.grib_adapter import Field
-from pipeline.metadata import build_metadata, iso_utc, to_json
-from pipeline.run_selection import Candidate, candidates
+from pipeline.layers import LAYERS, LayerSpec, by_source
+from pipeline.metadata import build_legacy, build_manifest, iso_utc, layer_entry, to_json
+from pipeline.publish import Object
+from pipeline.run_selection import Candidate, candidates_for
+from pipeline.sources import SOURCES, SourceSpec
 
 log = logging.getLogger("pipeline")
 
 EXIT_OK = 0
-EXIT_SOURCE = 2    # aucun candidat téléchargeable
-EXIT_DATA = 3      # décodage ou validation en échec — bug ou format changé
+EXIT_SOURCE = 2    # source primaire : aucun candidat téléchargeable
+EXIT_DATA = 3      # source primaire : décodage ou validation en échec
 EXIT_PUBLISH = 4   # upload R2 en échec
 
 Download = Callable[[str], bytes]
-Decode = Callable[[bytes], Field]
-Upload = Callable[[bytes, bytes], None]
+Decode = Callable[[bytes, Sequence[LayerSpec]], dict[str, Field]]
+Upload = Callable[[Sequence[Object]], None]
 ReadCurrent = Callable[[], "dict | None"]
 
 
-def _fetch_first_available(cands: list[Candidate], download: Download, sleep: Callable[[float], None]) -> tuple[Candidate, bytes] | None:
+class SourceFailure(Exception):
+    def __init__(self, exit_code: int, message: str):
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+@dataclass
+class SourceOutput:
+    entries: dict[str, dict] = field(default_factory=dict)   # id → entrée manifeste
+    pngs: dict[str, bytes] = field(default_factory=dict)     # id → PNG neuf (vide si repris)
+    fresh: bool = False
+
+
+def _fetch_first_available(
+    source: SourceSpec, specs: Sequence[LayerSpec], cands: list[Candidate], download: Download, sleep: Callable[[float], None],
+) -> tuple[Candidate, bytes] | None:
     for c in cands:
-        url = nomads.build_url(c)
+        url = nomads.build_url(source, c, specs)
         for attempt in (1, 2):
             try:
                 data = download(url)
             except nomads.NotFound:
-                log.info("absent : run %s f%03d", iso_utc(c.run), c.forecast_hour)
+                log.info("%s absent : run %s f%03d", source.id, iso_utc(c.run), c.forecast_hour)
                 break
             except nomads.TransientError as exc:
-                log.warning("erreur transitoire (%s) : run %s f%03d, tentative %d", exc, iso_utc(c.run), c.forecast_hour, attempt)
+                log.warning("%s erreur transitoire (%s) : run %s f%03d, tentative %d", source.id, exc, iso_utc(c.run), c.forecast_hour, attempt)
                 if attempt == 1:
                     sleep(config.RETRY_DELAY_S)
                 continue
-            log.info("téléchargé : run %s f%03d, %d octets", iso_utc(c.run), c.forecast_hour, len(data))
+            log.info("%s téléchargé : run %s f%03d, %d octets", source.id, iso_utc(c.run), c.forecast_hour, len(data))
             return c, data
     return None
 
 
-def _already_published(current: dict | None, c: Candidate) -> bool:
-    return bool(current) and current.get("run") == iso_utc(c.run) and current.get("forecast_hour") == c.forecast_hour
+def _current_entries(current: Mapping | None, ids: Sequence[str]) -> dict[str, dict]:
+    layers = (current or {}).get("layers") or {}
+    return {i: layers[i] for i in ids if isinstance(layers.get(i), dict)}
+
+
+def _up_to_date(entries: Mapping[str, dict], ids: Sequence[str], c: Candidate) -> bool:
+    return all(
+        i in entries and entries[i].get("run") == iso_utc(c.run) and entries[i].get("forecast_hour") == c.forecast_hour
+        for i in ids
+    )
+
+
+def _process_source(
+    source: SourceSpec, specs: Sequence[LayerSpec], now: datetime, current: Mapping | None,
+    download: Download, decode: Decode, sleep: Callable[[float], None],
+) -> SourceOutput:
+    ids = [s.id for s in specs]
+    cands = candidates_for(source, now)
+    if not cands:
+        raise SourceFailure(EXIT_SOURCE, f"{source.id} : aucun candidat pour {iso_utc(now)}")
+    reused = _current_entries(current, ids)
+    if _up_to_date(reused, ids, cands[0]):
+        log.info("%s déjà publié : run %s f%03d", source.id, iso_utc(cands[0].run), cands[0].forecast_hour)
+        return SourceOutput(reused, {}, False)
+    got = _fetch_first_available(source, specs, cands, download, sleep)
+    if got is None:
+        raise SourceFailure(EXIT_SOURCE, f"{source.id} : source indisponible, {len(cands)} candidats épuisés")
+    cand, data = got
+    out = SourceOutput(fresh=True)
+    try:
+        fields = decode(data, specs)
+        for spec in specs:
+            converted, pixels = texture.layer_pixels(fields[spec.id], spec)
+            out.entries[spec.id] = layer_entry(spec, source, cand, converted, now)
+            out.pngs[spec.id] = texture.encode_png(pixels)
+    except Exception as exc:
+        raise SourceFailure(EXIT_DATA, f"{source.id} : données invalides : {exc}") from exc
+    return out
 
 
 def run(
@@ -61,45 +116,48 @@ def run(
     out_dir: Path,
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:
-    cands = candidates(now)
-    if not cands:
-        log.error("aucun candidat pour %s", iso_utc(now))
-        return EXIT_SOURCE
+    current = read_current()
+    outputs: dict[str, SourceOutput] = {}
+    for source in SOURCES.values():  # primaire d'abord
+        specs = by_source(source.id)
+        try:
+            outputs[source.id] = _process_source(source, specs, now, current, download, decode, sleep)
+        except SourceFailure as exc:
+            if source.primary:
+                log.error("%s", exc)
+                return exc.exit_code
+            log.warning("%s — couches %s reportées depuis le manifeste courant", exc, [s.id for s in specs])
+            outputs[source.id] = SourceOutput(_current_entries(current, [s.id for s in specs]), {}, False)
 
-    if _already_published(read_current(), cands[0]):
-        log.info("déjà publié : run %s f%03d", iso_utc(cands[0].run), cands[0].forecast_hour)
+    if not any(o.fresh for o in outputs.values()):
+        log.info("rien de neuf : manifeste inchangé")
         return EXIT_OK
 
-    got = _fetch_first_available(cands, download, sleep)
-    if got is None:
-        log.error("source indisponible : %d candidats épuisés", len(cands))
-        return EXIT_SOURCE
-    cand, data = got
+    entries: dict[str, dict] = {}
+    pngs: dict[str, bytes] = {}
+    for o in outputs.values():
+        entries.update(o.entries)
+        pngs.update(o.pngs)
 
-    try:
-        field = decode(data)
-        texture.validate(field)
-    except Exception as exc:
-        log.error("données invalides : %s", exc)
-        return EXIT_DATA
+    objects = [Object(f"{config.LAYERS_PREFIX}/{s.id}.png", pngs[s.id], "image/png") for s in LAYERS if s.id in pngs]
+    if "temp" in pngs:
+        objects.append(Object(config.LEGACY_PNG_KEY, pngs["temp"], "image/png"))
+        objects.append(Object(config.LEGACY_JSON_KEY, to_json(build_legacy(entries["temp"])), "application/json"))
+    objects.append(Object(config.MANIFEST_KEY, to_json(build_manifest(entries, now)), "application/json"))
 
-    celsius = texture.kelvin_to_celsius(texture.reorient(field.values))
-    png = texture.encode_png(texture.quantize(celsius))
-    meta_json = to_json(build_metadata(cand, celsius, generated_at=now))
-
-    publish.write_atomic(out_dir / "latest.png", png)
-    publish.write_atomic(out_dir / "latest.json", meta_json)
-    log.info("écrit : %s (%d octets PNG)", out_dir, len(png))
+    for o in objects:
+        publish.write_atomic(out_dir / o.key, o.body)
+    log.info("écrit : %s (%d objets, %d couches)", out_dir, len(objects), len(entries))
 
     if upload is None:
         log.info("dry-run : pas d'upload")
         return EXIT_OK
     try:
-        upload(png, meta_json)
+        upload(objects)
     except publish.PublishError as exc:
         log.error("publication en échec : %s", exc)
         return EXIT_PUBLISH
-    log.info("publié : run %s f%03d, valide %s", iso_utc(cand.run), cand.forecast_hour, iso_utc(cand.valid_time))
+    log.info("publié : %s", ", ".join(f"{i} {e['run']} f{e['forecast_hour']:03d}" for i, e in entries.items()))
     return EXIT_OK
 
 
@@ -108,9 +166,9 @@ def main(argv: list[str] | None = None) -> int:
     import sys
     from datetime import timezone
 
-    from pipeline.grib_adapter import decode_grib
+    from pipeline.grib_adapter import decode_fields
 
-    parser = argparse.ArgumentParser(prog="pipeline", description="GFS TMP 2 m → latest.png + latest.json")
+    parser = argparse.ArgumentParser(prog="pipeline", description="GFS + GEFS-Aerosols → layers/*.png + layers/latest.json")
     parser.add_argument("--dry-run", action="store_true", help="générer out/ sans publier sur R2")
     parser.add_argument("--out", type=Path, default=Path("out"), help="dossier de sortie (défaut : out)")
     args = parser.parse_args(argv)
@@ -124,8 +182,8 @@ def main(argv: list[str] | None = None) -> int:
     return run(
         datetime.now(timezone.utc),
         download=nomads.download,
-        decode=decode_grib,
-        upload=(lambda png, js: publish.upload_r2(cfg, png, js)) if cfg else None,
+        decode=decode_fields,
+        upload=(lambda objects: publish.upload_r2(cfg, objects)) if cfg else None,
         read_current=(lambda: publish.read_current(cfg)) if cfg else (lambda: None),
         out_dir=args.out,
     )
