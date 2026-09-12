@@ -87,12 +87,16 @@ LAYERS: tuple[LayerSpec, ...] = (
     # Unité eccodes réelle du fichier NOMADS (clé `units`) : "(10**-6 g) m**-3", donc
     # déjà en µg/m³ — pas de conversion kg/m³→µg/m³ (l'hypothèse initiale, non vérifiée,
     # était fausse ; corrigée par le test de décodage réel T4, cf. plausible ci-dessous).
+    # Bornes plausibles élargies (T7, calibration) : un run réel a atteint 3 187 µg/m³ sur
+    # pm25, au-delà des 2000 d'origine, ce qui reportait systématiquement les couches chem
+    # en production. (0, 20 000)/(0, 50 000) restent un garde-fou d'ordre de grandeur, pas
+    # une plage d'affichage : l'encodage 8 bits (min/max ci-dessous) ne change pas.
     LayerSpec("pm25", "gefs_chem", "PMTF_surface_total", "µg/m³", "PMTF", "surface",
               _keys(shortName="pmtf", typeOfLevel="surface", aerosolType=AEROSOL_TOTAL),
-              _identity, (0.0, 2000.0), Encoding(0, 500, "sqrt")),
+              _identity, (0.0, 20_000.0), Encoding(0, 500, "sqrt")),
     LayerSpec("dust", "gefs_chem", "PMTC_surface_dust", "µg/m³", "PMTC", "surface",
               _keys(shortName="pmtc", typeOfLevel="surface", aerosolType=AEROSOL_DUST),
-              _identity, (0.0, 5000.0), Encoding(0, 2000, "sqrt")),
+              _identity, (0.0, 50_000.0), Encoding(0, 2000, "sqrt")),
 )
 
 _BY_ID = {s.id: s for s in LAYERS}
