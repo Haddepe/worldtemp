@@ -460,10 +460,12 @@ câblage complet dans `main.ts` (`ManifestLoader`, `LayerCache` LRU 2,
   l'encodage 1 060 → saturé), 7 PNG en 200, legacy `gfs/latest.json` en 200, site
   « GlobeLayers — météo mondiale en 3D » en 200 avec le bundle pointant sur
   `data.globelayers.com/layers`.
-- **Dettes :** n° 30 à 37 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
+- **Dettes :** n° 30 à 36 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
   `gfs/latest.*`, saturation d'encodage pm25/dust, `except Exception` large,
   `_message_keys` avale les exceptions eccodes, validation 400 px non mesurée
-  (plancher outil 500 px), mineurs différés.
+  (plancher outil 500 px), mineurs différés. Dette n° 37 fermée avant merge.
+- **Session arrêtée le 2026-09-12 au soir.** Branche `feat/layers` supprimée en local et sur
+  `origin` après merge ; espace de travail du plan supprimé ; arbre propre sur `master`.
 - **Prochaine action :** brainstorming
   du **lot B2** (vent animé, champ vectoriel U/V, particules).
 
@@ -835,7 +837,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
+**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée, session arrêtée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
 **Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
