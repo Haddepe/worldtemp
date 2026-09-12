@@ -77,7 +77,7 @@ LAYERS: tuple[LayerSpec, ...] = (
               _keys(shortName="2t", typeOfLevel="heightAboveGround", level=2),
               _kelvin_to_celsius, (180.0, 340.0), Encoding(-90, 60, "linear")),
     LayerSpec("clouds", "gfs", "TCDC_entire_atmosphere", "%", "TCDC", "entire_atmosphere",
-              _keys(shortName="tcc", typeOfLevel="entireAtmosphere", stepType="instant"),
+              _keys(shortName="tcc", typeOfLevel="atmosphere", stepType="instant"),
               _identity, (0.0, 100.0), Encoding(0, 100, "linear")),
     LayerSpec("rain", "gfs", "PRATE_surface", "mm/h", "PRATE", "surface",
               _keys(shortName="prate", typeOfLevel="surface", stepType="instant"),
