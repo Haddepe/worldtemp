@@ -1,86 +1,61 @@
 import * as THREE from "three";
-
-export interface Stop {
-  /** Température en °C. */
-  c: number;
-  /** Couleur sRGB 0–255. */
-  rgb: [number, number, number];
-}
-
-/**
- * Palette (spec §4 « Colormap ») : arrêts densifiés entre -45 et +45 °C, là où
- * vivent 99 % des pixels ; teintes extrêmes réservées aux queues.
- * SEULE source de vérité : la LUT GPU et le gradient CSS de la légende en
- * dérivent tous deux.
- */
-export const STOPS: readonly Stop[] = [
-  { c: -90, rgb: [30, 0, 50] }, // violet quasi-noir
-  { c: -45, rgb: [10, 20, 110] }, // bleu foncé
-  { c: -30, rgb: [20, 60, 200] }, // bleu
-  { c: -15, rgb: [40, 190, 230] }, // cyan
-  { c: 0, rgb: [40, 170, 70] }, // vert
-  { c: 10, rgb: [240, 230, 40] }, // jaune
-  { c: 20, rgb: [250, 150, 20] }, // orange
-  { c: 30, rgb: [220, 30, 20] }, // rouge
-  { c: 45, rgb: [120, 0, 10] }, // rouge foncé
-  { c: 60, rgb: [90, 0, 70] }, // magenta foncé
-];
+import { decode, encode, type Encoding } from "../data/encoding";
+import type { LayerDef, Rgba, Stop } from "../layers/registry";
 
 export const LUT_SIZE = 256;
 
-/** Couleur interpolée linéairement (sRGB) à la température `c`, bornée aux arrêts extrêmes. */
-export function colorAt(stops: readonly Stop[], c: number): [number, number, number] {
+/** Couleur RGBA interpolée linéairement (sRGB) à la valeur `v`, bornée aux arrêts extrêmes. */
+export function colorAt(stops: readonly Stop[], v: number): Rgba {
   const first = stops[0];
   const last = stops[stops.length - 1];
   if (!first || !last) throw new Error("palette vide");
-  if (c <= first.c) return [...first.rgb];
-  if (c >= last.c) return [...last.rgb];
+  if (v <= first.v) return [...first.rgba];
+  if (v >= last.v) return [...last.rgba];
   for (let i = 1; i < stops.length; i++) {
     const a = stops[i - 1]!;
     const b = stops[i]!;
-    if (c <= b.c) {
-      const t = (c - a.c) / (b.c - a.c);
-      return [
-        a.rgb[0] + (b.rgb[0] - a.rgb[0]) * t,
-        a.rgb[1] + (b.rgb[1] - a.rgb[1]) * t,
-        a.rgb[2] + (b.rgb[2] - a.rgb[2]) * t,
-      ];
+    if (v <= b.v) {
+      const t = (v - a.v) / (b.v - a.v);
+      return [0, 1, 2, 3].map((k) => a.rgba[k]! + (b.rgba[k]! - a.rgba[k]!) * t) as Rgba;
     }
   }
-  return [...last.rgb];
+  return [...last.rgba];
 }
 
 /**
- * LUT 256 × 1 RGBA : le texel i représente la température
- * minC + i / 255 · (maxC − minC), soit exactement le décodage du PNG 8 bits.
+ * LUT 256 × 1 RGBA : le texel i représente la valeur decode(i) — exactement le
+ * décodage du PNG 8 bits, linéaire ou racine. Le shader indexe par l'octet brut.
  */
-export function buildLut(stops: readonly Stop[], minC: number, maxC: number): Uint8Array {
+export function buildLut(def: LayerDef, enc: Encoding): Uint8Array {
   const out = new Uint8Array(LUT_SIZE * 4);
   for (let i = 0; i < LUT_SIZE; i++) {
-    const c = minC + (i / (LUT_SIZE - 1)) * (maxC - minC);
-    const [r, g, b] = colorAt(stops, c);
+    const [r, g, b, a] = colorAt(def.stops, decode(i, enc));
     out[i * 4] = Math.round(r);
     out[i * 4 + 1] = Math.round(g);
     out[i * 4 + 2] = Math.round(b);
-    out[i * 4 + 3] = 255;
+    out[i * 4 + 3] = Math.round(a);
   }
   return out;
 }
 
-/** Gradient CSS de la légende, construit depuis les mêmes arrêts. */
-export function legendGradientCss(stops: readonly Stop[], minC: number, maxC: number): string {
-  const parts = stops.map((s) => {
-    const pct = ((s.c - minC) / (maxC - minC)) * 100;
-    const p = Number.isInteger(pct) ? String(pct) : pct.toFixed(2);
-    return `rgb(${s.rgb.join(", ")}) ${p}%`;
+function pct(v: number, enc: Encoding): string {
+  const p = (encode(v, enc) / 255) * 100;
+  return Number.isInteger(p) ? String(p) : p.toFixed(2).replace(/\.?0+$/, "");
+}
+
+/** Gradient CSS de la légende, mêmes arrêts, positions encode(v)/255 (non uniformes en racine). */
+export function legendGradientCss(def: LayerDef, enc: Encoding): string {
+  const parts = def.stops.map((st) => {
+    const [r, g, b, a] = st.rgba;
+    const alpha = Number((a / 255).toFixed(3));
+    return `rgba(${r}, ${g}, ${b}, ${alpha}) ${pct(st.v, enc)}%`;
   });
   return `linear-gradient(to right, ${parts.join(", ")})`;
 }
 
 /**
  * Texture GPU de la LUT. `SRGBColorSpace` : les octets sont du sRGB, le GPU les
- * décode en linéaire à l'échantillonnage, ce qui rend le mix avec Blue Marble
- * (elle aussi sRGB décodée) cohérent avant la conversion de sortie.
+ * décode en linéaire à l'échantillonnage, cohérent avec les tuiles satellite.
  */
 export function createLutTexture(lut: Uint8Array): THREE.DataTexture {
   const tex = new THREE.DataTexture(lut, LUT_SIZE, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
