@@ -240,9 +240,9 @@ async function boot(): Promise<void> {
       failed.set(id!, entry.generated_at);
       menu.setDisabled(id!, true);
       if (activeId === id) {
-        layerNotice = "Couche indisponible";
         const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
         await activate(fallback, fromUser);
+        layerNotice = "Couche indisponible";
         refreshBanner();
       }
       return;
