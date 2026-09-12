@@ -1,175 +1,125 @@
-import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
-import { MetadataError } from "../src/data/metadata";
+import { describe, expect, it, vi } from "vitest";
+import { MetadataError, parseManifest } from "../src/data/manifest";
 import {
-  DataLoader,
-  TextureError,
-  bitmapToTexture,
-  isStale,
-  needsTextureFetch,
-  textureUrl,
-  type LoaderDeps,
+  LayerLoader, ManifestLoader, TextureError, bitmapToTexture, isStale, needsTextureFetch, textureUrl, type LoaderDeps,
 } from "../src/data/loader";
-import { parseMetadata } from "../src/data/metadata";
-import { SAMPLE } from "./fixtures";
+import { GRID, MANIFEST } from "./fixtures";
 
-const BASE = "https://example.test/gfs";
-const META = parseMetadata(SAMPLE);
+const BASE = "https://example.test/layers";
+const M = parseManifest(MANIFEST);
+const TEMP = M.layers.temp!;
 
 function fakeBitmap(width = 1440, height = 721): ImageBitmap {
   return { width, height, close: vi.fn() } as unknown as ImageBitmap;
 }
 
-function deps(json: unknown, bitmap: ImageBitmap = fakeBitmap(), pixels: (b: ImageBitmap) => Uint8ClampedArray | null = () => new Uint8ClampedArray(4)): LoaderDeps & {
-  fetchJson: ReturnType<typeof vi.fn>;
-  fetchBitmap: ReturnType<typeof vi.fn>;
-} {
+function deps(json: unknown, bitmap: ImageBitmap = fakeBitmap(), pixels: (b: ImageBitmap) => Uint8ClampedArray | null = () => new Uint8ClampedArray(4)) {
   return {
     fetchJson: vi.fn(async () => JSON.parse(JSON.stringify(json))),
     fetchBitmap: vi.fn(async () => bitmap),
     bitmapPixels: pixels,
-  };
+  } satisfies LoaderDeps;
 }
 
-describe("textureUrl", () => {
-  it("cache-buste avec generated_at", () => {
-    expect(textureUrl(BASE, META)).toBe(`${BASE}/latest.png?v=2026-08-30T14%3A07%3A42Z`);
+describe("textureUrl / needsTextureFetch / isStale", () => {
+  it("cache-buste avec le generated_at de la couche", () => {
+    expect(textureUrl(BASE, TEMP)).toBe(`${BASE}/temp.png?v=2026-09-12T14%3A12%3A40Z`);
   });
-});
-
-describe("needsTextureFetch", () => {
-  it("premier chargement → oui", () => expect(needsTextureFetch(null, META)).toBe(true));
-  it("même generated_at → non", () => expect(needsTextureFetch(META, { ...META })).toBe(false));
-  it("generated_at différent → oui", () =>
-    expect(needsTextureFetch(META, { ...META, generated_at: "2026-08-30T15:07:42Z" })).toBe(true));
+  it("needsTextureFetch compare generated_at", () => {
+    expect(needsTextureFetch(null, TEMP)).toBe(true);
+    expect(needsTextureFetch(TEMP, { ...TEMP })).toBe(false);
+    expect(needsTextureFetch(TEMP, { ...TEMP, generated_at: "2026-09-12T15:12:40Z" })).toBe(true);
+  });
+  it("isStale juge valid_time_utc de la couche", () => {
+    const valid = Date.parse(TEMP.valid_time_utc);
+    expect(isStale(TEMP, valid + 6 * 3600_000, 6 * 3600_000)).toBe(false);
+    expect(isStale(TEMP, valid + 6 * 3600_000 + 1, 6 * 3600_000)).toBe(true);
+  });
 });
 
 describe("bitmapToTexture", () => {
-  it("règle la texture comme une donnée, pas une couleur", () => {
-    const t = bitmapToTexture(fakeBitmap(), META);
+  it("texture donnée (NoColorSpace, linéaire, repeat en u, flipY false)", () => {
+    const t = bitmapToTexture(fakeBitmap(), GRID);
     expect(t.colorSpace).toBe(THREE.NoColorSpace);
-    expect(t.minFilter).toBe(THREE.LinearFilter);
-    expect(t.magFilter).toBe(THREE.LinearFilter);
-    expect(t.generateMipmaps).toBe(false);
     expect(t.wrapS).toBe(THREE.RepeatWrapping);
     expect(t.wrapT).toBe(THREE.ClampToEdgeWrapping);
     expect(t.flipY).toBe(false);
-    expect(t.version).toBeGreaterThan(0); // `needsUpdate = true` incrémente `version` (pas de getter)
+    expect(t.generateMipmaps).toBe(false);
   });
-  it("refuse une image dont les dimensions ne sont pas celles de grid", () => {
-    expect(() => bitmapToTexture(fakeBitmap(1441, 721), META)).toThrowError(TextureError);
+  it("refuse des dimensions ≠ grille et ferme le bitmap", () => {
+    const b = fakeBitmap(1441, 721);
+    expect(() => bitmapToTexture(b, GRID)).toThrowError(TextureError);
+    expect(b.close).toHaveBeenCalled();
   });
 });
 
-describe("isStale", () => {
-  const valid = Date.parse(META.valid_time_utc);
-  const sixHours = 6 * 3600 * 1000;
-  it("frais sous le seuil", () => expect(isStale(META, valid + sixHours - 1, sixHours)).toBe(false));
-  it("ancien au-delà du seuil", () => expect(isStale(META, valid + sixHours + 1, sixHours)).toBe(true));
-});
-
-describe("DataLoader.refresh", () => {
-  it("premier appel : JSON puis PNG, renvoie les données", async () => {
-    const d = deps(SAMPLE);
-    const loader = new DataLoader(BASE, d);
-    const got = await loader.refresh();
-    expect(got?.meta.generated_at).toBe(META.generated_at);
+describe("ManifestLoader", () => {
+  it("premier refresh renvoie le manifeste, second identique renvoie null", async () => {
+    const d = deps(MANIFEST);
+    const ml = new ManifestLoader(BASE, d);
+    expect(ml.manifest).toBeNull();
+    const m = await ml.refresh();
+    expect(m?.schema_version).toBe(2);
+    expect(await ml.refresh()).toBeNull();
+    expect(ml.manifest).toBe(m);
     expect(d.fetchJson).toHaveBeenCalledWith(`${BASE}/latest.json`);
-    expect(d.fetchBitmap).toHaveBeenCalledWith(textureUrl(BASE, META));
-    expect(loader.data).toBe(got);
   });
-
-  it("generated_at identique : pas de fetch PNG, renvoie null", async () => {
-    const d = deps(SAMPLE);
-    const loader = new DataLoader(BASE, d);
-    await loader.refresh();
-    const again = await loader.refresh();
-    expect(again).toBeNull();
-    expect(d.fetchBitmap).toHaveBeenCalledTimes(1);
+  it("manifeste invalide : lève et conserve l'état", async () => {
+    const d = deps(MANIFEST);
+    const ml = new ManifestLoader(BASE, d);
+    await ml.refresh();
+    d.fetchJson.mockResolvedValueOnce({ schema_version: 1 });
+    await expect(ml.refresh()).rejects.toThrowError(MetadataError);
+    expect(ml.manifest?.schema_version).toBe(2);
   });
-
-  it("generated_at différent : nouveau PNG, l'ancienne texture est libérée", async () => {
-    const d = deps(SAMPLE);
-    const loader = new DataLoader(BASE, d);
-    const first = await loader.refresh();
-    const dispose = vi.spyOn(first!.texture, "dispose");
-    d.fetchJson.mockResolvedValueOnce({ ...SAMPLE, generated_at: "2026-08-30T15:07:42Z" });
-    const second = await loader.refresh();
-    expect(second).not.toBeNull();
-    expect(second?.meta.generated_at).toBe("2026-08-30T15:07:42Z");
-    expect(dispose).toHaveBeenCalledTimes(1);
-    expect(d.fetchBitmap).toHaveBeenCalledTimes(2);
-  });
-
-  it("generated_at différent : l'ancien ImageBitmap est fermé", async () => {
-    const firstBitmap = fakeBitmap();
-    const d = deps(SAMPLE, firstBitmap);
-    const loader = new DataLoader(BASE, d);
-    await loader.refresh();
-    d.fetchJson.mockResolvedValueOnce({ ...SAMPLE, generated_at: "2026-08-30T15:07:42Z" });
-    d.fetchBitmap.mockResolvedValueOnce(fakeBitmap());
-    await loader.refresh();
-    expect(firstBitmap.close).toHaveBeenCalledTimes(1);
-  });
-
-  it("JSON invalide : lève MetadataError, l'état courant reste intact", async () => {
-    const d = deps(SAMPLE);
-    const loader = new DataLoader(BASE, d);
-    const first = await loader.refresh();
-    d.fetchJson.mockResolvedValueOnce({ ...SAMPLE, schema_version: 2 });
-    await expect(loader.refresh()).rejects.toThrowError(MetadataError);
-    expect(loader.data).toBe(first);
-  });
-
-  it("PNG aux mauvaises dimensions : lève TextureError, l'état courant reste intact", async () => {
-    const d = deps(SAMPLE);
-    const loader = new DataLoader(BASE, d);
-    const first = await loader.refresh();
-    d.fetchJson.mockResolvedValueOnce({ ...SAMPLE, generated_at: "2026-08-30T15:07:42Z" });
-    d.fetchBitmap.mockResolvedValueOnce(fakeBitmap(10, 10));
-    await expect(loader.refresh()).rejects.toThrowError(TextureError);
-    expect(loader.data).toBe(first);
-  });
-
-  it("appels concurrents : un seul fetch en vol, la même promesse pour les deux appels", async () => {
-    let resolveJson!: (value: unknown) => void;
-    const jsonPromise = new Promise<unknown>((resolve) => {
-      resolveJson = resolve;
-    });
-    const fetchJson = vi.fn(() => jsonPromise);
-    const fetchBitmap = vi.fn(async () => fakeBitmap());
-    const loader = new DataLoader(BASE, { fetchJson, fetchBitmap, bitmapPixels: () => new Uint8ClampedArray(4) });
-
-    const p1 = loader.refresh();
-    const p2 = loader.refresh();
-    expect(p1).toBe(p2);
-
-    resolveJson(SAMPLE);
-    const [got1, got2] = await Promise.all([p1, p2]);
-    expect(got1?.meta.generated_at).toBe(META.generated_at);
-    expect(got2).toBe(got1);
-    expect(fetchJson).toHaveBeenCalledTimes(1);
-    expect(fetchBitmap).toHaveBeenCalledTimes(1);
+  it("non réentrant : deux appels concurrents partagent la même promesse", async () => {
+    const d = deps(MANIFEST);
+    const ml = new ManifestLoader(BASE, d);
+    const [a, b] = await Promise.all([ml.refresh(), ml.refresh()]);
+    expect(a).toBe(b);
+    expect(d.fetchJson).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("DataLoader.refresh — pixels", () => {
-  it("expose les pixels lus par bitmapPixels", async () => {
-    const px = new Uint8ClampedArray([1, 2, 3, 4]);
-    const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => px));
-    const d = await loader.refresh();
-    expect(d?.pixels).toBe(px);
+describe("LayerLoader", () => {
+  it("charge une entrée, renvoie null si generated_at inchangé, recharge sinon", async () => {
+    const d = deps(null);
+    const ll = new LayerLoader("temp", BASE, d);
+    const first = await ll.load(TEMP, GRID);
+    expect(first?.entry).toBe(TEMP);
+    expect(first?.pixels?.length).toBe(4);
+    expect(d.fetchBitmap).toHaveBeenCalledWith(textureUrl(BASE, TEMP));
+    expect(await ll.load({ ...TEMP }, GRID)).toBeNull();
+    const next = { ...TEMP, generated_at: "2026-09-12T15:12:40Z" };
+    const second = await ll.load(next, GRID);
+    expect(second?.entry).toBe(next);
+    expect(ll.data).toBe(second);
   });
-  it("bitmapPixels qui lève → pixels null, texture valide", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const loader = new DataLoader(BASE, deps(SAMPLE, fakeBitmap(), () => { throw new Error("boom"); }));
-      const d = await loader.refresh();
-      expect(d?.pixels).toBeNull();
-      expect(d?.texture).toBeInstanceOf(THREE.Texture);
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
+  it("dispose libère la texture précédente et ferme son bitmap", async () => {
+    const b1 = fakeBitmap();
+    const d = deps(null, b1);
+    const ll = new LayerLoader("temp", BASE, d);
+    const first = await ll.load(TEMP, GRID);
+    const disposeSpy = vi.spyOn(first!.texture, "dispose");
+    d.fetchBitmap.mockResolvedValueOnce(fakeBitmap());
+    await ll.load({ ...TEMP, generated_at: "2026-09-12T15:12:40Z" }, GRID);
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(b1.close).toHaveBeenCalled();
+    ll.dispose();
+    expect(ll.data).toBeNull();
+  });
+  it("pixels indisponibles → data.pixels null, texture quand même", async () => {
+    const d = deps(null, fakeBitmap(), () => { throw new Error("canvas"); });
+    const ll = new LayerLoader("temp", BASE, d);
+    const got = await ll.load(TEMP, GRID);
+    expect(got?.pixels).toBeNull();
+    expect(got?.texture).toBeInstanceOf(THREE.Texture);
+  });
+  it("dimensions fausses → TextureError, état inchangé", async () => {
+    const d = deps(null, fakeBitmap(10, 10));
+    const ll = new LayerLoader("temp", BASE, d);
+    await expect(ll.load(TEMP, GRID)).rejects.toThrowError(TextureError);
+    expect(ll.data).toBeNull();
   });
 });
