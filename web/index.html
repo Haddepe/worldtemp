@@ -3,23 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="description" content="Globe 3D des températures mondiales actuelles (NOAA GFS)." />
-    <title>Worldtemp — températures mondiales en 3D</title>
+    <meta name="description" content="Globe 3D de la météo mondiale : température, nuages, pluie, pression, humidité, qualité de l'air (NOAA GFS et GEFS-Aerosols)." />
+    <title>GlobeLayers — météo mondiale en 3D</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <canvas id="globe" aria-label="Globe 3D des températures"></canvas>
+    <canvas id="globe" aria-label="Globe 3D météo"></canvas>
     <div id="overlay">
       <header id="banner" class="panel">
         <span id="banner-text">Chargement…</span>
         <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Replier ou déployer les panneaux">▾</button>
       </header>
       <div id="status" class="panel" role="status" hidden></div>
-      <aside id="legend" class="panel" aria-label="Légende des températures"></aside>
-      <aside id="controls" class="panel">
-        <button id="filter-temperature" type="button" aria-pressed="true">Température</button>
-      </aside>
-      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth</p>
+      <aside id="legend" class="panel" aria-label="Légende de la couche"></aside>
+      <aside id="controls" class="panel"></aside>
+      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · NOAA GFS · GEFS-Aerosols</p>
       <div id="ad-slot" hidden></div>
     </div>
     <div id="tooltip" class="panel" role="status" aria-live="off" hidden></div>
