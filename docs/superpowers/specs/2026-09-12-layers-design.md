@@ -102,8 +102,17 @@ l'unité affichée), `unit`, `plausible` (plage physique avant conversion, sinon
 | rain | `PRATE` / `surface` | shortName `prate`, stepType `instant` | × 3600 | 0–0,1 kg/m²/s | **racine** 0 → 50 |
 | pressure | `PRMSL` / `mean_sea_level` | shortName `prmsl` | ÷ 100 | 85 000–110 000 Pa | linéaire 940 → 1060 |
 | humidity | `RH` / `2_m_above_ground` | shortName `r2` | identité, borné 0–100 | 0–102 % | linéaire 0 → 100 |
-| pm25 | `PMTF` / `surface` | shortName `pmtf`, aerosolType Total | × 1e9 | 0–0,01 kg/m³ | **racine** 0 → 500 |
-| dust | `PMTC` / `surface` | shortName `pmtc`, aerosolType Dust Dry | × 1e9 | 0–0,05 kg/m³ | **racine** 0 → 2000 |
+| pm25 | `PMTF` / `surface` | shortName `pmtf`, aerosolType Total | identité | 0–20 000 µg/m³ | **racine** 0 → 500 |
+| dust | `PMTC` / `surface` | shortName `pmtc`, aerosolType Dust Dry | identité | 0–50 000 µg/m³ | **racine** 0 → 2000 |
+
+**Corrigé à l'exécution (T4/T7)** : `clouds` — `typeOfLevel` réel confirmé
+`atmosphere` par la fixture (déjà correct dans la table ci-dessus, hypothèse
+validée, pas modifiée) ; `pm25`/`dust` — la valeur brute du GRIB NOMADS est
+**déjà en µg/m³** (clé eccodes `units` = `(10**-6 g) m**-3`), pas en kg/m³ comme
+supposé initialement : `convert` devient l'identité (au lieu de `× 1e9`) et la
+plage plausible se lit directement en µg/m³, élargie ensuite à (0, 20 000) et
+(0, 50 000) après qu'un run réel a atteint 3 187 µg/m³ sur `pm25` (calibration
+T7). L'encodage d'affichage (`sqrt` 0 → 500 / 0 → 2000) ne change pas.
 
 Les noms cfgrib et la valeur numérique d'`aerosolType` sont **fixés par la tâche
 fixture** (§9), seule à pouvoir les vérifier ; le registre est la seule source de

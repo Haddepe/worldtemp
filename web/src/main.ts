@@ -1,8 +1,12 @@
 import * as THREE from "three";
 import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS, TILES_BASE_URL } from "./config";
-import { DataLoader, isStale } from "./data/loader";
+import { LayerLoader, ManifestLoader, isStale, type LoadedLayer } from "./data/loader";
+import type { Manifest } from "./data/manifest";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
-import { STOPS, buildLut, createLutTexture } from "./render/colormap";
+import { LayerCache } from "./layers/cache";
+import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
+import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
+import { buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
@@ -10,6 +14,7 @@ import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { formatBanner } from "./ui/format";
+import { createLayersMenu } from "./ui/layers-menu";
 import { createOverlay } from "./ui/overlay";
 import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
 
@@ -69,13 +74,7 @@ async function boot(): Promise<void> {
     onLoad: () => sceneHandle.requestRender(),
   });
   const globe = createTiledGlobe(decision.tier, loader, 0);
-  globe.setFilter(ui.initialFilter());
-  ui.setLegendVisible(ui.initialFilter());
-  ui.onFilter((on) => {
-    globe.setFilter(on);
-    ui.setLegendVisible(on);
-    sceneHandle.requestRender();
-  });
+  ui.setLegendVisible(false); // aucune couche au démarrage : la légende n'a rien à montrer
   sceneHandle.scene.add(globe.group);
 
   const tap = new TapDetector();
@@ -158,56 +157,143 @@ async function boot(): Promise<void> {
   sceneHandle.start();
   await loadTiles();
 
-  const data = new DataLoader(DATA_BASE_URL);
-  let lutKey = "";
-  let lut: THREE.DataTexture | null = null;
+  const manifests = new ManifestLoader(DATA_BASE_URL);
+  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL));
+  const menu = createLayersMenu(ui.controls, (id) => void activate(id, true));
+  const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
+  let activeId: string | null = null;
+  let hadManifest = false;
+  let active: LoadedLayer | null = null;
+  /** Id dont la texture est actuellement liée à `uLayer` (spec couches §10) — distinct de
+   * `activeId` pendant un chargement : protège cette entrée contre l'éviction du cache. */
+  let activeShownId: string | null = null;
   let updateFailed = false;
+  /** Statut d'échec de couche (spec §13), prioritaire sur les autres statuts tant que non nul. */
+  let layerNotice: string | null = null;
+  /** id → generated_at de l'entrée qui a échoué ; un generated_at différent au manifeste
+   * suivant rend la couche retentable (M1). */
+  const failed = new Map<string, string>();
+
+  const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {
+    const enc = manifest.layers[def.id]!.encoding;
+    const key = `${enc.min}/${enc.max}/${enc.scale}`;
+    const cached = luts.get(def.id);
+    if (cached && cached.key === key) return cached.lut;
+    cached?.lut.dispose();
+    const lut = createLutTexture(buildLut(def, enc));
+    luts.set(def.id, { key, lut });
+    return lut;
+  };
 
   const refreshBanner = () => {
-    const dd = data.data;
-    if (!dd) return;
-    ui.setBanner(formatBanner(dd.meta, Date.now()));
+    if (manifests.manifest === null) {
+      ui.setBanner("GlobeLayers");
+      ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
+      return;
+    }
+    const def = activeId ? layerDef(activeId) : undefined;
+    if (!def || !active) {
+      ui.setBanner("GlobeLayers");
+      ui.setStatus(
+        layerNotice ?? (updateFailed ? "Mise à jour impossible, nouvel essai dans 15 min" : tilesReady ? null : "Détail de la carte indisponible"),
+      );
+      return;
+    }
+    ui.setBanner(formatBanner(active.entry, Date.now()));
     ui.setStatus(
-      updateFailed
-        ? "Mise à jour impossible, nouvel essai dans 15 min"
-        : isStale(dd.meta, Date.now(), STALE_AFTER_MS)
-          ? "Données anciennes"
-          : tilesReady
-            ? null
-            : "Détail de la carte indisponible",
+      layerNotice ??
+        (updateFailed
+          ? "Mise à jour impossible, nouvel essai dans 15 min"
+          : isStale(active.entry, Date.now(), STALE_AFTER_MS)
+            ? "Données anciennes"
+            : tilesReady
+              ? null
+              : "Détail de la carte indisponible"),
     );
+  };
+
+  /** Applique la couche `id` (null = Aucune) : charge si besoin, pose texture, LUT, isolignes, légende, tooltip, URL. */
+  const activate = async (id: string | null, fromUser: boolean): Promise<void> => {
+    const manifest = manifests.manifest;
+    const previous = activeId;
+    activeId = id;
+    menu.setActive(id);
+    if (fromUser) history.replaceState(null, "", withLayerParam(location.search, id));
+    const def = id ? layerDef(id) : undefined;
+    const entry = id && manifest ? manifest.layers[id] : undefined;
+    if (!def || !entry || !manifest) {
+      active = null;
+      activeShownId = null;
+      globe.setLayer(null, 1440, 721);
+      globe.setIsoStep(0);
+      ui.setLegendVisible(false);
+      tooltip.setData(null);
+      sceneHandle.requestRender();
+      refreshBanner();
+      return;
+    }
+    const layerLoader = cache.get(id!, activeShownId);
+    try {
+      await layerLoader.load(entry, manifest.grid);
+    } catch (e) {
+      console.warn(`[worldtemp] couche ${id} indisponible :`, e);
+      failed.set(id!, entry.generated_at);
+      menu.setDisabled(id!, true);
+      if (activeId === id) {
+        const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
+        await activate(fallback, fromUser);
+        layerNotice = "Couche indisponible";
+        refreshBanner();
+      }
+      return;
+    }
+    if (activeId !== id) return; // l'utilisateur a changé d'avis pendant le chargement
+    active = layerLoader.data;
+    if (!active) return;
+    const enc = entry.encoding;
+    globe.setLut(lutFor(def, manifest));
+    globe.setLayer(active.texture, manifest.grid.width, manifest.grid.height);
+    activeShownId = id;
+    layerNotice = null;
+    globe.setIsoStep(def.isoStep !== null ? def.isoStep / (enc.max - enc.min) : 0);
+    ui.setLegend(def, enc, entry.stats);
+    ui.setLegendVisible(true);
+    tooltip.setData(active.pixels ? { def, pixels: active.pixels, grid: manifest.grid, encoding: enc } : null);
+    sceneHandle.requestRender();
+    refreshBanner();
+    console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);
   };
 
   const applyData = async () => {
     if (!tilesReady) await loadTiles();
     try {
-      const fresh = await data.refresh();
+      const fresh = await manifests.refresh();
       updateFailed = false;
       if (fresh) {
-        const { encoding, grid, stats } = fresh.meta;
-        const key = `${encoding.min_c}/${encoding.max_c}`;
-        if (key !== lutKey) {
-          lut?.dispose();
-          lut = createLutTexture(buildLut(STOPS, encoding.min_c, encoding.max_c));
-          globe.setLut(lut);
-          lutKey = key;
+        for (const [id, failedAt] of failed) {
+          const entry = fresh.layers[id];
+          if (entry && entry.generated_at !== failedAt) failed.delete(id); // retentable (M1)
         }
-        ui.setLegend(encoding.min_c, encoding.max_c, stats);
-        globe.setHeatmap(fresh.texture, grid.width, grid.height);
-        tooltip.setData(fresh.pixels ? { pixels: fresh.pixels, grid, encoding } : null);
-        sceneHandle.requestRender();
-        console.info(`[worldtemp] données ${fresh.meta.run} f${fresh.meta.forecast_hour}, valides ${fresh.meta.valid_time_utc}`);
+        const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
+        menu.setLayers(defs);
+        for (const id of failed.keys()) menu.setDisabled(id, true);
+        const available = defs.map((d) => d.id).filter((id) => !failed.has(id));
+        const firstLoad = !hadManifest;
+        hadManifest = true;
+        const target = firstLoad
+          ? parseLayerParam(location.search, available)
+          : activeId !== null && !available.includes(activeId)
+            ? parseLayerParam("", available)
+            : activeId;
+        await activate(target, false);
+      } else if (activeId && manifests.manifest) {
+        await activate(activeId, false); // même manifeste : recharge seulement si generated_at a changé (LayerLoader)
       }
       refreshBanner();
     } catch (e) {
-      console.warn("[worldtemp] données indisponibles :", e);
-      if (data.data) {
-        updateFailed = true;
-        refreshBanner();
-      } else {
-        ui.setBanner("NOAA GFS 0,25°");
-        ui.setStatus("Données indisponibles, nouvel essai dans 15 min");
-      }
+      console.warn("[worldtemp] manifeste indisponible :", e);
+      updateFailed = manifests.manifest !== null;
+      refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)
     }
   };
 

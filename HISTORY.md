@@ -44,9 +44,9 @@ corriger.
 
 | Couche | Choix | Note |
 |---|---|---|
-| Pipeline de données | Python (**3.12 sur Actions**, venv local **3.14**) | `xarray`, `cfgrib` (exige `eccodes`), `numpy`, `Pillow`, `requests`, `boto3` (client S3 pour R2, §5) |
-| Dépendances pipeline | `pipeline/requirements.txt` (numpy, Pillow, requests, boto3 — installe sur **Windows**) vs `pipeline/requirements-grib.txt` (`cfgrib`, `eccodeslib`, `xarray` — **Actions seulement**, pas de roue Windows) | split par l'approche A (§5) ; variable cfgrib de `TMP` à 2 m confirmée `t2m` sur Actions (`pipeline/grib_adapter.py`) |
-| Source de données | NOMADS / GFS 0,25° (NOAA) | script de filtrage `filter_gfs_0p25_1hr.pl`, variable `TMP` à 2 m, run+échéance à l'heure courante (§5) |
+| Pipeline de données | Python (**3.12 sur Actions**, venv local **3.14**) | `eccodes` (bindings Python, décodage GRIB direct par clés — plus de `xarray`/`cfgrib` dans le code, §5), `numpy`, `Pillow`, `requests`, `boto3` (client S3 pour R2, §5) |
+| Dépendances pipeline | `pipeline/requirements.txt` (numpy, Pillow, requests, boto3 — installe sur **Windows**) vs `pipeline/requirements-grib.txt` (`cfgrib`, `eccodeslib`, `xarray` — **Actions seulement**, pas de roue Windows) | `eccodes` seul est appelé (`pipeline/grib_adapter.py::_message_keys` sur `import eccodes`) depuis la spec couches (2026-09-12) ; `cfgrib`/`xarray` ne sont plus référencés dans `pipeline/`/`tests/` mais restent listés dans `requirements-grib.txt` pour fournir `eccodeslib` — élagage possible, dette n° 30 (§8) |
+| Sources de données | NOMADS / **GFS 0,25°** (NOAA, 5 couches, horaire) ; NOMADS / **GEFS-Aerosols 0,25°** (NOAA, `pm25`/`dust`, 4 cycles/jour, pas 3 h) | GFS : script de filtrage `filter_gfs_0p25_1hr.pl`, run+échéance à l'heure courante (§5) ; GEFS-chem : `filter_gefs_chem_0p25.pl`, retenu contre CAMS/GEOS-CF (§5, spec couches 2026-09-12) |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
 | Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
@@ -70,10 +70,12 @@ docs/
     specs/2026-09-02-globe-heatmap-design.md  # contrat globe + heatmap (spec 2)
     specs/2026-09-05-tiles-design.md          # pyramide de tuiles, filtre, domaine (spec 3, §11 audit Ventusky)
     specs/2026-09-06-navigation-design.md     # zoom ancré sur l'altitude, pincement, tooltip, fondu (spec 4 lot A)
+    specs/2026-09-12-layers-design.md         # 7 couches scalaires, pipeline à deux sources, manifeste v2 (spec 4 lot B1)
     plans/2026-08-30-pipeline-gfs.md          # plan d'exécution (12 tâches)
     plans/2026-09-02-globe-heatmap.md         # plan d'exécution (10 tâches)
     plans/2026-09-05-tiles.md                 # plan d'exécution (20 tâches)
     plans/2026-09-06-navigation.md            # plan d'exécution (10 tâches)
+    plans/2026-09-12-layers.md                # plan d'exécution (16 tâches)
 tiler/                          # génération des tuiles, Actions seulement (dépend de GDAL)
   __init__.py
   grid.py                       # pyramide géodésique 512 px : tile_at, tile_bounds, tile_range, box_for_job
@@ -85,24 +87,28 @@ tiler/                          # génération des tuiles, Actions seulement (d�
   main.py                        # orchestration blocs → tuiles → index, CLI (extract-gebco/map/sat/merge-index), build_level0
   requirements.txt               # numpy, Pillow (+ GDAL CLI, hors pip, installé par apt sur Actions)
 pipeline/
-  config.py                    # constantes : encodage, grille, sélection du run, R2
-  run_selection.py             # run + échéance valides à l'heure courante
-  nomads.py                    # URL du filtre NOMADS, téléchargement, retry sur 429
-  grib_adapter.py              # seul module dépendant de cfgrib/eccodes
-  texture.py                   # validation, réorientation, quantification 8 bits → PNG
-  metadata.py                  # métadonnées de sortie (schéma v1 : encoding, grid, valid_time…)
-  publish.py                   # écriture atomique + publication R2 ordonnée
-  main.py                      # orchestration, ligne de commande, codes retour
+  config.py                    # clés R2 layers/, délais par source, versions de schéma (constantes de température retirées)
+  layers.py                    # NOUVEAU (spec couches 2026-09-12) : registre LayerSpec des 7 couches, Encoding, LAYERS, by_source
+  sources.py                   # NOUVEAU : SourceSpec des 2 sources NOMADS (GFS, GEFS-chem), SOURCES
+  run_selection.py             # candidates(step_hours=…), candidates_for(source, now) — deux cadences (1 h, 3 h)
+  nomads.py                    # build_url(source, candidate, specs) multi-variables, téléchargement, retry sur 429
+  grib_adapter.py              # seul module dépendant d'eccodes ; decode_fields(data, specs) par clés (bindings eccodes directs, plus de cfgrib/xarray)
+  texture.py                   # validate_grid/validate_range, convert, quantize(min,max,scale) linéaire ou racine, layer_pixels
+  metadata.py                  # layer_entry, build_manifest (schéma v2, multi-couches) + build_legacy (schéma v1, une version)
+  publish.py                   # Object, upload_r2(cfg, objects) d'une liste ordonnée, read_current(cfg, key)
+  main.py                      # orchestration à deux sources (primaire GFS, secondaire GEFS-chem tolérante), report chem, publication legacy + manifeste v2
   requirements.txt             # Windows OK : numpy, Pillow, requests, boto3
-  requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray
+  requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray (non référencés dans le code, dette n° 30 §8)
 tools/
   history_check.py             # contrôle mécanique de HISTORY.md contre le dépôt
   prepare_bluemarble.py        # télécharge/redimensionne la texture Blue Marble NASA (source, licence)
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
-  fixtures/gfs_tmp2m.grib2     # fixture GRIB réelle (~514 Ko), exception au .gitignore
+  fixtures/gfs_tmp2m.grib2     # fixture GRIB legacy (~514 Ko, test_grib_adapter.py), exception au .gitignore
+  fixtures/gfs_layers.grib2    # NOUVEAU (spec couches) : fixture réelle filtrée, 5 variables GFS (≈ 5,7 Mo), exception au .gitignore
+  fixtures/gefs_chem.grib2     # NOUVEAU : fixture réelle filtrée, PMTF + PMTC surface GEFS-Aerosols (≈ 3,1 Mo), exception au .gitignore
   fixtures/tiler/borders.geojson  # fixture frontières pour test_tiler_borders.py
-  pipeline/                    # tests pytest des modules ci-dessus (1 fichier par module)
+  pipeline/                    # tests pytest des modules ci-dessus (1 fichier par module, dont test_layers.py, test_sources.py)
   tiler/                       # tests pytest de tiler/ (1 fichier par module ; GDAL skip sous Windows)
     test_tiler_grid.py
     test_tiler_encode.py
@@ -130,15 +136,20 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap : scène, globe tuilé, DataLoader, tiles loader, tier GPU, vue par URL, overlay, tooltip (survol souris / tap tactile), crochet `window.__worldtemp` en dev
-    config.ts                  # DATA_BASE_URL/TILES_BASE_URL (data.globelayers.com), REFRESH_MS, STALE_AFTER_MS
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), attribution avec lien OSM, #tooltip/#marker fixes
+    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev
+    config.ts                  # DATA_BASE_URL (data.globelayers.com/layers, spec couches) /TILES_BASE_URL, REFRESH_MS, STALE_AFTER_MS
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
+    layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
+      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes) des 7 couches, ordre du menu
+      select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
+      cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
     data/
-      metadata.ts               # parseMetadata : contrat des métadonnées publiées par le pipeline (encoding, grid, valid_time…)
-      sampling.ts                # heatmapUv (miroir du GLSL) ; sampleTemperature : lecture bilinéaire CPU en °C pour le tooltip
-      loader.ts                  # DataLoader : fetch + cache-busting + refresh 15 min, non réentrant ; expose `pixels` (lecture CPU) à côté de la texture
+      manifest.ts                # NOUVEAU, remplace l'ancien module de métadonnées v1 : parseManifest (schéma v2, multi-couches, `layers: {id: entrée}`)
+      encoding.ts                # NOUVEAU : encode/decode linéaire et racine (miroir exact de pipeline/texture.py::quantize)
+      sampling.ts                # sampleValue générique (remplace sampleTemperature) : lecture bilinéaire CPU, decode par couche
+      loader.ts                  # ManifestLoader (manifeste v2, non réentrant) + LayerLoader par couche (PNG → texture + pixels CPU, non réentrant)
       pixels.ts                  # bitmapPixels : ImageBitmap → RGBA nord en haut via canvas 2D réutilisé (null si impossible)
     gpu/
       tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
@@ -152,21 +163,26 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     render/
       scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
-      globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch
-      colormap.ts                # arrêts de couleur, LUT 256×1 sRGB, dégradé CSS de la légende
+      globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setLayer(texture|null, w, h)/setIsoStep(step) remplacent setHeatmap/setFilter (spec couches)
+      colormap.ts                # buildLut(def, enc)/legendGradientCss(def, enc) génériques par couche (registre `layers/registry.ts`), LUT 256×1 sRGB
       shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
-      shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT (remplace l'ancien fragment shader du globe, retiré)
+      shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches)
     ui/
-      format.ts                  # formatBanner, legendTicks, formatTemperature (« 23,4 °C », signe U+2212)
-      overlay.ts                 # createOverlay : bandeau, statut, légende conditionnelle, bouton Température, repliage mobile ; exporte byId
-      tooltip.ts                 # TapDetector, placeTooltip, createTooltip : une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode
+      layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
+      format.ts                  # formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry
+      overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId
+      tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode
   tests/
-    fixtures.ts                  # SAMPLE : métadonnées de test (même contrat que le pipeline), réutilisées par plusieurs suites
-    metadata.test.ts
+    fixtures.ts                  # SAMPLE : manifeste de test v2 (même contrat que le pipeline), réutilisées par plusieurs suites
+    manifest.test.ts             # NOUVEAU, remplace l'ancienne suite de métadonnées v1 : parseManifest v2 (strict, couches partielles, rejet v1)
+    encoding.test.ts             # NOUVEAU : encode/decode, table de cas partagée avec pytest (demi-entiers)
+    registry.test.ts             # NOUVEAU : LayerDef des 7 couches, ordre du menu
+    select.test.ts               # NOUVEAU : orderedLayers, parseLayerParam, withLayerParam
+    cache.test.ts                # NOUVEAU : LRU de 2 (éviction, réactivation, dispose)
     sampling.test.ts
     colormap.test.ts
     tier.test.ts
-    loader.test.ts
+    loader.test.ts               # ManifestLoader + LayerLoader (non réentrance des deux, dont le correctif `b63c9d2`)
     format.test.ts
     tiles-grid.test.ts            # miroir des nombres de contrôle de tiler/grid.py
     tiles-manifest.test.ts
@@ -270,6 +286,18 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Un seul modèle de tooltip** : une lecture `{lon, lat}` ancrée sur le globe, projetée à chaque rendu ; seule l'entrée diffère (survol souris, tap tactile) *(2026-09-06)* | Le tooltip suit le globe quand on tourne et disparaît derrière l'horizon sans code spécifique par mode ; `aria-live` « polite » seulement en mode épinglé (un survol annoncerait chaque mouvement de souris au lecteur d'écran). |
 | **Fondu satellite → carte resserré à `d` ∈ [1,20 ; 1,14]** (constantes `MAP_FADE_START/END`) *(2026-09-06)* | Plage 1,25 → 1,12 jugée molle ; validé à l'œil (satellite pur à 1,20, carte pure à 1,14, aucun réglage supplémentaire). |
 | **Volume mesuré ≈ 4,5 Go accepté pour la v1** (70 161 tuiles `map`, PNG RGB peu compressible) malgré l'estimation initiale de la spec (< 1,5 Go) | Reste sous les 10 Go du plan R2 gratuit ; compression (palette/quantification) à revoir en v2 plutôt que de retarder la v1 pour une optimisation non bloquante. |
+| **Approche A : pipeline généralisé, un PNG 8 bits par couche, un manifeste unique** *(2026-09-12, spec couches)* | Écarte B (empaquetage RGB de trois variables : PNG plus lourd, cadences GFS 1 h / GEFS 3 h incompatibles dans un même fichier) et C (un workflow + un manifeste par source : double plomberie CI, secrets dupliqués, fusion de manifestes côté front). A isole déjà les sources en modules Python (`layers.py`/`sources.py`) et tolère l'échec de la source secondaire sans double infrastructure. |
+| **Encodage 8 bits à la racine (`sqrt`) pour pluie/PM2.5/poussière**, linéaire pour temp/nuages/pression/humidité | Donne la finesse là où elle compte (pluie 0–2 mm/h sur 51 niveaux au lieu de 10, PM2.5 sur 67 niveaux au lieu de 18) à coût nul au rendu : la LUT reste indexée par l'octet brut, le shader ne change pas côté échantillonnage. |
+| **Une seule couche affichée à la fois** (radio, façon Ventusky), pas d'empilement | Décision de brainstorming ré-confirmée en spec : empiler des couches multiplierait les seuils de transparence à arbitrer et rendrait la légende ambiguë ; l'empilement reste au backlog (spec §16). |
+| **GEFS-Aerosols (NOMADS) plutôt que CAMS (ADS) ou GEOS-CF (NASA)** pour `pm25`/`dust` | Même mécanique de téléchargement que GFS, aucune clé API à gérer (CAMS en réclame une) ; GEOS-CF vu instable en reconnaissance. Coût : résolution plus grossière (0,25°) et cadence 3 h au lieu de 1 h, documenté par `valid_time_utc` par couche. |
+| **Poussière = PM10 (`PMTC` Dust Dry)**, pas PM2.5 fine | Les tempêtes de sable, cas d'usage visé, sont dominées par les particules 2,5–10 µm ; `PMTC` les capture, `PMTF` (déjà utilisé pour `pm25`) non. |
+| **Source secondaire (GEFS-chem) tolérante** : un échec reporte les entrées `pm25`/`dust` du manifeste courant (PNG intacts, `generated_at`/`valid_time_utc` anciens) plutôt que de faire échouer le run | La qualité de l'air est une couche parmi sept, pas critique comme la température ; faire échouer tout le run pour une source secondaire pénaliserait les 5 couches GFS pour rien. Sans manifeste courant, les couches chem sont simplement omises (pas de bouton). |
+| **`gfs/latest.*` (schema 1) republié une version supplémentaire** en plus de `layers/latest.json` (v2) | Clients déjà chargés sur l'ancien contrat ; retrait prévu en première tâche de la spec suivante (dette n° 31, §8). |
+| **LRU de 2 `LayerLoader`** (couche active + précédente), pas plus | Change-and-forget entre deux couches typique de l'usage (comparer A puis B) sans garder les sept en mémoire ; l'éviction dispose texture et pixels CPU. |
+| **LUT 256×1 indexée par l'octet brut, inchangée côté échantillonnage du shader** | La racine ne coûte rien au rendu : `buildLut(def, enc)` précalcule `decode(i)` par texel, le shader continue de lire `texture2D(uLut, vec2(t, 0.5))` comme pour la température seule. |
+| **Isobares dans le shader** (`isoline(t, spacing)`, `fwidth`), pas de couche vectorielle séparée | `t` (octet normalisé) encode déjà la pression ; une fonction de distance au multiple de pas le plus proche, anti-aliasée par `fwidth`, évite de calculer/streamer un tracé de lignes séparé pour un seul usage. |
+| **`formatBanner(entry, nowMs, timeZone?)` sans paramètre `def`** *(T11, ruling de revue)* | Le bandeau ne dépend que de la source (modèle, run, échéance), jamais de la couche affichée ; porter `def` dans la signature était un paramètre mort du plan. |
+| **Bornes plausibles pm25/dust élargies** `(0, 2000)`/`(0, 5000)` µg/m³ → `(0, 20 000)`/`(0, 50 000)` *(T7, post-revue)* | Un run réel a produit `pm25` = 3 187 µg/m³, au-delà de la borne T4 : GEFS-chem échouait donc sa validation systématiquement en conditions réelles. Garde-fou d'ordre de grandeur seulement ; `Encoding` d'affichage (`sqrt` 0→500 / 0→2000) inchangé, l'octet sature au-delà (dette n° 32, §8). |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -300,6 +328,15 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-06 | **Dérive du zoom ancré au cadrage final** (critère 1 en échec : 5 px à 1 cran/500 ms, 16 px à 60 ms, 198 px à 30 ms) alors que l'erreur par cran restait sous 0,1 px. Trouvé par la validation navigateur (DevTools MCP), reconstruit arithmétiquement (Σ résidu × a_i/a_final ≈ 13,9 vs 14,0 mesuré). | Garde `keepAnchor` (ancre conservée si le curseur bouge de moins de 1 px) + ε 0,1 → 1e-3 px, 6 itérations (`3ee3c2a`) : 0,0002 px re-mesuré. Leçon : un critère « < 2 px » se mesure avec le geste réel (cadence des crans), pas seulement par cran. |
 | 2026-09-06 | Revue finale : la spec décrivait encore « nouvelle ancre à chaque événement », 4 itérations / 0,1 px, et ignorait `onPinch`, `keepAnchor`, `hitMarker`, `ndcFromCanvas`, la capture — six écarts nés des rulings d'exécution. | Spec resynchronisée (`2454f3e`) ; leçon : chaque ruling de revue qui change un comportement documenté doit toucher la spec dans le même round, sinon la « source de vérité » contredit le code. |
 | 2026-09-05 | Un run partiel (moins de 8 boîtes) avec `upload=true` aurait écrasé `index.bin`, le niveau 0 et `manifest.json` sur R2 avec un jeu incomplet, invalidant l'index pour tout le monde. Trouvé en revue finale (Important). | Step d'envoi R2 conditionné à `FULL_SET` (les 8 boîtes exactement) ; avertissement explicite sinon (`f18a90c`). |
+| 2026-09-12 | **Unités PMTF/PMTC déjà en µg/m³ dans le GRIB réel** — la spec supposait kg/m³ (`convert = ×1e9`). Clé eccodes `units` du message = `(10**-6 g) m**-3`, maxima observés 502 et 2416 sur la fixture. | `convert` fixé à l'identité pour `pm25`/`dust`, plages plausibles ajustées en conséquence (T4) ; spec §3 corrigée en T16 avec la mention « corrigé à l'exécution ». |
+| 2026-09-12 | `typeOfLevel` réel de `TCDC` (nuages) est `atmosphere`, pas `entireAtmosphere`/`atmosphereSingleLayer` supposé par la spec ; en plus, le fichier NOMADS porte `TCDC:entire atmosphere` **deux fois** (instantané et moyenne 0–4 h). | `grib_keys` fixées sur la fixture réelle (`shortName tcc`, `typeOfLevel atmosphere`, `stepType instant`) pour lever l'ambiguïté entre les deux messages (T4) ; spec §3 corrigée en T16. |
+| 2026-09-12 | Bornes plausibles `pm25`/`dust` de T4 `(0, 2000)`/`(0, 5000)` µg/m³ trop étroites : le dry-run CI contre NOMADS réel (run 34709677549) a produit `pm25` = 3 187 µg/m³, rejeté par la validation, chem reportée systématiquement en conditions réelles. | Élargies à `(0, 20 000)`/`(0, 50 000)` µg/m³ (T7 post-revue, commit `85ab007`) ; run suivant (34710076060) vert avec les 7 couches (`pm25` max 2 684, `dust` max 13 377). Encodage d'affichage (`sqrt` 0→500/0→2000) inchangé, sature au-delà (dette n° 32, §8). |
+| 2026-09-12 | Demi-entiers de quantification : `np.rint` (arrondi au pair) côté Python et `Math.round` côté JS divergent exactement sur les .5 — un cas de test `roundtrip` initial (15 °C → pixel 178,5) tombait sur cette frontière. | Cas de test déplacé à une valeur qui ne tombe pas sur un .5 exact (20 °C → 187) dans la table de cas partagée Python/TS (T3/T8, corrigé avant exécution, cf. ledger). |
+| 2026-09-12 | `float32` 273,15 : `ramp_row[...] − 273.15` en `float32` (NEP 50, promotion faible) donne un résultat légèrement différent du chemin réel du pipeline (`float64` avant soustraction), juste assez pour changer l'arrondi 8 bits à une valeur de test tombée pile sur une frontière de quantification (25,0 °C → x·255 = 195,5). Trouvé en TDD (T7). | Fixture de test castée en `float64` avant soustraction pour reproduire exactement `layer_pixels` ; `main.py` non modifié (écart de fixture, pas de pipeline). |
+| 2026-09-12 | Fixture `test_chem_failure_carries_over_previous_entries` « à jour » sans le vouloir : le manifeste courant simulé ne surchargeait pas `chem`, qui restait donc déjà à jour (idempotence par source) — le test ne testait pas ce que son nom prétendait (0 téléchargement chem au lieu de l'échec attendu). Trouvé en TDD (T7). | Fixture corrigée pour que `chem` soit réellement périmé (même motif que le test voisin), exerçant réellement le mock d'échec de téléchargement. |
+| 2026-09-12 | Trailers de commit `Co-Authored-By: Claude Haiku 4.5` sur 3 commits poussés (`ea54908`, `680525a`, `7194396`) — modèle d'implémenteur incorrect dans le trailer. | Réécriture prévue par `msg-filter` + force-push de `feat/layers` avant merge (branche personnelle) — ruling T5, non encore exécutée à la date de cette entrée. |
+| 2026-09-12 | Agent de validation navigateur coupé par la limite de session après le câblage `main.ts` (T15), puis `mcp__claude-in-chrome__*` et `chrome-devtools-mcp` tous deux injoignables dans la session suivante. | Signalé BLOCKED sans boucler (consigne de la brief) ; validation reprise dans une session ultérieure où `mcp__brave-devtools__*` fonctionnait — 9/9 points mesurés (`.superpowers/sdd/2026-09-12-layers/validation-report.md`). |
+| 2026-09-12 | Revue de code sur `activate()` (`web/src/main.ts`, `0f8f1dc`) : (1) `ui.setStatus("Couche indisponible")` non gardé par `activeId === id`, un statut d'échec tardif pouvait écraser celui d'une couche déjà activée entre-temps ; (2) repli récursif `activate(previous, …)` sans vérifier l'ensemble `failed`, risque de rebond réseau indéfini entre deux couches en échec persistant (panne R2). | Statut et repli conditionnés à `activeId === id` ; repli exclu explicitement de `failed` en plus de `previous`/`id` (`51c5d4a`). |
 
 ## 7. Historique par plan (chronologie)
 
@@ -310,6 +347,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | PR #1 — enregistrement de `tiles.yml` sur `master` (débloque `workflow_dispatch` pour `feat/tiles`, §6) | ✅ mergé | `d83e05e` | sans objet (workflow seul) |
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
+| 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | revue finale / merge en cours | à compléter au merge | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -344,8 +382,82 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 27 | **Colorimétrie de la lecture CPU vérifiée sur Chrome seul** : le bitmap `colorSpaceConversion: "none"` traverse un canvas 2D `srgb` ; ±0,02 °C mesuré sur Chrome | Un décodage géré en couleur (Firefox/Safari) décalerait toutes les valeurs du tooltip | 🟡 ouvert — contrôle d'une valeur sur Firefox et Safari après déploiement |
 | 28 | **Mineurs différés de l'exécution de la spec 4 lot A** (détail dans le ledger git-ignoré) : `ZoomControl.dispose()` sans appelant (pas de teardown de scène) ; moitié événementielle de `attachZoom`, `createTooltip` et câblage `main.ts` sans test (règle Vitest logique pure) ; test « limbe 80° » qui démarre derrière l'horizon ; `TapDetector` : `up` d'un id inconnu décrémente le compteur sans resynchroniser ; convergence molette testée sur `aNew` (facteur 4/3) ; `projectToScreen` sans test `ndc.z ≥ −1` | Polish, aucun impact sur les critères d'acceptation | 🟡 ouvert |
 | 29 | ~~`tiles.yml` invalide depuis `f18a90c` (2026-09-05)~~ : ligne 149, `run: echo "… : index.bin, …"` en scalaire YAML nu contenant `: ` → « Invalid workflow file », run rouge de 0 s à chaque push et **tout `workflow_dispatch` futur aurait échoué** (le dernier run manuel réussi, 33976497547, précède ce commit) | Régénération des tuiles impossible tant que non corrigé ; découvert par le faux rouge après le merge de la spec 4 | ✅ résolu 2026-09-06 (`b64a0da` puis correctif réel) : scalaire bloc `run: \|` ; en prime `fromJSON(inputs.boxes \|\| '[0,1,2,3,4,5,6,7]')` |
+| 30 | **`cfgrib`/`xarray` toujours listés dans `pipeline/requirements-grib.txt`** alors que le décodage GRIB (`grib_adapter.py`) appelle désormais `eccodes` directement par clés (spec couches, 2026-09-12) ; `grep -rn "cfgrib\|xarray" pipeline tests` ne trouve plus que ce fichier | Dépendance installée pour rien sur Actions (`eccodeslib` suffit) | 🟡 ouvert — élaguer `requirements-grib.txt` une fois confirmé qu'aucun outillage annexe ne s'appuie encore sur `xarray`/`cfgrib` |
+| 31 | **`gfs/latest.png`/`gfs/latest.json` (schema 1) republiés en parallèle de `layers/latest.json` (v2)**, pour les clients déjà chargés sur l'ancien contrat | Deux formats de sortie à maintenir, deux fois plus d'objets R2 pour `temp` | 🟡 ouvert — retrait prévu comme première tâche de la spec suivante (spec couches §7, §16) |
+| 32 | **Encodage 8 bits `pm25`/`dust` sature au-delà de 500/2 000 µg/m³** alors que la plage plausible brute a été élargie à 20 000/50 000 (T7, §5) — seule la validation d'ordre de grandeur a bougé, pas l'`Encoding` d'affichage | Un panache de pollution exceptionnel (> 500 µg/m³ pm25 ou > 2 000 µg/m³ dust, déjà observé une fois à 2 684/13 377 sur un run réel) s'affiche à la couleur du maximum de la légende au lieu d'une couleur distincte | 🟡 ouvert — revoir `Encoding.max` de `pipeline/layers.py` si ces dépassements se répètent |
+| 33 | **`except Exception` large dans `pipeline/main.py::_process_source`** (mandaté par le plan) | Une exception inattendue et non liée aux échecs source/décodage/validation prévus serait avalée comme un simple échec de source secondaire | 🟡 mineur, ouvert |
+| 34 | **`grib_adapter.py::_message_keys` avale les exceptions eccodes** (mandaté par le plan) | Une clé GRIB manquante ou un message corrompu se traduit en clé absente plutôt qu'en erreur explicite, potentiellement masquant un problème de fichier NOMADS | 🟡 mineur, ouvert |
+| 35 | **Disposition mobile validée à 500 px, pas 400 px** : le pont `mcp__brave-devtools__*` impose une largeur de fenêtre minimale de 500 px (`resize_page(400, …)` retombe à 500) | Le point de rupture CSS (`@media (max-width: 600px)`, `web/src/style.css:158`) rend le comportement à 400 px identique en théorie (pas de rupture intermédiaire), mais non mesuré directement | 🟡 ouvert — à re-tester avec un outillage sans plancher de largeur si disponible |
+| 36 | **Mineurs différés de l'exécution de la spec couches** (liste courte, détail dans le ledger git-ignoré) : `config.RUN_AVAILABILITY_DELAY`/`MAX_CANDIDATES`/`MAX_FORECAST_HOUR` dupliquent `sources.GFS` ; `pressure` sans `stepType` dans `grib_keys` ; `validate_range` non défensive sur NaN (couverte par `validate_grid` en amont) ; `upload_r2` avec liste vide non testé ; casts `as Rgba` (`colormap.ts`) et `as string` (éviction `LayerCache`) ; `lutFor` ré-indexe l'encodage à chaque appel ; `render()` de `layers-menu.ts` sans aucun bouton activé ; `setLegendVisible(false)` ajouté hors brief ; `setActive(id inconnu)` laisse tout le groupe à `tabIndex -1` ; `cursor: not-allowed` redondant sur un bouton déjà `disabled` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec couches | 🟡 ouvert |
+| 37 | ~~**Statut « Couche indisponible » (spec §13) invisible quand le repli réussit** : `activate()` pose `layerNotice` puis appelle le repli, dont le chemin nominal remet `layerNotice` à `null` avant tout `refreshBanner()` ; le message n'apparaît que si aucun repli valide n'existe~~ | L'utilisateur voit le bouton se griser et la vue revenir en arrière sans explication ; trouvé par la revue finale (I3), resté ouvert après la vague de correction unique | ✅ résolu 2026-09-12 (avant merge) : `layerNotice` posé après le retour du repli, avant le dernier `refreshBanner()` |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-12 — Spec 4 lot B1 (couches) exécutée sur `feat/layers` : 7 couches scalaires, pipeline à deux sources, manifeste v2
+
+Reprise du backlog après la confirmation téléphone de la spec 4 lot A (§8, dette
+n° 23) : brainstorming (`superpowers:brainstorming`), lot B (couches multiples)
+retenu devant le lot C (étiquettes). Spec
+`docs/superpowers/specs/2026-09-12-layers-design.md`, plan
+`docs/superpowers/plans/2026-09-12-layers.md` (16 tâches), exécutés en
+**subagent-driven development** sur `feat/layers` (base `b6db64b`) : une revue par
+tâche, **3 rounds de correction** (T7 bornes plausibles pm25/dust, T11 signature
+`formatBanner`, T15 chemin d'échec d'`activate()`) ; l'implémenteur de T15 a été
+coupé par la limite de session après 3 commits poussés, repris par un implémenteur
+frais ; la validation navigateur de T15 a d'abord échoué faute d'outillage
+(`claude-in-chrome` et `chrome-devtools-mcp` tous deux injoignables), puis a été
+reprise avec succès via `mcp__brave-devtools__*` (9/9 points ✅, rapport
+`.superpowers/sdd/2026-09-12-layers/validation-report.md`).
+
+Livré : `pipeline/layers.py` + `sources.py` (registre des 7 couches et des 2
+sources NOMADS), décodage GRIB par clés eccodes directes (`grib_adapter.py`,
+fixtures réelles `gfs_layers.grib2`/`gefs_chem.grib2`), orchestration à deux
+sources avec report tolérant de la source secondaire (`main.py`), manifeste
+`layers/latest.json` v2 + legacy `gfs/latest.*` v1 (`metadata.py`, `publish.py`) ;
+côté front, registre `web/src/layers/` (`registry.ts`, `select.ts`, `cache.ts`),
+`data/manifest.ts` + `data/encoding.ts` (remplacent `metadata.ts`), menu radio
+`ui/layers-menu.ts`, shader à composition alpha + isolignes (`patch.frag.glsl`),
+câblage complet dans `main.ts` (`ManifestLoader`, `LayerCache` LRU 2,
+`activate`/`applyData`) — §2, §3, §5.
+
+- **Tests :** `.venv/Scripts/python -m pytest -q` → **173 passed, 9 skipped**
+  local Windows (5 eccodes + 4 GDAL, attendu) ; `npm --prefix web run test` →
+  **168 passed** (21 fichiers) ; typecheck et build OK.
+- **Build :** `dist/assets/index-*.js` gzip **150,70 Ko** (+2,49 Ko par rapport à
+  la spec 4 lot A, 148,21 Ko), sous le budget de +15 Ko de la spec couches.
+- **Critères d'acceptation (spec §15)** : 1 (7 couches, tooltip ±1 pas de
+  quantification) ✅ mesuré en local (dry-run + brave-devtools : température écart
+  nul, pluie 0,03 mm/h sous le pas de quantification) ; 2 (transparence pluie/
+  PM2.5/poussière/nuages) ✅ ; 3 (isobares 4 hPa lisses) ✅ (mécanisme validé sur
+  une zone à fort gradient, la coordonnée Normandie de la brief tombait sur un
+  champ localement plat à ce run précis — pas un défaut) ; 4 (`?layer=` sans
+  rechargement) ✅ ; **5** (GEFS-chem cassé → 5 PNG GFS + report/omission
+  pm25/dust) ✅ **dry-run CI 7 couches + report chem testé** (`test_main.py`,
+  runs CI 34709677549/34710076060) ; **6** (Vitest/pytest verts, `history_check`,
+  bundle ≤ +15 Ko) ✅ **bundle + CI** ; 7 (0 draw call au repos) ✅ mesuré (0 appel
+  GPU sur 3 s, repos et survol) — changement de couche déjà chargée non
+  chronométré séparément ; **8** (`gfs/latest.*` schema 1 toujours publié et
+  valide) ✅ **vérifié par les tests et le dry-run** (`build_legacy`, ordre
+  d'upload testés).
+- **Revue finale de branche** (modèle le plus capable, `b6db64b..51c5d4a`) : « With fixes » —
+  I1 éviction LRU pouvant disposer la texture *affichée* pendant un chargement (+ loader évincé en
+  vol qui fuit), I2 « Données indisponibles » effacé en ≤ 60 s sans manifeste (fenêtre
+  déploiement → premier run), I3 « Couche indisponible » jamais visible ; mineurs promus M1
+  (`failed` jamais vidé), M2 (isoligne sur octet entier → plateau assombri), M3 (traceback du
+  report chem). Vague de correction unique (`c0e87d9`, `c83de07`) : cache épinglé sur la couche
+  affichée, loader disposé en vol, bandeau sans manifeste, `failed` retentable par `generated_at`,
+  isoligne décalée d'un quart d'octet + `fwidth` borné, `exc_info=True` ; 3 tests ajoutés
+  (**171 vitest**). Re-revue ciblée : I1, I2, M1–M3 réglés ; **I3 reste ouvert** (dette n° 37).
+- **État :** branche `feat/layers` poussée, HEAD `c83de07`, CI `test`/`web` vertes ; merge à
+  suivre. En prod, `layers/latest.json` sera publié au premier run du pipeline après le merge
+  (`gh workflow run pipeline.yml` en `workflow_dispatch`, comme pour la mise en service R2 du
+  2026-09-02).
+- **Dettes :** n° 30 à 37 ouvertes (§8) — élagage `cfgrib`/`xarray`, retrait
+  `gfs/latest.*`, saturation d'encodage pm25/dust, `except Exception` large,
+  `_message_keys` avale les exceptions eccodes, validation 400 px non mesurée
+  (plancher outil 500 px), mineurs différés.
+- **Prochaine action :** merge de `feat/layers` sur `master`, puis brainstorming
+  du **lot B2** (vent animé, champ vectoriel U/V, particules).
 
 ### 2026-09-06 — Spec 4 lot A (navigation) exécutée sur `feat/navigation` : zoom ancré, pincement, tooltip, fondu
 
@@ -715,7 +827,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
+**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 ouverte, merge à suivre)
+**Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
 **Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)

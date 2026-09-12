@@ -1,13 +1,15 @@
 /**
- * Tooltip de température (spec navigation §6) : une « lecture » = un point ancré sur le globe,
+ * Tooltip de la couche active : une « lecture » = un point ancré sur le globe,
  * projetée à chaque rendu. Entrée souris (hover) ou tap (pin) ; même code de rendu.
  */
 import * as THREE from "three";
-import type { Encoding, Grid } from "../data/metadata";
-import { sampleTemperature } from "../data/sampling";
+import type { Encoding } from "../data/encoding";
+import type { Grid } from "../data/manifest";
+import { sampleValue } from "../data/sampling";
+import type { LayerDef } from "../layers/registry";
 import { projectToScreen } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
-import { formatTemperature } from "./format";
+import { formatReading } from "./format";
 import { byId } from "./overlay";
 
 export interface Reading {
@@ -16,9 +18,10 @@ export interface Reading {
 }
 
 export interface TooltipData {
+  def: LayerDef;
   pixels: Uint8ClampedArray;
   grid: Pick<Grid, "width" | "height">;
-  encoding: Pick<Encoding, "min_c" | "max_c">;
+  encoding: Encoding;
 }
 
 export type TapInput = { type: "down" | "move" | "up" | "cancel"; id: number; x: number; y: number; t: number };
@@ -115,7 +118,7 @@ export function createTooltip(): Tooltip {
 
   const refreshText = () => {
     if (!reading || !data) return;
-    tip.textContent = formatTemperature(sampleTemperature(data.pixels, data.grid, data.encoding, reading.lon, reading.lat));
+    tip.textContent = formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat));
   };
 
   return {
@@ -128,7 +131,7 @@ export function createTooltip(): Tooltip {
       refreshText();
     },
     setData(d) {
-      // ignore un tampon incohérent : sinon noUncheckedIndexedAccess dans sampleTemperature retombe silencieusement sur min_c
+      // ignore un tampon incohérent : sinon noUncheckedIndexedAccess dans sampleValue retombe silencieusement sur min
       data = d && d.pixels.length === d.grid.width * d.grid.height * 4 ? d : null;
       refreshText();
     },

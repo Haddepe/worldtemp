@@ -6,11 +6,11 @@ uniform float uHasSat;
 uniform sampler2D uMap;          // R ombrage, G terre, B frontière : données (NoColorSpace)
 uniform vec4 uMapRect;
 uniform float uHasMap;           // 0 = océan connu ou tuile pas encore arrivée
-uniform sampler2D uHeatmap;      // PNG 8 bits global, NoColorSpace
-uniform vec2 uGridSize;          // (1440, 721) depuis latest.json grid
-uniform sampler2D uLut;          // 256×1, sRGB décodée par le GPU
-uniform float uHasHeatmap;
-uniform float uFilter;           // 1 = filtre Température actif
+uniform sampler2D uLayer;        // PNG 8 bits de la couche active, NoColorSpace
+uniform vec2 uGridSize;          // (1440, 721) depuis le manifeste grid
+uniform sampler2D uLut;          // 256×1 RGBA, sRGB décodée par le GPU ; alpha = transparence de la couche
+uniform float uHasLayer;         // 1 = une couche est active
+uniform float uIsoStep;          // pas des isolignes en unités de t ; 0 = aucune
 uniform float uMapStyle;         // 0 = satellite, 1 = style carte (fondu selon l'altitude)
 uniform vec3 uLightDir;          // espace vue, normalisé
 
@@ -45,14 +45,22 @@ vec4 catmullRom(sampler2D tex, vec2 uv, vec2 texSize) {
   return result;
 }
 
+// Isoligne anti-aliasée : 1 sur le trait, 0 ailleurs (spec couches §10). WebGL2 : fwidth natif.
+// `w` est borné à 1e-4 : sur un plateau 8 bits (t constant), fwidth(t) ≈ 0 et
+// smoothstep(0, 0, 0) est indéfini, ce qui assombrit toute la zone plate.
+float isoline(float t, float spacing) {
+  float f = fract(t / spacing);
+  float d = min(f, 1.0 - f) * spacing;
+  float w = max(1.5 * fwidth(t), 1e-4);
+  return 1.0 - smoothstep(0.0, w, d);
+}
+
 void main() {
   // Heatmap : UV équirectangulaire depuis lon/lat, puis grille cellulaire (spec pipeline §4).
   // MIROIR TS : data/sampling.ts (heatmapUv). Modifier l'un impose de modifier l'autre.
   vec2 eq = vec2((vLonLat.x + 180.0) / 360.0, (vLonLat.y + 90.0) / 180.0);
   vec2 hm = vec2(eq.x + 0.5 / uGridSize.x,
                  1.0 - ((1.0 - eq.y) * (uGridSize.y - 1.0) + 0.5) / uGridSize.y);
-  float t = catmullRom(uHeatmap, hm, uGridSize).r;
-  vec3 heat = texture2D(uLut, vec2(t, 0.5)).rgb;
 
   vec3 map = uHasMap > 0.5 ? texture2D(uMap, uMapRect.xy + vUv * uMapRect.zw).rgb : vec3(0.5, 0.0, 0.0);
   float shade = map.r;
@@ -61,18 +69,25 @@ void main() {
   float tone = 0.8 + 0.6 * (shade - 0.5);
   float lambert = max(dot(normalize(vNormal), uLightDir), 0.0);
 
+  // Fond : satellite éclairé → carte claire, selon l'altitude (spec tuiles §6, navigation §7).
+  vec3 sat = uHasSat > 0.5 ? texture2D(uSat, uSatRect.xy + vUv * uSatRect.zw).rgb : vec3(0.05, 0.10, 0.20);
+  vec3 satCol = sat * (0.25 + 0.75 * lambert);
+  vec3 mapCol = mix(vec3(0.72, 0.80, 0.88), vec3(0.85, 0.83, 0.78) * tone, land);
+  vec3 background = mix(satCol, mapCol, uMapStyle);
+
   vec3 color;
-  if (uFilter > 0.5) {
-    vec3 base = uHasHeatmap > 0.5 ? heat : vec3(0.5);
-    color = base * mix(1.0, tone, land);
+  if (uHasLayer > 0.5) {
+    float t = catmullRom(uLayer, hm, uGridSize).r;
+    vec4 heat = texture2D(uLut, vec2(t, 0.5));
+    vec3 layer = heat.rgb * mix(1.0, tone, land);           // relief conservé sur la couche
+    layer *= 0.85 + 0.15 * lambert;
+    // Décalage d'un quart d'octet (0,12 hPa, invisible) : évite qu'une isobare tombe
+    // exactement sur une valeur d'octet entière, où le plateau 8 bits ferait échouer isoline.
+    if (uIsoStep > 0.0) layer *= 1.0 - 0.45 * isoline(t + 0.25 / 255.0, uIsoStep);
+    color = mix(background, layer, heat.a);
     color = mix(color, vec3(1.0), border * 0.7);
-    color *= 0.85 + 0.15 * lambert;
   } else {
-    vec3 sat = uHasSat > 0.5 ? texture2D(uSat, uSatRect.xy + vUv * uSatRect.zw).rgb : vec3(0.05, 0.10, 0.20);
-    vec3 satCol = sat * (0.25 + 0.75 * lambert);
-    vec3 mapCol = mix(vec3(0.72, 0.80, 0.88), vec3(0.85, 0.83, 0.78) * tone, land);
-    color = mix(satCol, mapCol, uMapStyle);
-    color = mix(color, vec3(1.0), border * mix(0.35, 0.7, uMapStyle));
+    color = mix(background, vec3(1.0), border * mix(0.35, 0.7, uMapStyle));
   }
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>

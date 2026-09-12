@@ -15,10 +15,11 @@ export const TIER_PROFILE: Record<Tier, { maxLevel: number; segments: number; bu
 
 export interface TiledGlobe {
   group: THREE.Group;
-  /** `null` retire la heatmap (style carte gris avec le filtre actif). */
-  setHeatmap(texture: THREE.Texture | null, width: number, height: number): void;
+  /** Texture 8 bits de la couche active ; `null` = mode « Aucune » (satellite/carte seuls). */
+  setLayer(texture: THREE.Texture | null, width: number, height: number): void;
   setLut(lut: THREE.DataTexture): void;
-  setFilter(on: boolean): void;
+  /** Pas des isolignes en unités de `t` (octet/255) ; 0 = désactivé. */
+  setIsoStep(step: number): void;
   /** Blue Marble 4K locale, équirectangulaire, utilisée quand aucune tuile `sat` n'est disponible (repli). */
   setFallbackSat(texture: THREE.Texture | null): void;
   setMaxLevel(level: number): void;
@@ -55,11 +56,11 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uMap: { value: null as THREE.Texture | null },
     uMapRect: { value: ZERO_RECT.clone() },
     uHasMap: { value: 0 },
-    uHeatmap: { value: null as THREE.Texture | null },
+    uLayer: { value: null as THREE.Texture | null },
     uGridSize: { value: new THREE.Vector2(1440, 721) },
     uLut: { value: null as THREE.DataTexture | null },
-    uHasHeatmap: { value: 0 },
-    uFilter: { value: 1 },
+    uHasLayer: { value: 0 },
+    uIsoStep: { value: 0 },
     uMapStyle: { value: 0 },
     uLightDir: { value: new THREE.Vector3(0.5, 0.4, 1).normalize() },
   };
@@ -118,16 +119,16 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
 
   return {
     group,
-    setHeatmap(texture, width, height) {
-      uniforms.uHeatmap.value = texture;
+    setLayer(texture, width, height) {
+      uniforms.uLayer.value = texture;
       uniforms.uGridSize.value.set(width, height);
-      uniforms.uHasHeatmap.value = texture ? 1 : 0;
+      uniforms.uHasLayer.value = texture ? 1 : 0;
     },
     setLut(lut) {
       uniforms.uLut.value = lut;
     },
-    setFilter(on) {
-      uniforms.uFilter.value = on ? 1 : 0;
+    setIsoStep(step) {
+      uniforms.uIsoStep.value = step > 0 ? step : 0;
     },
     setFallbackSat(texture) {
       fallbackSat = texture;
