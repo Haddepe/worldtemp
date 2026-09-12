@@ -60,10 +60,6 @@ def _rate_to_mm_per_hour(v: np.ndarray) -> np.ndarray:
     return v * 3600.0
 
 
-def _kg_m3_to_ug_m3(v: np.ndarray) -> np.ndarray:
-    return v * 1e9
-
-
 def _clip_percent(v: np.ndarray) -> np.ndarray:
     return np.clip(v, 0.0, 100.0)
 
@@ -88,12 +84,15 @@ LAYERS: tuple[LayerSpec, ...] = (
     LayerSpec("humidity", "gfs", "RH_2m", "%", "RH", "2_m_above_ground",
               _keys(shortName="2r", typeOfLevel="heightAboveGround", level=2),
               _clip_percent, (0.0, 102.0), Encoding(0, 100, "linear")),
+    # Unité eccodes réelle du fichier NOMADS (clé `units`) : "(10**-6 g) m**-3", donc
+    # déjà en µg/m³ — pas de conversion kg/m³→µg/m³ (l'hypothèse initiale, non vérifiée,
+    # était fausse ; corrigée par le test de décodage réel T4, cf. plausible ci-dessous).
     LayerSpec("pm25", "gefs_chem", "PMTF_surface_total", "µg/m³", "PMTF", "surface",
               _keys(shortName="pmtf", typeOfLevel="surface", aerosolType=AEROSOL_TOTAL),
-              _kg_m3_to_ug_m3, (0.0, 0.01), Encoding(0, 500, "sqrt")),
+              _identity, (0.0, 2000.0), Encoding(0, 500, "sqrt")),
     LayerSpec("dust", "gefs_chem", "PMTC_surface_dust", "µg/m³", "PMTC", "surface",
               _keys(shortName="pmtc", typeOfLevel="surface", aerosolType=AEROSOL_DUST),
-              _kg_m3_to_ug_m3, (0.0, 0.05), Encoding(0, 2000, "sqrt")),
+              _identity, (0.0, 5000.0), Encoding(0, 2000, "sqrt")),
 )
 
 _BY_ID = {s.id: s for s in LAYERS}

@@ -48,8 +48,8 @@ def test_encoding_rejects_bad_values():
     ("rain", 0.001, 3.6),          # kg/m²/s → mm/h
     ("pressure", 101325.0, 1013.25),
     ("humidity", 101.5, 100.0),    # borné
-    ("pm25", 1.2e-8, 12.0),        # kg/m³ → µg/m³
-    ("dust", 5e-7, 500.0),
+    ("pm25", 12.0, 12.0),          # déjà en µg/m³ (unité eccodes réelle : (10**-6 g) m**-3)
+    ("dust", 500.0, 500.0),
 ])
 def test_convert(layer_id, raw, expected):
     out = get(layer_id).convert(np.array([raw], dtype=np.float64))
