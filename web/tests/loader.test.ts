@@ -116,6 +116,14 @@ describe("LayerLoader", () => {
     expect(got?.pixels).toBeNull();
     expect(got?.texture).toBeInstanceOf(THREE.Texture);
   });
+  it("non réentrant : deux load concurrents partagent la même promesse", async () => {
+    const d = deps(null);
+    const ll = new LayerLoader("temp", BASE, d);
+    const [a, b] = await Promise.all([ll.load(TEMP, GRID), ll.load(TEMP, GRID)]);
+    expect(a).toBe(b);
+    expect(a?.entry).toBe(TEMP);
+    expect(d.fetchBitmap).toHaveBeenCalledTimes(1);
+  });
   it("dimensions fausses → TextureError, état inchangé", async () => {
     const d = deps(null, fakeBitmap(10, 10));
     const ll = new LayerLoader("temp", BASE, d);

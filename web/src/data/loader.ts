@@ -101,9 +101,10 @@ export class ManifestLoader {
   }
 }
 
-/** PNG d'une couche : texture GPU + pixels CPU. Recharge seulement si `generated_at` a changé. */
+/** PNG d'une couche : texture GPU + pixels CPU. Non réentrant. Recharge seulement si `generated_at` a changé. */
 export class LayerLoader {
   private current: LoadedLayer | null = null;
+  private inflight: Promise<LoadedLayer | null> | null = null;
 
   constructor(
     readonly id: string,
@@ -115,19 +116,26 @@ export class LayerLoader {
     return this.current;
   }
 
-  async load(entry: LayerEntry, grid: Pick<Grid, "width" | "height">): Promise<LoadedLayer | null> {
-    if (!needsTextureFetch(this.current?.entry ?? null, entry)) return null;
-    const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, entry));
-    const texture = bitmapToTexture(bitmap, grid);
-    let pixels: Uint8ClampedArray | null = null;
-    try {
-      pixels = this.deps.bitmapPixels(bitmap);
-    } catch (e) {
-      console.warn(`[worldtemp] lecture des pixels de la couche ${this.id} impossible :`, e);
-    }
-    this.release();
-    this.current = { entry, texture, pixels };
-    return this.current;
+  load(entry: LayerEntry, grid: Pick<Grid, "width" | "height">): Promise<LoadedLayer | null> {
+    if (this.inflight) return this.inflight;
+    const run = async (): Promise<LoadedLayer | null> => {
+      if (!needsTextureFetch(this.current?.entry ?? null, entry)) return null;
+      const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, entry));
+      const texture = bitmapToTexture(bitmap, grid);
+      let pixels: Uint8ClampedArray | null = null;
+      try {
+        pixels = this.deps.bitmapPixels(bitmap);
+      } catch (e) {
+        console.warn(`[worldtemp] lecture des pixels de la couche ${this.id} impossible :`, e);
+      }
+      this.release();
+      this.current = { entry, texture, pixels };
+      return this.current;
+    };
+    this.inflight = run().finally(() => {
+      this.inflight = null;
+    });
+    return this.inflight;
   }
 
   private release(): void {
