@@ -337,7 +337,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 20 | **`r2.dev` et `worldtemp.geoviz.workers.dev` encore actifs** en plus du domaine personnalisé `globelayers.com` | Deux points d'accès non officiels au même contenu restent joignables après le lancement du domaine définitif | ✅ résolu 2026-09-05 (après merge) : `r2.dev` désactivé par API (401), origine `workers.dev` retirée du CORS, `workers_dev: false` déployé |
 | 21 | **Critère 6 de la spec 3 (tier `low` fluide, < 100 Mio) validé uniquement en simulation desktop** (`?tier=low` sur Chrome DevTools), pas sur un téléphone réel | `?tier=low` force le profil de rendu mais ne reproduit ni le GPU mobile, ni la mémoire, ni le `devicePixelRatio` d'un appareil réel | ✅ résolu 2026-09-05 (soir) : validé par l'utilisateur sur son téléphone — fluide la plupart du temps, léger lag occasionnel |
 | 22 | **Mineurs différés de l'exécution de la spec 3** (liste non exhaustive, détail dans le ledger d'exécution git-ignoré) : `patchSphere` recalculé à chaque patch à chaque frame plutôt que mis en cache par `tileKey` ; `pump()` (chargeur de tuiles) retrie toute la file à chaque appel ; une promesse rejetée dans `loader.start()` (`onLoad` qui lève) n'est pas gérée ; `resize()` de la scène sans garde sur une largeur nulle ; `tiler/grid.py::tile_range` suppose une boîte déjà alignée sur la grille (arrondit silencieusement sinon) ; `HAS_GDAL` ne vérifie la présence que de `gdalwarp`/`ogr2ogr`, pas de `gdaldem`/`gdal_rasterize` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec 3 | 🟡 ouvert |
-| 23 | ~~Zoom à deux doigts trop sensible sur téléphone~~ (cause : OrbitControls multiplie `d`, pas l'altitude) | — | ✅ résolu 2026-09-06 côté code (dolly sur l'altitude, spec 4 lot A, §5) ; pincement réel sur téléphone à confirmer par l'utilisateur après déploiement (critères 3 et 5 de la spec) |
+| 23 | ~~Zoom à deux doigts trop sensible sur téléphone~~ (cause : OrbitControls multiplie `d`, pas l'altitude) | — | ✅ résolu 2026-09-06 côté code (dolly sur l'altitude, spec 4 lot A, §5) ; **confirmé sur téléphone réel le 2026-09-12** par l'utilisateur (critères 3 et 5 de la spec ✅) |
 | 24 | **Le tooltip et le marqueur ignorent les `safe-area-inset-*`** : `placeTooltip` borne au canvas seul (`#overlay`, lui, respecte les insets) | Sur un téléphone à encoche, un tooltip près du bord haut ou d'un bord en paysage peut passer sous l'encoche | 🟡 ouvert — marges par côté alimentées par `env(safe-area-inset-*)` |
 | 25 | **Reflows forcés sur les chemins chauds** : `getBoundingClientRect()` à chaque frame d'ancre (`zoom.ts`) et par doigt par mouvement (`main.ts`), `offsetWidth/Height` du tooltip à chaque survol | Jusqu'à ~4 reflows par événement d'entrée ; aucun jank mesuré (0 draw call au repos), assurance à prendre en cachant le rect du canvas pendant un geste | 🟡 mineur, ouvert |
 | 26 | **Pincement trackpad macOS non compensé** : il arrive en `wheel` avec `ctrlKey` et de petits deltas (OrbitControls multiplie par 10 dans ce cas, `normalizeWheel` non) | Zoom trackpad ~10× moins sensible que voulu ; le défilement à deux doigts (geste usuel) n'est pas touché | 🟡 ouvert, hors périmètre spec 4 lot A |
@@ -390,9 +390,11 @@ l'altitude, ancre, pincement, `keepAnchor`), `data/pixels.ts` + `sampleTemperatu
 - **CI :** run 34054142043 vert (`test`, `web`, `deploy`), site en 200. En passant : `tiles.yml`
   était **invalide** depuis `f18a90c` (scalaire YAML nu avec « : », ligne 149) — run rouge de 0 s à
   chaque push et toute régénération manuelle aurait échoué ; corrigé (`95f3160`, dette n° 29 §8).
-- **Session arrêtée le 2026-09-06 au soir.** Prochaine action : verdict téléphone de l'utilisateur
-  (critères 3 et 5) à consigner ici, puis brainstorming du lot B (couches multiples) ou C
-  (étiquettes).
+- **Session arrêtée le 2026-09-06 au soir.**
+- **Verdict téléphone consigné le 2026-09-12 :** critères 3 (pincement dosable, lieu stable sous
+  les doigts) et 5 (tap pose / retire le marqueur) **✅ validés sur téléphone réel** par
+  l'utilisateur. Dette n° 23 définitivement fermée. Prochaine action : brainstorming du **lot B**
+  (couches multiples) — retenu par l'utilisateur devant le lot C (étiquettes).
 
 ### 2026-09-05 — Spec 3 (tuiles) exécutée sur `feat/tiles` : pyramide, filtre température, domaine `globelayers.com`
 
@@ -713,7 +715,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
+**Dernière mise à jour :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
+**Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
 **Entrée précédente :** 2026-09-02 (**site en ligne** — revue finale + vague de correction, merge `fcaf208`, premier déploiement Workers Static Assets sur `worldtemp.geoviz.workers.dev`, CORS R2, sous-domaine renommé `geoviz`, critères 4 et 6 ✅, critère 5 à valider, 60 vitest, dette n° 12 résolue, dette n° 14 ouverte)
 **Entrée précédente :** 2026-09-02 (**globe + heatmap livrés** — branche `feat/globe-heatmap`, 10 tâches subagent-driven + revues, 59 vitest + 94 pytest local/1 skipped, Workers Static Assets remplace Pages, merge et déploiement à venir, dette n° 3 honorée côté front, dettes n° 10 à 13 ouvertes)
