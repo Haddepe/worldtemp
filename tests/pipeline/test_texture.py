@@ -5,96 +5,145 @@ import pytest
 from PIL import Image
 
 from pipeline.grib_adapter import Field
-from pipeline.texture import InvalidData, encode_png, kelvin_to_celsius, quantize, reorient, validate
+from pipeline.layers import Encoding, get
+from pipeline.texture import (
+    InvalidData, dequantize, encode_png, layer_pixels, quantize, reorient, validate_grid, validate_range,
+)
+
+LIN = Encoding(-90, 60, "linear")
+SQRT = Encoding(0, 50, "sqrt")
 
 
-def make_field(values=None):
+def make_field(values=None, fill=288.15):
     if values is None:
-        values = np.full((721, 1440), 288.15, dtype=np.float32)
+        values = np.full((721, 1440), fill, dtype=np.float32)
     return Field(values=values, lat=np.linspace(90, -90, 721), lon=np.arange(0, 360, 0.25))
 
 
-# --- validate -------------------------------------------------------------
+# --- validate_grid ------------------------------------------------------------
 
-def test_validate_accepts_plausible_field():
-    validate(make_field())
+def test_validate_grid_accepts_gfs_grid():
+    validate_grid(make_field())
 
 
-def test_validate_rejects_nan():
-    v = np.full((721, 1440), 288.15, dtype=np.float32)
-    v[10, 10] = np.nan
+def test_validate_grid_rejects_nan():
+    v = np.full((721, 1440), 1.0, np.float32)
+    v[3, 4] = np.nan
     with pytest.raises(InvalidData, match="NaN"):
-        validate(make_field(v))
+        validate_grid(make_field(v))
 
 
-@pytest.mark.parametrize("bad", [170.0, 350.0])
-def test_validate_rejects_implausible_kelvin(bad):
-    v = np.full((721, 1440), 288.15, dtype=np.float32)
-    v[0, 0] = bad
-    with pytest.raises(InvalidData):
-        validate(make_field(v))
-
-
-def test_validate_rejects_wrong_shape():
+def test_validate_grid_rejects_wrong_shape():
     with pytest.raises(InvalidData, match="forme"):
-        validate(Field(np.zeros((10, 10), np.float32) + 288, np.zeros(10), np.zeros(10)))
+        validate_grid(Field(np.zeros((720, 1440), np.float32), np.linspace(90, -90, 720), np.arange(0, 360, 0.25)))
 
 
-def test_validate_rejects_south_up_grid():
-    f = make_field()
+def test_validate_grid_rejects_south_up_grid():
     with pytest.raises(InvalidData, match="lat"):
-        validate(Field(f.values, f.lat[::-1].copy(), f.lon))
+        validate_grid(Field(np.zeros((721, 1440), np.float32), np.linspace(-90, 90, 721), np.arange(0, 360, 0.25)))
 
 
-def test_validate_rejects_shifted_longitudes():
-    f = make_field()
+def test_validate_grid_rejects_shifted_longitudes():
     with pytest.raises(InvalidData, match="lon"):
-        validate(Field(f.values, f.lat, f.lon - 180))
+        validate_grid(Field(np.zeros((721, 1440), np.float32), np.linspace(90, -90, 721), np.arange(-180, 180, 0.25)))
 
 
-# --- conversions ----------------------------------------------------------
+def test_validate_grid_label_in_message():
+    with pytest.raises(InvalidData, match="rain"):
+        validate_grid(Field(np.zeros((1, 1), np.float32), np.zeros(1), np.zeros(1)), "rain")
 
-def test_kelvin_to_celsius():
-    assert kelvin_to_celsius(np.array([273.15, 288.15])) == pytest.approx([0.0, 15.0])
 
+# --- validate_range -----------------------------------------------------------
+
+@pytest.mark.parametrize("bad", [179.9, 340.1])
+def test_validate_range_rejects_out_of_plausible(bad):
+    with pytest.raises(InvalidData, match="plage"):
+        validate_range(np.array([288.0, bad]), (180.0, 340.0), "temp")
+
+
+def test_validate_range_accepts_bounds_inclusive():
+    validate_range(np.array([180.0, 340.0]), (180.0, 340.0))
+
+
+# --- reorient -----------------------------------------------------------------
 
 def test_reorient_rolls_longitude_zero_to_center():
-    values = np.tile(np.arange(1440, dtype=np.float32), (721, 1))  # colonne j vaut j
-    out = reorient(values)
-    assert out.shape == (721, 1440)
-    assert (out[:, 720] == 0).all()      # lon 0 arrive au centre
-    assert (out[:, 0] == 720).all()      # lon 180 (= -180) arrive à gauche
-    assert (out[0] == values[0][[(j + 720) % 1440 for j in range(1440)]]).all()
+    v = np.zeros((2, 1440), np.float32)
+    v[:, 0] = 1
+    out = reorient(v)
+    assert out[0, 720] == 1 and out[0, 0] == 0
 
 
-@pytest.mark.parametrize("celsius,pixel", [(-90, 0), (60, 255), (15, 178), (-15, 128)])
-def test_quantize_known_values(celsius, pixel):
-    assert quantize(np.array([[float(celsius)]]))[0, 0] == pixel
+# --- quantize / dequantize ----------------------------------------------------
+
+# Table partagée avec web/tests/encoding.test.ts : (enc, valeur, pixel). Aucun demi-entier
+# (np.rint arrondit au pair, Math.round au supérieur).
+ROUNDTRIP_CASES = [
+    (LIN, -90.0, 0), (LIN, 60.0, 255), (LIN, 0.0, 153), (LIN, 20.0, 187), (LIN, -100.0, 0), (LIN, 70.0, 255),
+    (SQRT, 0.0, 0), (SQRT, 50.0, 255), (SQRT, 0.5, 26), (SQRT, 2.0, 51), (SQRT, 12.5, 128), (SQRT, 60.0, 255),
+]
 
 
-def test_quantize_clips_out_of_range():
-    out = quantize(np.array([[-120.0, 90.0]]))
-    assert out.tolist() == [[0, 255]]
-    assert out.dtype == np.uint8
+@pytest.mark.parametrize("enc,value,pixel", ROUNDTRIP_CASES)
+def test_quantize_known_values(enc, value, pixel):
+    assert quantize(np.array([value]), enc)[0] == pixel
+
+
+@pytest.mark.parametrize("enc", [LIN, SQRT])
+def test_dequantize_is_inverse_within_one_step(enc):
+    px = np.arange(256, dtype=np.uint8)
+    back = quantize(dequantize(px, enc), enc)
+    assert np.array_equal(back, px)
+
+
+def test_dequantize_sqrt_is_quadratic():
+    assert dequantize(np.array([255], np.uint8), SQRT)[0] == pytest.approx(50.0)
+    assert dequantize(np.array([128], np.uint8), SQRT)[0] == pytest.approx(50 * (128 / 255) ** 2)
 
 
 def test_quantize_rejects_nan():
     with pytest.raises(InvalidData):
-        quantize(np.array([[np.nan]]))
+        quantize(np.array([np.nan]), LIN)
 
 
-# --- PNG ------------------------------------------------------------------
+def test_quantize_returns_uint8_2d_shape_preserved():
+    out = quantize(np.zeros((3, 4)), LIN)
+    assert out.dtype == np.uint8 and out.shape == (3, 4)
+
+
+# --- layer_pixels -------------------------------------------------------------
+
+def test_layer_pixels_temp_converts_reorients_and_quantizes():
+    v = np.full((721, 1440), 273.15, np.float32)
+    v[:, 0] = 293.15  # colonne GFS 0 (lon 0) → 20 °C
+    converted, px = layer_pixels(make_field(v), get("temp"))
+    assert converted.dtype == np.float64 and converted.shape == (721, 1440)
+    assert converted[0, 720] == pytest.approx(20.0) and converted[0, 0] == pytest.approx(0.0, abs=1e-5)
+    assert px[0, 720] == 187 and px[0, 0] == 153
+
+
+def test_layer_pixels_rain_uses_sqrt():
+    v = np.full((721, 1440), 0.001, np.float32)  # 3,6 mm/h
+    converted, px = layer_pixels(make_field(v), get("rain"))
+    assert converted[0, 0] == pytest.approx(3.6, rel=1e-6)
+    assert px[0, 0] == round(255 * (3.6 / 50) ** 0.5)
+
+
+def test_layer_pixels_rejects_implausible_raw_before_convert():
+    with pytest.raises(InvalidData, match="pressure"):
+        layer_pixels(make_field(fill=50_000.0), get("pressure"))
+
+
+# --- encode_png ---------------------------------------------------------------
 
 def test_encode_png_roundtrip():
-    pixels = np.random.default_rng(0).integers(0, 256, size=(721, 1440), dtype=np.uint8)
-    data = encode_png(pixels)
+    px = np.arange(0, 256, dtype=np.uint8).reshape(16, 16)
+    data = encode_png(px)
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
-    img = Image.open(io.BytesIO(data))
-    assert img.mode == "L"
-    assert img.size == (1440, 721)
-    assert (np.asarray(img) == pixels).all()
+    back = np.array(Image.open(io.BytesIO(data)))
+    assert np.array_equal(back, px)
 
 
 def test_encode_png_rejects_non_uint8():
     with pytest.raises(ValueError):
-        encode_png(np.zeros((2, 2), dtype=np.float32))
+        encode_png(np.zeros((2, 2), np.float32))
