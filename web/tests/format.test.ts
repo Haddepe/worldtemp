@@ -26,12 +26,12 @@ describe("sourceLabel", () => {
 
 describe("formatBanner — spec couches §11", () => {
   it("GFS : run, validité UTC et locale, fraîcheur", () => {
-    expect(formatBanner(layerDef("temp")!, TEMP, NOW, "Europe/Paris")).toBe(
+    expect(formatBanner(TEMP, NOW, "Europe/Paris")).toBe(
       "NOAA GFS 0,25° · run 06:00 UTC · valide 14:00 UTC (16:00 locale) · il y a 12 min",
     );
   });
   it("GEFS-chem : libellé de sa source, sa propre échéance", () => {
-    expect(formatBanner(layerDef("pm25")!, PM, NOW, "UTC")).toBe(
+    expect(formatBanner(PM, NOW, "UTC")).toBe(
       "NOAA GEFS-Aerosols 0,25° · run 06:00 UTC · valide 12:00 UTC · il y a 2 h 12",
     );
   });
@@ -48,10 +48,7 @@ describe("legendTicks", () => {
   it("pluie : positions en racine, libellés courts", () => {
     const ticks = legendTicks(layerDef("rain")!, M.layers.rain!.encoding);
     expect(ticks.map((t) => t.label)).toEqual(["0,5", "2", "8", "25", "50"]);
-    // encode() arrondit à l'octet : sqrt(0,5/50)=0,1 → 25,5 → arrondi à 26 (Math.round arrondit
-    // les .5 vers le haut), soit 26/255·100 = 10,196 % contre 10 % en continu ; précision
-    // abaissée à 0 comme prévu par le brief pour l'imprécision d'arrondi de legendTicks.
-    expect(ticks[0]!.pct).toBeCloseTo(Math.sqrt(0.5 / 50) * 100, 0);
+    expect(ticks[0]!.pct).toBeCloseTo((26 / 255) * 100, 6); // encode(0,5) = round(25,5) = 26
     expect(ticks[4]!.pct).toBeCloseTo(100, 6);
   });
 });

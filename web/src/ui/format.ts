@@ -29,7 +29,6 @@ export function sourceLabel(model: string): string {
 
 /** Bandeau (spec couches §11) : source de la couche active, son run, sa validité, sa fraîcheur. */
 export function formatBanner(
-  _def: LayerDef,
   entry: LayerEntry,
   nowMs: number,
   timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
