@@ -325,6 +325,7 @@ async function boot(): Promise<void> {
     try {
       await windLoader.load(entryU!, entryV!, manifest!.grid);
       windNotice = null;
+      refreshBanner();
     } catch (e) {
       console.warn("[worldtemp] vent indisponible :", e);
       windFailedAt = entryU!.generated_at;
