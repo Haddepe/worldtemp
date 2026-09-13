@@ -4,7 +4,12 @@
  * render/wind.ts (slot 0 = queue, slot K−1 = tête).
  */
 import * as THREE from "three";
+import { sampleValue } from "../data/sampling";
+import type { Encoding } from "../data/encoding";
+import type { Grid } from "../data/manifest";
 import type { Tier } from "../gpu/tier";
+import { vec3ToLonLat } from "../render/pick";
+import { lonLatToVec3 } from "../tiles/patch";
 import type { ViewState } from "../tiles/lod";
 
 export const WIND_PROFILE: Record<Tier, { particles: number; trail: number }> = {
@@ -55,4 +60,86 @@ export function spawnOnScreen(pick: PickFn, rng: () => number, target: THREE.Vec
     if (pick(x, y, target)) return true;
   }
   return false;
+}
+
+export interface WindField {
+  u: Uint8ClampedArray;
+  v: Uint8ClampedArray;
+  grid: Pick<Grid, "width" | "height">;
+  encU: Encoding;
+  encV: Encoding;
+}
+
+const tmp = new THREE.Vector3();
+
+export class WindSim {
+  /** Slot-major [K][N][xyz], rayon RADIUS. Lu par render/wind.ts sans copie. */
+  readonly positions: Float32Array;
+  readonly lon: Float32Array;
+  readonly lat: Float32Array;
+  readonly age: Uint16Array;
+  readonly life: Uint16Array;
+
+  constructor(readonly count: number, readonly trail: number) {
+    if (!(count >= 1) || !(trail >= 2)) throw new Error("count ≥ 1 et trail ≥ 2 attendus");
+    this.positions = new Float32Array(trail * count * 3);
+    this.lon = new Float32Array(count);
+    this.lat = new Float32Array(count);
+    this.age = new Uint16Array(count).fill(1);   // age > life = 0 : toutes naissent au premier tick
+    this.life = new Uint16Array(count);
+  }
+
+  private write(slot: number, i: number, p: THREE.Vector3): void {
+    const o = (slot * this.count + i) * 3;
+    this.positions[o] = p.x;
+    this.positions[o + 1] = p.y;
+    this.positions[o + 2] = p.z;
+  }
+
+  step(field: WindField, dtS: number, view: ViewState, pick: PickFn, rng: () => number = Math.random): void {
+    const dt = Math.min(dtS, MAX_DT_S);
+    const N = this.count;
+    const K = this.trail;
+    const head = K - 1;
+    this.positions.copyWithin(0, N * 3); // slots 1…K−1 → 0…K−2
+    const S = speedScale(view);
+    for (let i = 0; i < N; i++) {
+      let lon = this.lon[i]!;
+      let lat = this.lat[i]!;
+      let respawn = this.age[i]! > this.life[i]! || Math.abs(lat) > MAX_LAT;
+      if (!respawn) {
+        const u = sampleValue(field.u, field.grid, field.encU, lon, lat);
+        const v = sampleValue(field.v, field.grid, field.encV, lon, lat);
+        if (Math.hypot(u, v) < MIN_SPEED) {
+          respawn = true;
+        } else {
+          lon += (u * S * dt) / Math.cos(lat * DEG);
+          lat += v * S * dt;
+          if (lon >= 180) lon -= 360;
+          else if (lon < -180) lon += 360;
+          lonLatToVec3(lon, lat, tmp).multiplyScalar(RADIUS);
+          respawn = Math.abs(lat) > MAX_LAT || !isVisible(tmp, view);
+        }
+      }
+      if (respawn) {
+        this.age[i] = 0;
+        if (spawnOnScreen(pick, rng, tmp)) {
+          const ll = vec3ToLonLat(tmp);
+          lon = ll.lon;
+          lat = ll.lat;
+          this.life[i] = LIFE_MIN + Math.floor(rng() * (LIFE_MAX - LIFE_MIN + 1));
+          tmp.normalize().multiplyScalar(RADIUS);
+          for (let k = 0; k < K; k++) this.write(k, i, tmp);
+        } else {
+          lonLatToVec3(lon, lat, tmp).multiplyScalar(RADIUS); // position conservée
+          this.write(head, i, tmp);
+        }
+      } else {
+        this.age[i] = this.age[i]! + 1;
+        this.write(head, i, tmp);
+      }
+      this.lon[i] = lon;
+      this.lat[i] = lat;
+    }
+  }
 }
