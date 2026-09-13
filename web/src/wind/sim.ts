@@ -44,11 +44,18 @@ export function speedScale(
 
 const camDir = new THREE.Vector3();
 
-/** Devant l'horizon (dot(P̂, Ĉ) > 1/|C|, spec tuiles §5) et dans le frustum. */
+/**
+ * Devant l'horizon et dans le frustum. Seuil d'horizon **exact pour le rayon du point** :
+ * un point à rayon R ne se projette à l'intérieur du limbe de la sphère unité que si
+ * cos θ > (1 + √((d²−1)(R²−1))) / (d·R) — qui vaut 1/d quand R = 1 (spec tuiles §5).
+ * Sans cela, à R = 1,002, une bande de 3,6° de surface se dessine au-delà du limbe.
+ */
 export function isVisible(p: THREE.Vector3, view: Pick<ViewState, "cameraPosition" | "frustum">): boolean {
   const d = view.cameraPosition.length();
   camDir.copy(view.cameraPosition).divideScalar(d);
-  if (p.dot(camDir) / (p.length() || 1) <= 1 / d) return false;
+  const r = p.length() || 1;
+  const thr = (1 + Math.sqrt(Math.max(0, d * d - 1) * Math.max(0, r * r - 1))) / (d * r);
+  if (p.dot(camDir) / r <= thr) return false;
   return view.frustum.containsPoint(p);
 }
 

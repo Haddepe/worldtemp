@@ -52,6 +52,13 @@ describe("isVisible", () => {
     // d = 3 : horizon à cos θ = 1/3 ; z = 0.3 est devant le limbe géométrique mais derrière l'horizon
     expect(isVisible(new THREE.Vector3(Math.sqrt(1 - 0.09), 0, 0.3), v)).toBe(false);
   });
+  it("rayon 1,002 : seuil d'horizon exact (≈ 0,392 à d = 3), pas 1/d", () => {
+    // (1 + √((9 − 1)(1,002² − 1))) / (3 · 1,002) ≈ 0,3922 : cos θ = 0,36 est au-delà de 1/3 mais
+    // se projette encore hors du limbe de la sphère unité → invisible.
+    const at = (cos: number) => new THREE.Vector3(Math.sqrt(1 - cos * cos) * 1.002, 0, cos * 1.002);
+    expect(isVisible(at(0.36), v)).toBe(false);
+    expect(isVisible(at(0.4), v)).toBe(true);
+  });
   it("point devant l'horizon mais hors frustum invisible", () => {
     // d = 1,05 : demi-hauteur visible à la surface ≈ 0,05·tan(22,5°) = 0,021 ; y = 0,1 sort du champ, dot = 0,995 > 1/1,05
     expect(isVisible(new THREE.Vector3(0, 0.1, Math.sqrt(1 - 0.01)), view(1.05))).toBe(false);
