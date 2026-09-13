@@ -33,14 +33,25 @@ describe("WindController — spec vent §8", () => {
     expect(layer.markDirty).toHaveBeenCalledTimes(1);
     expect(layer.setMapStyle).toHaveBeenCalledWith(1); // d = 1,1 < MAP_FADE_END (1,14) → style carte
   });
-  it("un seul tick par frame, dt borné à MAX_DT_S", () => {
+  it("un seul tick par frame, dt borné à MAX_DT_S, reste borné à un tick", () => {
     const { ctl, sim } = make();
     ctl.setField(FIELD);
     ctl.frame(0);
     expect(ctl.frame(5000)).toBe(true);
     expect(sim.step).toHaveBeenCalledTimes(1);
     expect(sim.step.mock.calls[0]![1]).toBeCloseTo(MAX_DT_S, 9);
-    expect(ctl.frame(5000 + TICK_MS / 2)).toBe(false);
+    // après 5 s de pause le reste est borné à TICK_MS : la frame suivante (+16,7 ms) atteint 50 ms → tick
+    expect(ctl.frame(5000 + TICK_MS / 2)).toBe(true);
+    expect(sim.step).toHaveBeenCalledTimes(2);
+  });
+  it("le reste est reporté : 40 ms puis 30 ms font deux ticks", () => {
+    const { ctl, sim } = make();
+    ctl.setField(FIELD);
+    ctl.frame(0);
+    expect(ctl.frame(40)).toBe(true); // acc 40 → tick, reste 6,67 ms
+    expect(ctl.frame(70)).toBe(true); // acc 36,67 ≥ 33,33 → tick malgré un intervalle de 30 ms
+    expect(sim.step).toHaveBeenCalledTimes(2);
+    expect(sim.step.mock.calls[1]![1]).toBeCloseTo((40 - TICK_MS + 30) / 1000, 9);
   });
   it("setField(null) arrête et réamorce l'horloge au prochain champ", () => {
     const { ctl, sim } = make();

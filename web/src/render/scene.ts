@@ -89,7 +89,14 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   const loop = (now: number) => {
     try {
       let animated = false;
-      for (const cb of frameListeners) if (cb(now)) animated = true;
+      // isolation par callback : un tick de vent qui lève ne doit pas priver la frame du rendu
+      for (const cb of frameListeners) {
+        try {
+          if (cb(now)) animated = true;
+        } catch (e) {
+          console.error(e);
+        }
+      }
       const zoomed = zoom.beforeUpdate();
       const moved = controls.update() || zoomed;
       if (moved || dirty || animated) {

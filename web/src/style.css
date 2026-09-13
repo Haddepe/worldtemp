@@ -87,8 +87,9 @@ html, body {
 
 #layers-menu { display: contents; } /* les radios restent des enfants flex directs de #controls, en colonne comme en ligne (mobile) */
 #wind-toggle { margin-top: 0.5rem; }
-#wind-toggle::before { content: "◌ "; }
-#wind-toggle[aria-checked="true"]::before { content: "≋ "; }
+/* texte alternatif vide : les glyphes restent decoratifs, non lus par les technologies d'assistance */
+#wind-toggle::before { content: "◌ " / ""; }
+#wind-toggle[aria-checked="true"]::before { content: "≋ " / ""; }
 #legend .title { font-size: 0.8rem; margin-bottom: 0.3rem; }
 #legend[hidden] { display: none; }
 #attribution {

@@ -43,7 +43,8 @@ export class WindController {
     this.last = nowMs;
     if (this.acc < TICK_MS) return false;
     const dt = Math.min(this.acc / 1000, MAX_DT_S);
-    this.acc = 0;
+    // le reste est reporté (30 Hz régulier sur un rAF à 60 Hz), borné à un tick après une longue pause
+    this.acc = Math.min(this.acc - TICK_MS, TICK_MS);
     const { camera, sim, layer } = this.deps;
     camera.updateMatrixWorld(true);
     const view = viewStateFrom(camera, this.deps.viewportHeight());
