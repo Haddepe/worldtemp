@@ -570,6 +570,8 @@ continu seulement quand le vent est actif (0 draw call au repos conservé).
   contrôle prod : `layers/latest.json` schema 2 à **9 entrées** (`wind_u` stats −19,2/21,4 m/s),
   `wind_u.png`/`wind_v.png` en 200 (≈ 284 Ko chacun), `gfs/latest.json` en **404**, site en 200
   avec le bundle mergé (`index-BZcaPaCk.js`). Dette n° 31 définitivement close.
+- **Session arrêtée le 2026-09-13 au soir.** Arbre propre sur `master` (`4b73888`), branche `feat/wind`
+  supprimée, 9 couches en production.
 - **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays, Natural Earth) ;
   surveiller le premier cron horaire du pipeline avec 9 couches ; dettes n° 38–40 (§8) au fil de l'eau.
 
