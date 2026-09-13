@@ -9,6 +9,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 GFS_FIXTURE = FIXTURES / "gfs_layers.grib2"
 CHEM_FIXTURE = FIXTURES / "gefs_chem.grib2"
 LEGACY_FIXTURE = FIXTURES / "gfs_tmp2m.grib2"
+WIND_FIXTURE = FIXTURES / "gfs_wind.grib2"
 
 
 def _grib_stack_available() -> bool:
@@ -34,7 +35,7 @@ def _assert_gfs_grid(field):
 def test_decode_all_gfs_layers_from_real_file():
     from pipeline.grib_adapter import decode_fields, list_messages
 
-    specs = by_source("gfs")
+    specs = [s for s in by_source("gfs") if not s.id.startswith("wind_")]  # gfs_layers.grib2 : 5 variables, vent en T3
     try:
         fields = decode_fields(GFS_FIXTURE.read_bytes(), specs)
     except Exception as exc:  # le listing est la seule façon de corriger grib_keys
@@ -91,9 +92,34 @@ def test_missing_spec_raises_decode_error_listing_ids():
         decode_fields(LEGACY_FIXTURE.read_bytes(), [get("temp"), get("pm25")])
 
 
+@needs_eccodes
+def test_decode_wind_layers_from_real_file():
+    from pipeline.grib_adapter import decode_fields, list_messages
+    from pipeline.layers import get
+
+    specs = [get("wind_u"), get("wind_v")]
+    try:
+        fields = decode_fields(WIND_FIXTURE.read_bytes(), specs)
+    except Exception as exc:
+        pytest.fail(f"{exc}\nMessages du fichier :\n" + "\n".join(map(str, list_messages(WIND_FIXTURE.read_bytes()))))
+    assert set(fields) == {"wind_u", "wind_v"}
+    for s in specs:
+        _assert_gfs_grid(fields[s.id])
+        lo, hi = float(fields[s.id].values.min()), float(fields[s.id].values.max())
+        assert s.plausible[0] <= lo <= hi <= s.plausible[1], (s.id, lo, hi)
+    speed = np.hypot(fields["wind_u"].values, fields["wind_v"].values)
+    assert 0 <= float(speed.max()) < 80, float(speed.max())
+    assert not np.array_equal(fields["wind_u"].values, fields["wind_v"].values)
+
+
+def test_wind_fixture_is_a_small_real_grib():
+    data = WIND_FIXTURE.read_bytes()
+    assert data[:4] == b"GRIB" and 300_000 < len(data) < 3_000_000
+
+
 def test_module_importable_without_eccodes():
     from pipeline.grib_adapter import DecodeError, Field, decode_fields, list_messages
 
     assert callable(decode_fields) and callable(list_messages) and issubclass(DecodeError, ValueError)
     assert Field(np.zeros((1, 1), np.float32), np.zeros(1), np.zeros(1)).values.shape == (1, 1)
-    assert len(LAYERS) == 7
+    assert len(LAYERS) == 9

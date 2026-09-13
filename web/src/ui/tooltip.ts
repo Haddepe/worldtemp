@@ -9,7 +9,8 @@ import { sampleValue } from "../data/sampling";
 import type { LayerDef } from "../layers/registry";
 import { projectToScreen } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
-import { formatReading } from "./format";
+import { sampleUV, type WindField } from "../wind/sim";
+import { formatReading, formatWind } from "./format";
 import { byId } from "./overlay";
 
 export interface Reading {
@@ -93,6 +94,8 @@ export function placeTooltip(
 export interface Tooltip {
   setReading(r: Reading | null, mode: "hover" | "pin"): void;
   setData(d: TooltipData | null): void;
+  /** Champ de vent actif (spec vent §10) ; `null` retire la ligne « Vent … ». */
+  setWind(field: WindField | null): void;
   /** Reprojection après un rendu ou un déplacement de la souris. */
   update(camera: THREE.PerspectiveCamera, width: number, height: number): void;
   /** Vrai si (x, y) est à moins de `radiusPx` du marqueur affiché (mode pin). */
@@ -107,7 +110,9 @@ export function createTooltip(): Tooltip {
   let reading: Reading | null = null;
   let mode: "hover" | "pin" = "hover";
   let data: TooltipData | null = null;
+  let wind: WindField | null = null;
   const point = new THREE.Vector3();
+  const windSample = { u: 0, v: 0 };
   let markerScreen: { x: number; y: number } | null = null;
 
   const hide = () => {
@@ -117,8 +122,14 @@ export function createTooltip(): Tooltip {
   };
 
   const refreshText = () => {
-    if (!reading || !data) return;
-    tip.textContent = formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat));
+    if (!reading || (!data && !wind)) return;
+    const lines: string[] = [];
+    if (data) lines.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
+    if (wind) {
+      sampleUV(wind, reading.lon, reading.lat, windSample);
+      lines.push(formatWind(windSample.u, windSample.v));
+    }
+    tip.textContent = lines.join("\n");
   };
 
   return {
@@ -135,8 +146,13 @@ export function createTooltip(): Tooltip {
       data = d && d.pixels.length === d.grid.width * d.grid.height * 4 ? d : null;
       refreshText();
     },
+    setWind(f) {
+      // même garde que setData : un tampon incohérent ferait retomber sampleUV sur NaN
+      wind = f && f.uv.length === f.grid.width * f.grid.height * 2 ? f : null;
+      refreshText();
+    },
     update(camera, width, height) {
-      if (!reading || !data) {
+      if (!reading || (!data && !wind)) {
         hide();
         return;
       }

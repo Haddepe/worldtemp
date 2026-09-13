@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from pipeline.layers import get
-from pipeline.metadata import GRID, build_legacy, build_manifest, iso_utc, layer_entry, to_json
+from pipeline.metadata import GRID, build_manifest, iso_utc, layer_entry, to_json
 from pipeline.run_selection import Candidate
 from pipeline.sources import GEFS_CHEM, GFS
 
@@ -52,24 +52,6 @@ def test_build_manifest_orders_layers_by_registry_and_carries_grid():
 
 def test_build_manifest_ignores_unknown_ids():
     assert list(build_manifest({"wind": {}, "temp": {}}, GEN)["layers"]) == ["temp"]
-
-
-def test_build_legacy_is_schema_1_contract():
-    c = Candidate(datetime(2026, 8, 30, 6, tzinfo=UTC), 8)
-    temp = layer_entry(get("temp"), GFS, c, np.array([[-71.34, 48.86]]), datetime(2026, 8, 30, 14, 7, 42, tzinfo=UTC))
-    assert build_legacy(temp) == {
-        "schema_version": 1,
-        "model": "gfs_0p25",
-        "variable": "TMP_2m",
-        "run": "2026-08-30T06:00:00Z",
-        "forecast_hour": 8,
-        "valid_time_utc": "2026-08-30T14:00:00Z",
-        "generated_at": "2026-08-30T14:07:42Z",
-        "encoding": {"bits": 8, "min_c": -90, "max_c": 60},
-        "grid": GRID,
-        "texture": "latest.png",
-        "stats": {"min_c": -71.3, "max_c": 48.9},
-    }
 
 
 def test_to_json_is_utf8_pretty_with_trailing_newline():

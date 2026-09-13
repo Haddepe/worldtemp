@@ -14,7 +14,7 @@ from pathlib import Path
 from pipeline import config, nomads, publish, texture
 from pipeline.grib_adapter import Field
 from pipeline.layers import LAYERS, LayerSpec, by_source
-from pipeline.metadata import build_legacy, build_manifest, iso_utc, layer_entry, to_json
+from pipeline.metadata import build_manifest, iso_utc, layer_entry, to_json
 from pipeline.publish import Object
 from pipeline.run_selection import Candidate, candidates_for
 from pipeline.sources import SOURCES, SourceSpec
@@ -140,9 +140,6 @@ def run(
         pngs.update(o.pngs)
 
     objects = [Object(f"{config.LAYERS_PREFIX}/{s.id}.png", pngs[s.id], "image/png") for s in LAYERS if s.id in pngs]
-    if "temp" in pngs:
-        objects.append(Object(config.LEGACY_PNG_KEY, pngs["temp"], "image/png"))
-        objects.append(Object(config.LEGACY_JSON_KEY, to_json(build_legacy(entries["temp"])), "application/json"))
     objects.append(Object(config.MANIFEST_KEY, to_json(build_manifest(entries, now)), "application/json"))
 
     for o in objects:

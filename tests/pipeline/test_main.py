@@ -14,11 +14,12 @@ from pipeline.publish import PublishError
 NOW = datetime(2026, 9, 12, 14, 40, tzinfo=timezone.utc)
 GFS_RUN, GFS_FH = "2026-09-12T06:00:00Z", 8      # cible 14:00, délai 3 h 30 → run 06z
 CHEM_RUN, CHEM_FH = "2026-09-12T06:00:00Z", 6    # cible 12:00 (pas 3 h), délai 5 h → run 06z
-GFS_IDS = ["temp", "clouds", "rain", "pressure", "humidity"]
+GFS_IDS = ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v"]
 CHEM_IDS = ["pm25", "dust"]
 
 # Valeurs brutes plausibles par couche (avant conversion).
-RAW = {"temp": 288.15, "clouds": 40.0, "rain": 0.001, "pressure": 101325.0, "humidity": 55.0, "pm25": 12.0, "dust": 500.0}
+RAW = {"temp": 288.15, "clouds": 40.0, "rain": 0.001, "pressure": 101325.0, "humidity": 55.0,
+       "wind_u": -3.5, "wind_v": 7.25, "pm25": 12.0, "dust": 500.0}
 
 
 def field(value):
@@ -81,27 +82,31 @@ def current_manifest(gfs=(GFS_RUN, GFS_FH), chem=(CHEM_RUN, CHEM_FH), with_chem=
 
 # --- chemin nominal -----------------------------------------------------------
 
-def test_happy_path_publishes_seven_layers_legacy_and_manifest_last(tmp_path):
+def test_happy_path_publishes_seven_layers_and_manifest_last(tmp_path):
     code, rec = make_run(tmp_path)
     assert code == EXIT_OK
     assert len(rec.downloads) == 2
     assert "filter_gfs_0p25_1hr" in rec.downloads[0] and "f008" in rec.downloads[0]
     assert "filter_gefs_chem_0p25" in rec.downloads[1] and "f006" in rec.downloads[1]
     keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + [f"layers/{i}.png" for i in CHEM_IDS] + [
-        "gfs/latest.png", "gfs/latest.json", "layers/latest.json",
-    ]
+    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + [f"layers/{i}.png" for i in CHEM_IDS] + ["layers/latest.json"]
     m = manifest_of(rec)
     assert m["schema_version"] == 2 and list(m["layers"]) == [s.id for s in LAYERS]
     assert m["layers"]["temp"]["run"] == GFS_RUN and m["layers"]["temp"]["forecast_hour"] == GFS_FH
     assert m["layers"]["pm25"]["run"] == CHEM_RUN and m["layers"]["pm25"]["forecast_hour"] == CHEM_FH
     assert m["layers"]["temp"]["stats"] == {"min": 15.0, "max": 15.0}
     assert m["layers"]["rain"]["stats"] == {"min": 3.6, "max": 3.6}
+    assert m["layers"]["wind_u"]["stats"] == {"min": -3.5, "max": -3.5}
+    assert m["layers"]["wind_v"]["encoding"] == {"bits": 8, "min": -60, "max": 60, "scale": "linear"}
     for o in rec.uploads[0]:
         assert (tmp_path / o.key).read_bytes() == o.body
-    legacy = json.loads((tmp_path / "gfs/latest.json").read_text())
-    assert legacy["schema_version"] == 1 and legacy["encoding"] == {"bits": 8, "min_c": -90, "max_c": 60}
-    assert (tmp_path / "gfs/latest.png").read_bytes() == (tmp_path / "layers/temp.png").read_bytes()
+    assert not (tmp_path / "gfs").exists()
+
+
+def test_no_legacy_object_is_ever_published(tmp_path):
+    code, rec = make_run(tmp_path)
+    assert code == EXIT_OK
+    assert all(not o.key.startswith("gfs/") for o in rec.uploads[0])
 
 
 def test_run_applies_longitude_roll_on_each_layer(tmp_path):
@@ -250,11 +255,11 @@ def test_only_gfs_stale_republishes_gfs_and_reuses_chem_entries(tmp_path):
     assert code == EXIT_OK
     assert len(rec.downloads) == 1 and "filter_gfs" in rec.downloads[0]
     keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + ["gfs/latest.png", "gfs/latest.json", "layers/latest.json"]
+    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + ["layers/latest.json"]
     assert manifest_of(rec)["layers"]["pm25"] == cur["layers"]["pm25"]
 
 
-def test_only_chem_stale_republishes_chem_without_legacy(tmp_path):
+def test_only_chem_stale_republishes_chem_only(tmp_path):
     cur = current_manifest(chem=("2026-09-12T00:00:00Z", 12))
     code, rec = make_run(tmp_path, current=cur)
     assert code == EXIT_OK

@@ -55,3 +55,23 @@ export function formatReading(def: LayerDef, v: number): string {
   if (def.tooltipMin !== null && v < def.tooltipMin) return "—";
   return def.format(v);
 }
+
+const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"] as const;
+
+/** Direction météo (d'où vient le vent), degrés dans [0, 360[ : (270 − atan2(v, u)) mod 360. */
+export function windDirection(u: number, v: number): number {
+  const d = 270 - (Math.atan2(v, u) * 180) / Math.PI;
+  return ((d % 360) + 360) % 360;
+}
+
+/** Point de rose le plus proche (16 points, 22,5° chacun, N centré sur 0°). */
+export function compassPoint(deg: number): string {
+  return COMPASS[Math.round(deg / 22.5) % 16]!;
+}
+
+/** Ligne vent du tooltip (spec vent §10) : « Vent 23 km/h NO », « Vent calme » sous 1 km/h. */
+export function formatWind(u: number, v: number): string {
+  const kmh = Math.round(3.6 * Math.hypot(u, v));
+  if (kmh < 1) return "Vent calme";
+  return `Vent ${kmh} km/h ${compassPoint(windDirection(u, v))}`;
+}

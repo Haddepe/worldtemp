@@ -84,6 +84,14 @@ LAYERS: tuple[LayerSpec, ...] = (
     LayerSpec("humidity", "gfs", "RH_2m", "%", "RH", "2_m_above_ground",
               _keys(shortName="2r", typeOfLevel="heightAboveGround", level=2),
               _clip_percent, (0.0, 102.0), Encoding(0, 100, "linear")),
+    # Vent à 10 m (spec vent §3) : deux composantes scalaires, même encodage signé ; le front
+    # les lit par `bitmapPixels` seulement (jamais de texture GPU). ±60 m/s : pas 0,47 m/s.
+    LayerSpec("wind_u", "gfs", "UGRD_10m", "m/s", "UGRD", "10_m_above_ground",
+              _keys(shortName="10u", typeOfLevel="heightAboveGround", level=10),
+              _identity, (-150.0, 150.0), Encoding(-60, 60, "linear")),
+    LayerSpec("wind_v", "gfs", "VGRD_10m", "m/s", "VGRD", "10_m_above_ground",
+              _keys(shortName="10v", typeOfLevel="heightAboveGround", level=10),
+              _identity, (-150.0, 150.0), Encoding(-60, 60, "linear")),
     # Unité eccodes réelle du fichier NOMADS (clé `units`) : "(10**-6 g) m**-3", donc
     # déjà en µg/m³ — pas de conversion kg/m³→µg/m³ (l'hypothèse initiale, non vérifiée,
     # était fausse ; corrigée par le test de décodage réel T4, cf. plausible ci-dessous).

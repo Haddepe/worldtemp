@@ -16,12 +16,9 @@ MAX_FORECAST_HOUR = 48
 HTTP_TIMEOUT_S = 60
 RETRY_DELAY_S = 30
 
-# R2 (spec couches §7)
+# R2 (spec couches §7 ; legacy gfs/latest.* retiré par la spec vent §5)
 LAYERS_PREFIX = "layers"
 MANIFEST_KEY = "layers/latest.json"
-LEGACY_PNG_KEY = "gfs/latest.png"
-LEGACY_JSON_KEY = "gfs/latest.json"
 CACHE_CONTROL = "public, max-age=300"
 
 SCHEMA_VERSION = 2
-LEGACY_SCHEMA_VERSION = 1
