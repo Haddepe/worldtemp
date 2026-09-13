@@ -10,6 +10,7 @@ import { buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
+import { createWindLayer } from "./render/wind";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
@@ -17,6 +18,11 @@ import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { createOverlay } from "./ui/overlay";
 import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
+import { createWindToggle } from "./ui/wind-toggle";
+import { WindController } from "./wind/controller";
+import { WindLoader } from "./wind/loader";
+import { parseWindParam, withWindParam } from "./wind/select";
+import { WIND_PROFILE, WindSim } from "./wind/sim";
 
 /** Manifeste vide : aucune tuile demandée (mode repli, spec tuiles §8). */
 const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "jpg", maxLevel: -1 }, map: { ext: "png", maxLevel: -1, index: "" } };
@@ -53,6 +59,7 @@ async function boot(): Promise<void> {
   canvas.addEventListener("webglcontextlost", (ev) => {
     ev.preventDefault();
     tooltip.setReading(null, "hover");
+    stopWind();
     ui.showFatal("Le rendu 3D a été interrompu par le navigateur. Rechargez la page.", { reload: true });
   });
 
@@ -76,6 +83,18 @@ async function boot(): Promise<void> {
   const globe = createTiledGlobe(decision.tier, loader, 0);
   ui.setLegendVisible(false); // aucune couche au démarrage : la légende n'a rien à montrer
   sceneHandle.scene.add(globe.group);
+
+  const windProfile = WIND_PROFILE[decision.tier];
+  const windSim = new WindSim(windProfile.particles, windProfile.trail);
+  const windLayer = createWindLayer(windSim.positions, windProfile.particles, windProfile.trail);
+  sceneHandle.scene.add(windLayer.object);
+  const windCtl = new WindController({
+    sim: windSim,
+    layer: windLayer,
+    camera: sceneHandle.camera,
+    viewportHeight: () => canvas.clientHeight,
+    pick: (x, y, target) => pickSphere(x, y, sceneHandle.camera, target),
+  });
 
   const tap = new TapDetector();
 
@@ -174,6 +193,24 @@ async function boot(): Promise<void> {
    * suivant rend la couche retentable (M1). */
   const failed = new Map<string, string>();
 
+  const windLoader = new WindLoader(DATA_BASE_URL);
+  let windOn = parseWindParam(location.search, decision.tier, matchMedia("(prefers-reduced-motion: reduce)").matches);
+  let windUnsub: (() => void) | null = null;
+  /** generated_at de l'entrée wind_u qui a échoué ; retentable quand il change (spec vent §11). */
+  let windFailedAt: string | null = null;
+  /** Statut « Vent indisponible », après layerNotice dans l'ordre de priorité. */
+  let windNotice: string | null = null;
+  const windToggle = createWindToggle(ui.windToggle, (on) => {
+    windOn = on;
+    history.replaceState(null, "", withWindParam(location.search, on));
+    void applyWind();
+  });
+  windToggle.setOn(windOn);
+  // Crochet de validation (T11, critères 2, 3, 8) : dev seulement, comme `__worldtemp`.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader };
+  }
+
   const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {
     const enc = manifest.layers[def.id]!.encoding;
     const key = `${enc.min}/${enc.max}/${enc.scale}`;
@@ -195,13 +232,14 @@ async function boot(): Promise<void> {
     if (!def || !active) {
       ui.setBanner("GlobeLayers");
       ui.setStatus(
-        layerNotice ?? (updateFailed ? "Mise à jour impossible, nouvel essai dans 15 min" : tilesReady ? null : "Détail de la carte indisponible"),
+        layerNotice ?? windNotice ?? (updateFailed ? "Mise à jour impossible, nouvel essai dans 15 min" : tilesReady ? null : "Détail de la carte indisponible"),
       );
       return;
     }
     ui.setBanner(formatBanner(active.entry, Date.now()));
     ui.setStatus(
       layerNotice ??
+        windNotice ??
         (updateFailed
           ? "Mise à jour impossible, nouvel essai dans 15 min"
           : isStale(active.entry, Date.now(), STALE_AFTER_MS)
@@ -264,6 +302,49 @@ async function boot(): Promise<void> {
     console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);
   };
 
+  const stopWind = () => {
+    windUnsub?.();
+    windUnsub = null;
+    windCtl.setField(null);
+    tooltip.setWind(null);
+    windLayer.object.visible = false;
+    sceneHandle.requestRender();
+  };
+
+  /** Active/désactive le vent selon `windOn` et le manifeste courant ; charge U/V si besoin (spec vent §8, §11). */
+  const applyWind = async (): Promise<void> => {
+    const manifest = manifests.manifest;
+    const entryU = manifest?.layers["wind_u"];
+    const entryV = manifest?.layers["wind_v"];
+    const available = !!manifest && !!entryU && !!entryV && windFailedAt !== entryU.generated_at;
+    windToggle.setDisabled(!available);
+    if (!windOn || !available) {
+      stopWind();
+      return;
+    }
+    try {
+      await windLoader.load(entryU!, entryV!, manifest!.grid);
+      windNotice = null;
+    } catch (e) {
+      console.warn("[worldtemp] vent indisponible :", e);
+      windFailedAt = entryU!.generated_at;
+      if (!windLoader.field) {
+        windToggle.setDisabled(true);
+        windNotice = "Vent indisponible";
+        refreshBanner();
+        stopWind();
+        return;
+      }
+      // ancien champ encore là : on continue de l'animer, retentable au prochain generated_at
+    }
+    if (!windOn) return; // basculé pendant le chargement
+    windCtl.setField(windLoader.field);
+    tooltip.setWind(windLoader.field);
+    windLayer.object.visible = true;
+    if (!windUnsub) windUnsub = sceneHandle.onFrame((t) => windCtl.frame(t));
+    refreshBanner();
+  };
+
   const applyData = async () => {
     if (!tilesReady) await loadTiles();
     try {
@@ -289,10 +370,12 @@ async function boot(): Promise<void> {
       } else if (activeId && manifests.manifest) {
         await activate(activeId, false); // même manifeste : recharge seulement si generated_at a changé (LayerLoader)
       }
+      await applyWind();
       refreshBanner();
     } catch (e) {
       console.warn("[worldtemp] manifeste indisponible :", e);
       updateFailed = manifests.manifest !== null;
+      await applyWind(); // manifeste absent → switch désactivé
       refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)
     }
   };
