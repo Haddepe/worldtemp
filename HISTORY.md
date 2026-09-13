@@ -348,6 +348,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
 | 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
+| 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches) ; branche `feat/wind` à créer en T1 | 📝 planifié, non exécuté | — | inchangés (docs seulement) |
 
 ## 8. Dette technique connue
 
@@ -392,6 +393,37 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 37 | ~~**Statut « Couche indisponible » (spec §13) invisible quand le repli réussit** : `activate()` pose `layerNotice` puis appelle le repli, dont le chemin nominal remet `layerNotice` à `null` avant tout `refreshBanner()` ; le message n'apparaît que si aucun repli valide n'existe~~ | L'utilisateur voit le bouton se griser et la vue revenir en arrière sans explication ; trouvé par la revue finale (I3), resté ouvert après la vague de correction unique | ✅ résolu 2026-09-12 (avant merge) : `layerNotice` posé après le retour du repli, avant le dernier `refreshBanner()` |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-13 — Spec 4 lot B2 (vent animé) : brainstorming, spec et plan écrits, exécution à suivre
+
+Brainstorming (`superpowers:brainstorming`, chemin architectural) puis spec
+`docs/superpowers/specs/2026-09-13-wind-design.md` (`38e5f27`) et plan
+`docs/superpowers/plans/2026-09-13-wind.md` (`cda0f39`, 12 tâches) via `writing-plans`.
+**Aucun code applicatif touché.** Décisions (spec §1, ne pas rouvrir) : vent en
+**surimpression combinable** (switch « Vent » indépendant du radio, `?wind=1|0`) plutôt
+qu'en 8e couche ; **10 m seulement** ; animé partout, densité par tier, actif par défaut en
+`high`, inactif en `low` et sous `prefers-reduced-motion` ; tooltip « Vent 23 km/h NO »
+(direction d'où vient le vent, rose à 16 points) ; **approche A** = simulation **CPU** pure
+(`web/src/wind/sim.ts`, N/K = 12 000/12 `high`, 3 000/8 `low`, 30 Hz, vitesse apparente
+constante 2 px/s par m/s, spawn uniforme en NDC via `pickSphere`) + un seul `LineSegments`
+(tampon slot-major `[K][N][xyz]` décalé par `copyWithin`, upload complet par tick, alpha
+statique par slot) plutôt que particules GPU ping-pong à traînées écran (effacement à chaque
+rotation, extensions flottantes mobiles, rien de testable hors navigateur) ; contrat : deux
+entrées scalaires `wind_u`/`wind_v` (UGRD/VGRD 10 m, `Encoding(-60, 60, "linear")`) dans le
+manifeste v2 **inchangé**, plutôt qu'un PNG RGB ; `SceneHandle.onFrame(cb)` pour le rendu
+continu seulement quand le vent est actif (0 draw call au repos conservé).
+
+- **Plan** : T1 retrait de `gfs/latest.*` (dette n° 31) ; T2 registre à 9 specs ; T3 fixture
+  réelle `tests/fixtures/gfs_wind.grib2` (~1 Mo, à télécharger à la main) + décodage réel sur
+  Actions ; T4 `wind/select.ts` + `formatWind` ; T5–T6 simulation ; T7 `render/wind.ts` +
+  shaders ; T8 `WindLoader` (pixels CPU, jamais de texture GPU) ; T9 `onFrame` + contrôleur
+  30 Hz ; T10 switch, `#layers-menu`, tooltip à deux lignes ; T11 câblage `main.ts` +
+  validation navigateur (données du dry-run CI servies via `VITE_DATA_BASE_URL`) ; T12 HISTORY.
+- **Budgets** : bundle ≤ 150,70 + 12 Ko gzip ; tick `high` ≤ 4 ms ; 8 critères d'acceptation (spec §13).
+- **Tests / build :** inchangés (aucun code) ; `history_check` ✓.
+- **Prochaine action :** exécuter le plan en **subagent-driven development** sur `feat/wind`
+  (créée en T1), puis `finishing-a-development-branch`, `gh workflow run pipeline.yml`,
+  suppression manuelle de `gfs/latest.*` sur R2, puis lot C (étiquettes).
 
 ### 2026-09-12 — Spec 4 lot B1 (couches) exécutée sur `feat/layers` : 7 couches scalaires, pipeline à deux sources, manifeste v2
 
@@ -837,7 +869,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-12 (**spec 4 lot B1 couches exécutée, session arrêtée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
+**Dernière mise à jour :** 2026-09-13 (**spec 4 lot B2 vent animé : brainstorming, spec `38e5f27` et plan `cda0f39` écrits, 12 tâches, aucun code touché, exécution subagent-driven sur `feat/wind` à suivre**)
+**Entrée précédente :** 2026-09-12 (**spec 4 lot B1 couches exécutée, session arrêtée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
 **Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
 **Entrée précédente :** 2026-09-05 (**spec 3 tuiles exécutée** — branche `feat/tiles`, pyramide géodésique 512 px + index WTIX + hillshade GDAL, globe en quadtree de patches, bouton Température, domaine `globelayers.com`/`data.globelayers.com`, génération v1 72 893 tuiles ≈ 4,5 Go, 91 vitest + 127 pytest local/5 skipped, dette n° 4 résolue, dettes n° 15 à 19, 22, 23 ouvertes, critère 6 validé sur téléphone, mergé `dcca866`, déployé sur globelayers.com, r2.dev/workers.dev coupés)
