@@ -572,6 +572,9 @@ continu seulement quand le vent est actif (0 draw call au repos conservé).
   avec le bundle mergé (`index-BZcaPaCk.js`). Dette n° 31 définitivement close.
 - **Session arrêtée le 2026-09-13 au soir.** Arbre propre sur `master` (`4b73888`), branche `feat/wind`
   supprimée, 9 couches en production.
+- **Verdict utilisateur en prod (2026-09-13 au soir) :** vent validé visuellement ; **réduire le nombre de
+  particules** (N `high` 12 000, `low` 3 000) une prochaine fois pour économiser CPU et alléger la couche —
+  cohérent avec la dette n° 40 (coût du tick).
 - **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays, Natural Earth) ;
   surveiller le premier cron horaire du pipeline avec 9 couches ; dettes n° 38–40 (§8) au fil de l'eau.
 
