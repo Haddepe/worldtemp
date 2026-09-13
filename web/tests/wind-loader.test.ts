@@ -47,17 +47,21 @@ describe("WindLoader — spec vent §8", () => {
     expect(f2).not.toBeNull();
     expect(d.fetchBitmap).toHaveBeenCalledTimes(4);
   });
-  it("V en échec : rejet, bitmap U fermé, l'ancien champ reste", async () => {
-    const d = deps();
+  it("rechargement raté sur la même instance : rejet, bitmap U fermé, ancien champ conservé", async () => {
+    const bu = fakeBitmap();
+    const fetchBitmap = vi.fn(async (url: string) => {
+      if (/wind_v.*15%3A12/.test(url)) throw new Error(`HTTP 500 sur ${url}`);
+      return /wind_u.*15%3A12/.test(url) ? bu : fakeBitmap();
+    });
+    const d = { fetchBitmap, bitmapPixels: (b: ImageBitmap) => new Uint8ClampedArray(b.width * b.height * 4) } satisfies WindLoaderDeps;
     const wl = new WindLoader(BASE, d);
     const first = await wl.load(U, V, GRID);
-    const bu = fakeBitmap();
-    const failing = deps({ fail: /wind_v/, bitmaps: { [`${BASE}/wind_u.png?v=2026-09-12T14%3A12%3A40Z`]: bu } });
-    const wl2 = new WindLoader(BASE, failing);
-    await expect(wl2.load(U, V, GRID)).rejects.toThrow(/wind_v/);
+    const U2 = { ...U, generated_at: "2026-09-12T15:12:40Z" };
+    const V2 = { ...V, generated_at: "2026-09-12T15:12:40Z" };
+    await expect(wl.load(U2, V2, GRID)).rejects.toThrow(/wind_v/);
     expect(bu.close).toHaveBeenCalled();
-    expect(wl2.field).toBeNull();
     expect(wl.field).toBe(first);
+    expect(fetchBitmap).toHaveBeenCalledTimes(4);
   });
   it("dimensions ≠ grille : TextureError, bitmaps fermés", async () => {
     const bad = fakeBitmap(1441, 721);
@@ -77,6 +81,17 @@ describe("WindLoader — spec vent §8", () => {
     const [a, b] = await Promise.all([wl.load(U, V, GRID), wl.load(U, V, GRID)]);
     expect(a).toBe(b);
     expect(d.fetchBitmap).toHaveBeenCalledTimes(2);
+  });
+  it("dispose pendant un chargement : le résultat est jeté", async () => {
+    let release!: (b: ImageBitmap) => void;
+    const gate = new Promise<ImageBitmap>((r) => { release = r; });
+    const d = { fetchBitmap: vi.fn(() => gate), bitmapPixels: (b: ImageBitmap) => new Uint8ClampedArray(b.width * b.height * 4) } satisfies WindLoaderDeps;
+    const wl = new WindLoader(BASE, d);
+    const p = wl.load(U, V, GRID);
+    wl.dispose();
+    release(fakeBitmap());
+    expect(await p).toBeNull();
+    expect(wl.field).toBeNull();
   });
   it("dispose vide le champ", async () => {
     const wl = new WindLoader(BASE, deps());

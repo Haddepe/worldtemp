@@ -18,6 +18,7 @@ function close(b: ImageBitmap): void {
 export class WindLoader {
   private current: { field: WindField; entryU: LayerEntry; entryV: LayerEntry } | null = null;
   private inflight: Promise<WindField | null> | null = null;
+  private disposed = false;
 
   constructor(
     private readonly baseUrl: string,
@@ -54,6 +55,7 @@ export class WindLoader {
         const u = this.deps.bitmapPixels(bu);
         const v = this.deps.bitmapPixels(bv);
         if (!u || !v) throw new Error("pixels du vent illisibles");
+        if (this.disposed) return null;
         const field: WindField = { u, v, grid: { width: grid.width, height: grid.height }, encU: entryU.encoding, encV: entryV.encoding };
         this.current = { field, entryU, entryV };
         return field;
@@ -69,6 +71,7 @@ export class WindLoader {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.current = null;
   }
 }
