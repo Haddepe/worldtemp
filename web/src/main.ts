@@ -330,10 +330,11 @@ async function boot(): Promise<void> {
       }
     }
     // État recalculé après l'attente : `windOn` a pu basculer pendant le chargement.
-    const failed = present && windFailedAt === entryU!.generated_at;
+    const windFailedNow = present && windFailedAt === entryU!.generated_at;
     const field = windLoader.field;
     // Échec sans ancien champ = rien à animer ; échec avec ancien champ = il continue de tourner.
-    const usable = present && !(failed && field === null);
+    // L'interrupteur reste actif dans ce dernier cas : le désactiver piégerait une animation en cours.
+    const usable = present && !(windFailedNow && field === null);
     windToggle.setDisabled(!usable);
     if (windOn && usable) {
       windCtl.setField(field);
@@ -343,7 +344,9 @@ async function boot(): Promise<void> {
     } else {
       stopWind();
     }
-    windNotice = windOn && present && failed && field === null ? "Vent indisponible" : null;
+    // Spec §11 : statut affiché dès qu'un chargement a échoué, que l'ancien champ survive ou non ;
+    // effacé à l'extinction, au succès et à l'arrivée d'un `generated_at` neuf (retentable).
+    windNotice = windOn && windFailedNow ? "Vent indisponible" : null;
     refreshBanner();
   };
 
