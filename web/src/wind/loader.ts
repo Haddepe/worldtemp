@@ -1,6 +1,8 @@
 /**
  * Chargement des deux PNG U/V du vent (spec vent §8) : pixels CPU seulement, jamais de
  * texture GPU. Les deux composantes sont remplacées ensemble. Non réentrant.
+ * Les deux canaux R sont fusionnés en un seul tableau entrelacé `[u, v]` (2 Mo) : les
+ * tampons RGBA (8 Mo) ne sont pas conservés.
  */
 import { TextureError, browserDeps, needsTextureFetch, textureUrl } from "../data/loader";
 import type { Grid, LayerEntry } from "../data/manifest";
@@ -35,6 +37,10 @@ export class WindLoader {
     const run = async (): Promise<WindField | null> => {
       const prev = this.current;
       if (prev && !needsTextureFetch(prev.entryU, entryU) && !needsTextureFetch(prev.entryV, entryV)) return null;
+      // `sampleUV` décode en ligne, en linéaire : un encodage racine passerait silencieusement faux
+      if (entryU.encoding.scale !== "linear" || entryV.encoding.scale !== "linear") {
+        throw new TextureError("encodage du vent non linéaire");
+      }
       const results = await Promise.allSettled([
         this.deps.fetchBitmap(textureUrl(this.baseUrl, entryU)),
         this.deps.fetchBitmap(textureUrl(this.baseUrl, entryV)),
@@ -56,7 +62,13 @@ export class WindLoader {
         const v = this.deps.bitmapPixels(bv);
         if (!u || !v) throw new Error("pixels du vent illisibles");
         if (this.disposed) return null;
-        const field: WindField = { u, v, grid: { width: grid.width, height: grid.height }, encU: entryU.encoding, encV: entryV.encoding };
+        const n = grid.width * grid.height;
+        const uv = new Uint8Array(n * 2); // canal R des deux RGBA, entrelacé
+        for (let i = 0; i < n; i++) {
+          uv[i * 2] = u[i * 4]!;
+          uv[i * 2 + 1] = v[i * 4]!;
+        }
+        const field: WindField = { uv, grid: { width: grid.width, height: grid.height }, encU: entryU.encoding, encV: entryV.encoding };
         this.current = { field, entryU, entryV };
         return field;
       } finally {

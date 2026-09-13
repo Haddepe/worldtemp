@@ -13,6 +13,13 @@ function fakeBitmap(width = 1440, height = 721): ImageBitmap {
   return { width, height, close: vi.fn() } as unknown as ImageBitmap;
 }
 
+/** RGBA dont le canal R vaut `r` partout (les autres canaux doivent être ignorés). */
+function rgba(b: ImageBitmap, r: number): Uint8ClampedArray {
+  const px = new Uint8ClampedArray(b.width * b.height * 4);
+  for (let i = 0; i < px.length; i += 4) { px[i] = r; px[i + 1] = 7; px[i + 2] = 9; px[i + 3] = 255; }
+  return px;
+}
+
 function deps(opts: { bitmaps?: Record<string, ImageBitmap>; pixels?: (b: ImageBitmap) => Uint8ClampedArray | null; fail?: RegExp } = {}) {
   const fetchBitmap = vi.fn(async (url: string) => {
     if (opts.fail?.test(url)) throw new Error(`HTTP 500 sur ${url}`);
@@ -30,10 +37,29 @@ describe("WindLoader — spec vent §8", () => {
     expect(d.fetchBitmap.mock.calls.map((c) => c[0])).toEqual([
       `${BASE}/wind_u.png?v=2026-09-12T14%3A12%3A40Z`, `${BASE}/wind_v.png?v=2026-09-12T14%3A12%3A40Z`,
     ]);
-    expect(f!.u.length).toBe(1440 * 721 * 4);
+    expect(f!.uv.length).toBe(1440 * 721 * 2);
     expect(f!.encU).toEqual(U.encoding);
+    expect(f!.encV).toEqual(V.encoding);
     expect(f!.grid).toEqual({ width: 1440, height: 721 });
     expect(wl.field).toBe(f);
+  });
+  it("entrelace le canal R des deux RGBA : [u, v, u, v, …]", async () => {
+    const bu = fakeBitmap(4, 3);
+    const bv = fakeBitmap(4, 3);
+    const d = {
+      fetchBitmap: vi.fn(async (url: string) => (url.includes("wind_u") ? bu : bv)),
+      bitmapPixels: (b: ImageBitmap) => rgba(b, b === bu ? 200 : 50),
+    } satisfies WindLoaderDeps;
+    const f = await new WindLoader(BASE, d).load(U, V, { width: 4, height: 3 });
+    expect(f!.uv.length).toBe(4 * 3 * 2);
+    expect([...f!.uv.slice(0, 6)]).toEqual([200, 50, 200, 50, 200, 50]);
+    expect([...f!.uv.slice(-2)]).toEqual([200, 50]);
+  });
+  it("encodage non linéaire : rejet avant tout téléchargement", async () => {
+    const d = deps();
+    const Usqrt = { ...U, encoding: { ...U.encoding, scale: "sqrt" as const } };
+    await expect(new WindLoader(BASE, d).load(Usqrt, V, GRID)).rejects.toThrow(TextureError);
+    expect(d.fetchBitmap).not.toHaveBeenCalled();
   });
   it("même generated_at : null, aucun fetch ; generated_at neuf : rechargé", async () => {
     const d = deps();

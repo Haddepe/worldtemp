@@ -4,11 +4,9 @@
  * render/wind.ts (slot 0 = queue, slot K−1 = tête).
  */
 import * as THREE from "three";
-import { sampleValue } from "../data/sampling";
 import type { Encoding } from "../data/encoding";
 import type { Grid } from "../data/manifest";
 import type { Tier } from "../gpu/tier";
-import { vec3ToLonLat } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
 import type { ViewState } from "../tiles/lod";
 
@@ -29,6 +27,8 @@ export const LIFE_MAX = 120;
 export const SPAWN_TRIES = 8;
 
 const DEG = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
+const MIN_SPEED_SQ = MIN_SPEED * MIN_SPEED;
 
 export type PickFn = (ndcX: number, ndcY: number, target: THREE.Vector3) => THREE.Vector3 | null;
 
@@ -62,15 +62,62 @@ export function spawnOnScreen(pick: PickFn, rng: () => number, target: THREE.Vec
   return false;
 }
 
+/**
+ * Champ de vent prêt pour le tick : **un seul** tableau d'octets entrelacé `[u0, v0, u1, v1, …]`
+ * (rangée par rangée, nord en haut, même cellule que le canal R des PNG — `wind/loader.ts`).
+ * 2 Mo au lieu de 8 Mo, et les deux composantes d'un pixel sur la même ligne de cache.
+ */
 export interface WindField {
-  u: Uint8ClampedArray;
-  v: Uint8ClampedArray;
+  uv: Uint8Array;
   grid: Pick<Grid, "width" | "height">;
   encU: Encoding;
   encV: Encoding;
 }
 
+/**
+ * Échantillonnage bilinéaire **fusionné** des deux composantes en m/s, sans allocation :
+ * les quatre index de coin sont calculés une fois pour u et v, et le décodage linéaire
+ * (`min + (max − min) · octet/255`) est écrit sur place. Mêmes coordonnées cellulaires que
+ * `data/sampling.ts::sampleValue` (bouclage en longitude, latitude bornée) : modifier l'un
+ * impose de modifier l'autre. Les encodages du vent sont toujours linéaires (garde au chargement).
+ */
+export function sampleUV(field: WindField, lon: number, lat: number, out: { u: number; v: number }): void {
+  const uv = field.uv;
+  const W = field.grid.width;
+  const H = field.grid.height;
+  let x = ((lon + 180) / 360) * W;
+  x = ((x % W) + W) % W;
+  const x0 = Math.floor(x);
+  const x1 = (x0 + 1) % W;
+  const fx = x - x0;
+  let y0 = 0;
+  let fy = 0;
+  if (H >= 2) {
+    // hors contrat (721 lignes) : H < 2 retombe sur l'unique rangée, comme sampleValue
+    const y = Math.min(H - 1, Math.max(0, ((90 - lat) / 180) * (H - 1)));
+    y0 = Math.min(H - 2, Math.floor(y));
+    fy = y - y0;
+  }
+  const r0 = y0 * W;
+  const r1 = (H >= 2 ? y0 + 1 : y0) * W;
+  const a = (r0 + x0) * 2;
+  const b = (r0 + x1) * 2;
+  const c = (r1 + x0) * 2;
+  const e = (r1 + x1) * 2;
+  const gx = 1 - fx;
+  const gy = 1 - fy;
+  const topU = uv[a]! * gx + uv[b]! * fx;
+  const botU = uv[c]! * gx + uv[e]! * fx;
+  const topV = uv[a + 1]! * gx + uv[b + 1]! * fx;
+  const botV = uv[c + 1]! * gx + uv[e + 1]! * fx;
+  const encU = field.encU;
+  const encV = field.encV;
+  out.u = encU.min + (encU.max - encU.min) * ((topU * gy + botU * fy) / 255);
+  out.v = encV.min + (encV.max - encV.min) * ((topV * gy + botV * fy) / 255);
+}
+
 const tmp = new THREE.Vector3();
+const sample = { u: 0, v: 0 };
 
 export class WindSim {
   /** Slot-major [K][N][xyz], rayon RADIUS. Lu par render/wind.ts sans copie. */
@@ -108,9 +155,10 @@ export class WindSim {
       let lat = this.lat[i]!;
       let respawn = this.age[i]! > this.life[i]! || Math.abs(lat) > MAX_LAT;
       if (!respawn) {
-        const u = sampleValue(field.u, field.grid, field.encU, lon, lat);
-        const v = sampleValue(field.v, field.grid, field.encV, lon, lat);
-        if (Math.hypot(u, v) < MIN_SPEED) {
+        sampleUV(field, lon, lat, sample);
+        const u = sample.u;
+        const v = sample.v;
+        if (u * u + v * v < MIN_SPEED_SQ) {
           respawn = true;
         } else {
           lon += (u * S * dt) / Math.cos(lat * DEG);
@@ -124,9 +172,12 @@ export class WindSim {
       if (respawn) {
         this.age[i] = 0;
         if (spawnOnScreen(pick, rng, tmp)) {
-          const ll = vec3ToLonLat(tmp);
-          lon = ll.lon;
-          lat = ll.lat;
+          // `render/pick.ts::vec3ToLonLat` en ligne : même formule, sans objet alloué par respawn
+          const r = tmp.length() || 1;
+          lat = 90 - Math.acos(Math.max(-1, Math.min(1, tmp.y / r))) * RAD_TO_DEG;
+          lon = Math.atan2(tmp.z, -tmp.x) * RAD_TO_DEG - 180;
+          if (lon < -180) lon += 360;
+          if (lon >= 180) lon -= 360; // deux tests indépendants, comme vec3ToLonLat : 180 exact → −180
           this.life[i] = LIFE_MIN + Math.floor(rng() * (LIFE_MAX - LIFE_MIN + 1));
           tmp.normalize().multiplyScalar(RADIUS);
           for (let k = 0; k < K; k++) this.write(k, i, tmp);

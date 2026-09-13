@@ -9,7 +9,7 @@ import { sampleValue } from "../data/sampling";
 import type { LayerDef } from "../layers/registry";
 import { projectToScreen } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
-import type { WindField } from "../wind/sim";
+import { sampleUV, type WindField } from "../wind/sim";
 import { formatReading, formatWind } from "./format";
 import { byId } from "./overlay";
 
@@ -112,6 +112,7 @@ export function createTooltip(): Tooltip {
   let data: TooltipData | null = null;
   let wind: WindField | null = null;
   const point = new THREE.Vector3();
+  const windSample = { u: 0, v: 0 };
   let markerScreen: { x: number; y: number } | null = null;
 
   const hide = () => {
@@ -125,9 +126,8 @@ export function createTooltip(): Tooltip {
     const lines: string[] = [];
     if (data) lines.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
     if (wind) {
-      const u = sampleValue(wind.u, wind.grid, wind.encU, reading.lon, reading.lat);
-      const v = sampleValue(wind.v, wind.grid, wind.encV, reading.lon, reading.lat);
-      lines.push(formatWind(u, v));
+      sampleUV(wind, reading.lon, reading.lat, windSample);
+      lines.push(formatWind(windSample.u, windSample.v));
     }
     tip.textContent = lines.join("\n");
   };
@@ -147,7 +147,8 @@ export function createTooltip(): Tooltip {
       refreshText();
     },
     setWind(f) {
-      wind = f && f.u.length === f.grid.width * f.grid.height * 4 && f.v.length === f.u.length ? f : null;
+      // même garde que setData : un tampon incohérent ferait retomber sampleUV sur NaN
+      wind = f && f.uv.length === f.grid.width * f.grid.height * 2 ? f : null;
       refreshText();
     },
     update(camera, width, height) {

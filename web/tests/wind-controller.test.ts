@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WindController } from "../src/wind/controller";
 import { MAX_DT_S, TICK_MS, type WindField } from "../src/wind/sim";
 
-const FIELD = { u: new Uint8ClampedArray(4), v: new Uint8ClampedArray(4), grid: { width: 1, height: 1 }, encU: { bits: 8, min: -60, max: 60, scale: "linear" as const }, encV: { bits: 8, min: -60, max: 60, scale: "linear" as const } } satisfies WindField;
+const FIELD = { uv: new Uint8Array(2), grid: { width: 1, height: 1 }, encU: { bits: 8, min: -60, max: 60, scale: "linear" as const }, encV: { bits: 8, min: -60, max: 60, scale: "linear" as const } } satisfies WindField;
 
 function make() {
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10);

@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import { decode, encode } from "../src/data/encoding";
-import { vec3ToLonLat } from "../src/render/pick";
+import { sampleValue } from "../src/data/sampling";
 import { viewStateFrom } from "../src/tiles/lod";
 import { lonLatToVec3 } from "../src/tiles/patch";
 import {
   LIFE_MAX, LIFE_MIN, MAX_LAT, MIN_SPEED, PX_PER_S_PER_MS, RADIUS, SPAWN_TRIES, WIND_PROFILE, WindSim,
-  isVisible, spawnOnScreen, speedScale, type PickFn, type WindField,
+  isVisible, sampleUV, spawnOnScreen, speedScale, type PickFn, type WindField,
 } from "../src/wind/sim";
 
 /** Caméra à la distance d sur +z, viewport carré, fov 45°. */
@@ -87,15 +87,13 @@ describe("spawnOnScreen", () => {
 const GRID = { width: 8, height: 5 };
 const ENC = { bits: 8, min: -60, max: 60, scale: "linear" as const };
 
-/** Champ constant (u, v) en m/s sur une petite grille : sampleValue renvoie la constante partout. */
+/** Champ constant (u, v) en m/s sur une petite grille : sampleUV renvoie la constante partout. */
 function field(u: number, v: number): WindField {
-  const fill = (val: number) => {
-    const px = new Uint8ClampedArray(GRID.width * GRID.height * 4);
-    const b = encode(val, ENC);
-    for (let i = 0; i < px.length; i += 4) { px[i] = b; px[i + 3] = 255; }
-    return px;
-  };
-  return { u: fill(u), v: fill(v), grid: GRID, encU: ENC, encV: ENC };
+  const bu = encode(u, ENC);
+  const bv = encode(v, ENC);
+  const uv = new Uint8Array(GRID.width * GRID.height * 2);
+  for (let i = 0; i < uv.length; i += 2) { uv[i] = bu; uv[i + 1] = bv; }
+  return { uv, grid: GRID, encU: ENC, encV: ENC };
 }
 
 /** Pick qui pose toujours la particule au même point (lon, lat) visible depuis +z. */
@@ -109,6 +107,73 @@ function slot(sim: WindSim, k: number, i: number) {
   const o = (k * sim.count + i) * 3;
   return new THREE.Vector3(sim.positions[o], sim.positions[o + 1], sim.positions[o + 2]);
 }
+
+describe("sampleUV — échantillonnage fusionné", () => {
+  const out = { u: 0, v: 0 };
+  /** Encodage identité : l'octet lu est la valeur décodée. */
+  const ID = { bits: 8, min: 0, max: 255, scale: "linear" as const };
+
+  it("champ constant : les deux constantes, partout", () => {
+    const f = field(12, -8);
+    for (const [lon, lat] of [[-180, 90], [0, 0], [179.9, -85], [-73.5, 45.2]] as const) {
+      sampleUV(f, lon, lat, out);
+      expect(out.u).toBeCloseTo(decode(encode(12, ENC), ENC), 9);
+      expect(out.v).toBeCloseTo(decode(encode(-8, ENC), ENC), 9);
+    }
+  });
+
+  it("deux colonnes : interpolation linéaire à une demi-cellule", () => {
+    // W = 2 : centre de la colonne 0 à lon −180, colonne 1 à lon 0 ; lon −90 = mi-chemin
+    const uv = new Uint8Array([10, 100, 50, 200, 10, 100, 50, 200]);
+    const f: WindField = { uv, grid: { width: 2, height: 2 }, encU: ID, encV: ID };
+    sampleUV(f, -180, 0, out);
+    expect(out.u).toBeCloseTo(10, 9);
+    expect(out.v).toBeCloseTo(100, 9);
+    sampleUV(f, -90, 0, out);
+    expect(out.u).toBeCloseTo(30, 9);
+    expect(out.v).toBeCloseTo(150, 9);
+    sampleUV(f, 0, 0, out);
+    expect(out.u).toBeCloseTo(50, 9);
+    expect(out.v).toBeCloseTo(200, 9);
+  });
+
+  it("bouclage en longitude : au-delà de la dernière colonne on revient sur la première", () => {
+    const uv = new Uint8Array([10, 100, 50, 200, 10, 100, 50, 200]);
+    const f: WindField = { uv, grid: { width: 2, height: 2 }, encU: ID, encV: ID };
+    sampleUV(f, 90, 0, out); // mi-chemin entre la colonne 1 (lon 0) et la colonne 0 (lon 180 ≡ −180)
+    expect(out.u).toBeCloseTo(30, 9);
+    expect(out.v).toBeCloseTo(150, 9);
+    const wrapped = { u: 0, v: 0 };
+    sampleUV(f, 179.9 - 360, 0, out);
+    sampleUV(f, 179.9, 0, wrapped);
+    expect(out.u).toBeCloseTo(wrapped.u, 9);
+  });
+
+  it("accord avec sampleValue sur un champ RGBA aléatoire", () => {
+    const W = 16;
+    const H = 9;
+    let seed = 42;
+    const rnd = () => { seed = (seed * 48271) % 2147483647; return seed / 2147483647; };
+    const pu = new Uint8ClampedArray(W * H * 4);
+    const pv = new Uint8ClampedArray(W * H * 4);
+    const uv = new Uint8Array(W * H * 2);
+    for (let i = 0; i < W * H; i++) {
+      pu[i * 4] = Math.floor(rnd() * 256);
+      pv[i * 4] = Math.floor(rnd() * 256);
+      uv[i * 2] = pu[i * 4]!;
+      uv[i * 2 + 1] = pv[i * 4]!;
+    }
+    const grid = { width: W, height: H };
+    const f: WindField = { uv, grid, encU: ENC, encV: ENC };
+    for (let k = 0; k < 20; k++) {
+      const lon = rnd() * 360 - 180;
+      const lat = rnd() * 180 - 90;
+      sampleUV(f, lon, lat, out);
+      expect(out.u).toBeCloseTo(sampleValue(pu, grid, ENC, lon, lat), 9);
+      expect(out.v).toBeCloseTo(sampleValue(pv, grid, ENC, lon, lat), 9);
+    }
+  });
+});
 
 describe("WindSim.step — advection", () => {
   it("premier tick : toutes les particules naissent au point du pick, K slots égaux, rayon 1,002", () => {
@@ -219,7 +284,7 @@ describe("WindSim.step — respawn", () => {
     sim.step(field(0, 0), DT, view(3), pickAt(-100, 20), () => 0.999999);
     expect(sim.life[0]).toBe(LIFE_MAX);
   });
-  it("vitesse inférieure à MIN_SPEED constatée", () => {
-    expect(Math.hypot(0.2, 0.2)).toBeLessThan(MIN_SPEED);
+  it("vitesse inférieure à MIN_SPEED constatée (comparaison au carré)", () => {
+    expect(0.2 * 0.2 + 0.2 * 0.2).toBeLessThan(MIN_SPEED * MIN_SPEED);
   });
 });
