@@ -40,4 +40,11 @@ export const MANIFEST = {
 
 /** Entrée `temp` seule, pratique pour les tests de chargement. */
 export const TEMP_ENTRY = MANIFEST.layers.temp;
+
+/** Entrées vent (spec vent §4), hors de MANIFEST pour ne pas changer les comptes des autres suites. */
+export const WIND_ENTRIES = {
+  wind_u: gfs("wind_u", "UGRD_10m", "m/s", { min: -60, max: 60, scale: "linear" }, { min: -31.2, max: 34.8 }),
+  wind_v: gfs("wind_v", "VGRD_10m", "m/s", { min: -60, max: 60, scale: "linear" }, { min: -28.9, max: 30.1 }),
+};
+
 export { GRID };
