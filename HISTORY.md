@@ -87,16 +87,16 @@ tiler/                          # génération des tuiles, Actions seulement (d�
   main.py                        # orchestration blocs → tuiles → index, CLI (extract-gebco/map/sat/merge-index), build_level0
   requirements.txt               # numpy, Pillow (+ GDAL CLI, hors pip, installé par apt sur Actions)
 pipeline/
-  config.py                    # clés R2 layers/, délais par source, versions de schéma (constantes de température retirées)
-  layers.py                    # NOUVEAU (spec couches 2026-09-12) : registre LayerSpec des 7 couches, Encoding, LAYERS, by_source
+  config.py                    # clés R2 layers/, délais par source, versions de schéma ; legacy `gfs/latest.*`/`LEGACY_SCHEMA_VERSION` retirés (spec vent, dette n° 31 résolue)
+  layers.py                    # registre LayerSpec des 9 couches (spec couches 2026-09-12 + `wind_u`/`wind_v` UGRD/VGRD 10 m, spec vent 2026-09-13, `Encoding(-60, 60, "linear")`), LAYERS, by_source
   sources.py                   # NOUVEAU : SourceSpec des 2 sources NOMADS (GFS, GEFS-chem), SOURCES
   run_selection.py             # candidates(step_hours=…), candidates_for(source, now) — deux cadences (1 h, 3 h)
   nomads.py                    # build_url(source, candidate, specs) multi-variables, téléchargement, retry sur 429
   grib_adapter.py              # seul module dépendant d'eccodes ; decode_fields(data, specs) par clés (bindings eccodes directs, plus de cfgrib/xarray)
   texture.py                   # validate_grid/validate_range, convert, quantize(min,max,scale) linéaire ou racine, layer_pixels
-  metadata.py                  # layer_entry, build_manifest (schéma v2, multi-couches) + build_legacy (schéma v1, une version)
+  metadata.py                  # layer_entry, build_manifest (schéma v2, multi-couches) ; `build_legacy` (schéma v1) retiré (spec vent, dette n° 31 résolue)
   publish.py                   # Object, upload_r2(cfg, objects) d'une liste ordonnée, read_current(cfg, key)
-  main.py                      # orchestration à deux sources (primaire GFS, secondaire GEFS-chem tolérante), report chem, publication legacy + manifeste v2
+  main.py                      # orchestration à deux sources (primaire GFS, secondaire GEFS-chem tolérante), report chem, manifeste v2 (publication legacy `gfs/latest.*` retirée, spec vent T1)
   requirements.txt             # Windows OK : numpy, Pillow, requests, boto3
   requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray (non référencés dans le code, dette n° 30 §8)
 tools/
@@ -107,6 +107,7 @@ tests/
   fixtures/gfs_tmp2m.grib2     # fixture GRIB legacy (~514 Ko, test_grib_adapter.py), exception au .gitignore
   fixtures/gfs_layers.grib2    # NOUVEAU (spec couches) : fixture réelle filtrée, 5 variables GFS (≈ 5,7 Mo), exception au .gitignore
   fixtures/gefs_chem.grib2     # NOUVEAU : fixture réelle filtrée, PMTF + PMTC surface GEFS-Aerosols (≈ 3,1 Mo), exception au .gitignore
+  fixtures/gfs_wind.grib2      # NOUVEAU (spec vent) : fixture réelle NOMADS, UGRD/VGRD 10 m (1,9 Mo), exception au .gitignore
   fixtures/tiler/borders.geojson  # fixture frontières pour test_tiler_borders.py
   pipeline/                    # tests pytest des modules ci-dessus (1 fichier par module, dont test_layers.py, test_sources.py)
   tiler/                       # tests pytest de tiler/ (1 fichier par module ; GDAL skip sous Windows)
@@ -124,9 +125,9 @@ tests/
 pytest.ini                     # testpaths = tests
 HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
-.gitignore
+.gitignore                    # `web/public/dev-data/` ignoré (spec vent T11a : données dry-run CI pour la validation navigateur)
 web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
-  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
   tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler
@@ -136,9 +137,9 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev
+    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind`/`stopWind`, statut « Vent indisponible » (`windNotice`), crochet dev `window.__worldtempWind`
     config.ts                  # DATA_BASE_URL (data.globelayers.com/layers, spec couches) /TILES_BASE_URL, REFRESH_MS, STALE_AFTER_MS
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9)
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
@@ -160,20 +161,29 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       lod.ts                     # selectTiles (frustum, horizon, taille projetée en px CSS), mapStyleFor (MAP_FADE_START/END 1,20 → 1,14), ViewState
       loader.ts                  # chargeur de tuiles : priorité, concurrence par tier, tentatives, LRU par budget mémoire
       patch.ts                   # géométrie des patches (quadtree) avec jupes orientées vers l'extérieur, lonLatToVec3
+    wind/                       # NOUVEAU (spec vent 2026-09-13) : simulation CPU du vent, indépendante du rendu
+      sim.ts                      # WindSim : advection U/V (sampleValue), tampon slot-major [K][N][xyz] glissant (copyWithin), respawn (pickSphere), WIND_PROFILE par tier (high 12000/12, low 3000/8)
+      select.ts                   # pur : parseWindParam (`?wind=1|0`, défaut par tier, reduced-motion), withWindParam
+      loader.ts                   # WindLoader : pixels CPU des deux PNG U/V (jamais de texture GPU), remplacement atomique, garde dispose en vol, non réentrant
+      controller.ts               # WindController : step cadencé à TICK_MS (30 Hz), dt borné MAX_DT_S, inscrit sur SceneHandle.onFrame seulement quand le vent est actif
     render/
-      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande
+      scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande ; `onFrame(cb)` (spec vent) : rendu continu seulement si un abonné est actif, 0 draw call au repos conservé sinon
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
       globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setLayer(texture|null, w, h)/setIsoStep(step) remplacent setHeatmap/setFilter (spec couches)
       colormap.ts                # buildLut(def, enc)/legendGradientCss(def, enc) génériques par couche (registre `layers/registry.ts`), LUT 256×1 sRGB
+      wind.ts                    # NOUVEAU : WindLayer, un seul LineSegments sur le tampon slot-major de wind/sim.ts, index/alpha statiques (aAlpha), markDirty envoie les positions entières
       shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
       shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches)
+      shaders/wind.vert.glsl     # NOUVEAU : positions déjà sur la sphère (rayon 1,002), aAlpha statique par slot
+      shaders/wind.frag.glsl     # NOUVEAU : blanc (satellite) / gris foncé (carte) selon uMapStyle, alpha × 0,8
     ui/
       layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
-      format.ts                  # formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry
-      overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId
-      tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode
+      wind-toggle.ts              # NOUVEAU : createWindToggle, interrupteur role="switch", DOM seul (état/URL portés par wind/select.ts)
+      format.ts                  # formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry ; NOUVEAU `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10)
+      overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId ; `layersMenu`/`windToggle` remplacent l'ancien `controls` unique (spec vent §9)
+      tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode ; NOUVEAU setWind(field) ajoute une 2ᵉ ligne « Vent … » (spec vent §10)
   tests/
-    fixtures.ts                  # SAMPLE : manifeste de test v2 (même contrat que le pipeline), réutilisées par plusieurs suites
+    fixtures.ts                  # SAMPLE : manifeste de test v2 (même contrat que le pipeline), réutilisées par plusieurs suites ; NOUVEAU WIND_ENTRIES (wind_u/wind_v, hors MANIFEST, spec vent)
     manifest.test.ts             # NOUVEAU, remplace l'ancienne suite de métadonnées v1 : parseManifest v2 (strict, couches partielles, rejet v1)
     encoding.test.ts             # NOUVEAU : encode/decode, table de cas partagée avec pytest (demi-entiers)
     registry.test.ts             # NOUVEAU : LayerDef des 7 couches, ordre du menu
@@ -195,6 +205,11 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     zoom.test.ts                  # courbe (35 crans), pincement, PinchTracker, keepAnchor, convergence d'ancre (< 0,5 px)
     pixels.test.ts
     tooltip.test.ts               # TapDetector, placeTooltip
+    wind-sim.test.ts              # NOUVEAU : advection exacte pour u = 0, dérive bornée, spawn/respawn ; tolérances Float32 (T6, `toBeCloseTo(RADIUS, 6)`) et vitesse représentable 8 bits (v = 12)
+    wind-select.test.ts           # NOUVEAU : parseWindParam (défaut par tier, reduced-motion), withWindParam
+    wind-loader.test.ts           # NOUVEAU : WindLoader, remplacement atomique, garde dispose en vol (rechargement raté sur la même instance)
+    wind-layer.test.ts            # NOUVEAU : WindLayer, index de traînée, alpha statique par slot
+    wind-controller.test.ts       # NOUVEAU : WindController, cadence 30 Hz, dt borné MAX_DT_S
 ```
 
 ## 4. Architecture & principe directeur
@@ -292,7 +307,16 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **GEFS-Aerosols (NOMADS) plutôt que CAMS (ADS) ou GEOS-CF (NASA)** pour `pm25`/`dust` | Même mécanique de téléchargement que GFS, aucune clé API à gérer (CAMS en réclame une) ; GEOS-CF vu instable en reconnaissance. Coût : résolution plus grossière (0,25°) et cadence 3 h au lieu de 1 h, documenté par `valid_time_utc` par couche. |
 | **Poussière = PM10 (`PMTC` Dust Dry)**, pas PM2.5 fine | Les tempêtes de sable, cas d'usage visé, sont dominées par les particules 2,5–10 µm ; `PMTC` les capture, `PMTF` (déjà utilisé pour `pm25`) non. |
 | **Source secondaire (GEFS-chem) tolérante** : un échec reporte les entrées `pm25`/`dust` du manifeste courant (PNG intacts, `generated_at`/`valid_time_utc` anciens) plutôt que de faire échouer le run | La qualité de l'air est une couche parmi sept, pas critique comme la température ; faire échouer tout le run pour une source secondaire pénaliserait les 5 couches GFS pour rien. Sans manifeste courant, les couches chem sont simplement omises (pas de bouton). |
-| **`gfs/latest.*` (schema 1) republié une version supplémentaire** en plus de `layers/latest.json` (v2) | Clients déjà chargés sur l'ancien contrat ; retrait prévu en première tâche de la spec suivante (dette n° 31, §8). |
+| ~~`gfs/latest.*` (schema 1) republié une version supplémentaire~~ en plus de `layers/latest.json` (v2) | Clients déjà chargés sur l'ancien contrat. **Retiré le 2026-09-13** (`596b247`, T1 de la spec vent, dette n° 31 §8 résolue) : `LEGACY_PNG_KEY`/`LEGACY_JSON_KEY`/`LEGACY_SCHEMA_VERSION`/`build_legacy` supprimés, objets R2 à effacer à la main après déploiement. |
+| **Vent en surimpression combinable** (switch « Vent » indépendant du radio de couches, `?wind=1\|0`), pas en 8ᵉ couche *(2026-09-13, spec vent §1)* | Le vent complète n'importe quelle couche affichée (ou aucune) plutôt que de s'exclure avec elle ; un radio supplémentaire aurait forcé un choix entre température et vent. |
+| **10 m seulement pour le vent**, pas d'altitude sélectionnable *(2026-09-13)* | Seule variable disponible aux deux cadences GFS (1 h) sans coût de contrat supplémentaire ; une sélection d'altitude est un backlog séparé (lot C ou au-delà). |
+| **Approche A : simulation CPU (`WindSim`) + un seul `LineSegments`** (tampon slot-major `[K][N][xyz]`, `copyWithin`, upload complet par tick, `aAlpha` statique) plutôt que des particules GPU en ping-pong *(2026-09-13)* | Des traînées écran en ping-pong doivent être effacées à chaque rotation de caméra (sans quoi elles restent peintes sur un canvas qui n'est plus le bon repère), réclament des render targets flottants (extensions WebGL non garanties sur mobile) et ne sont testables qu'à l'œil ; la simulation CPU est pure, testée par Vitest, et les positions vivent directement sur la sphère (rayon 1,002), sans dépendre du point de vue. |
+| **Deux entrées scalaires `wind_u`/`wind_v`** (`Encoding(-60, 60, "linear")`) plutôt qu'un PNG RGB combiné *(2026-09-13)* | Le pipeline généralisé (spec couches) traite déjà chaque variable comme une couche scalaire indépendante ; encoder U/V dans les canaux d'un même PNG aurait exigé un format de sortie spécial pour une seule paire de couches. |
+| **Upload complet du tampon de positions à chaque tick**, pas de `updateRange`/sous-plage *(2026-09-13)* | `copyWithin` décale la totalité du tampon slot-major à chaque tick (toutes les positions changent de slot) : une mise à jour partielle n'aurait rien économisé pour la complexité qu'elle ajoute. |
+| **Vitesse apparente constante : 2 px CSS/s par m/s** (`PX_PER_S_PER_MS`), indépendante du zoom *(2026-09-13)* | Une vitesse à l'échelle du globe (en radians/s) rendrait les traînées quasi immobiles dézoomé et follement rapides zoomé ; fixer la vitesse en pixels écran garde une lecture visuelle cohérente à toute distance. |
+| **Spawn uniforme en NDC via `pickSphere`**, pas uniforme sur la sphère (lon/lat) *(2026-09-13)* | Un spawn uniforme en lon/lat sur-échantillonne les pôles vus en projection ; repartir du picking écran existant (`render/pick.ts`) donne une densité visuelle uniforme à l'écran, qui est ce que l'œil compare. |
+| **Vent actif par défaut seulement en tier `high`**, inactif en `low` et sous `prefers-reduced-motion` *(2026-09-13)* | 12 000 particules à 30 Hz est un budget CPU/GPU jugé trop lourd pour le tier `low` (déjà dégradé sur d'autres axes, §5 ligne tier low) ; `prefers-reduced-motion` est un signal d'accessibilité explicite de l'utilisateur, prioritaire sur la détection de tier. |
+| **`SceneHandle.onFrame(cb)`** : rendu continu seulement tant qu'au moins un abonné est actif, sinon rendu à la demande inchangé *(2026-09-13)* | Préserve le « 0 draw call au repos » (§5 ligne rendu à la demande, spec 2) quand le vent est inactif, sans dupliquer la boucle rAF de `scene.ts`. |
 | **LRU de 2 `LayerLoader`** (couche active + précédente), pas plus | Change-and-forget entre deux couches typique de l'usage (comparer A puis B) sans garder les sept en mémoire ; l'éviction dispose texture et pixels CPU. |
 | **LUT 256×1 indexée par l'octet brut, inchangée côté échantillonnage du shader** | La racine ne coûte rien au rendu : `buildLut(def, enc)` précalcule `decode(i)` par texel, le shader continue de lire `texture2D(uLut, vec2(t, 0.5))` comme pour la température seule. |
 | **Isobares dans le shader** (`isoline(t, spacing)`, `fwidth`), pas de couche vectorielle séparée | `t` (octet normalisé) encode déjà la pression ; une fonction de distance au multiple de pas le plus proche, anti-aliasée par `fwidth`, évite de calculer/streamer un tracé de lignes séparé pour un seul usage. |
@@ -337,6 +361,9 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-12 | Trailers de commit `Co-Authored-By: Claude Haiku 4.5` sur 3 commits poussés (`ea54908`, `680525a`, `7194396`) — modèle d'implémenteur incorrect dans le trailer. | Réécriture prévue par `msg-filter` + force-push de `feat/layers` avant merge (branche personnelle) — ruling T5, non encore exécutée à la date de cette entrée. |
 | 2026-09-12 | Agent de validation navigateur coupé par la limite de session après le câblage `main.ts` (T15), puis `mcp__claude-in-chrome__*` et `chrome-devtools-mcp` tous deux injoignables dans la session suivante. | Signalé BLOCKED sans boucler (consigne de la brief) ; validation reprise dans une session ultérieure où `mcp__brave-devtools__*` fonctionnait — 9/9 points mesurés (`.superpowers/sdd/2026-09-12-layers/validation-report.md`). |
 | 2026-09-12 | Revue de code sur `activate()` (`web/src/main.ts`, `0f8f1dc`) : (1) `ui.setStatus("Couche indisponible")` non gardé par `activeId === id`, un statut d'échec tardif pouvait écraser celui d'une couche déjà activée entre-temps ; (2) repli récursif `activate(previous, …)` sans vérifier l'ensemble `failed`, risque de rebond réseau indéfini entre deux couches en échec persistant (panne R2). | Statut et repli conditionnés à `activeId === id` ; repli exclu explicitement de `failed` en plus de `previous`/`id` (`51c5d4a`). |
+| 2026-09-13 | Le plan de la spec vent (tests T6) supposait à tort que Float32 stocke `RADIUS = 1,002` avec assez de précision pour `toBeCloseTo(RADIUS, 9)`, et qu'une vitesse ronde (10 m/s, 0 m/s) survit exactement à un aller-retour par l'octet 8 bits de l'`Encoding(-60, 60, "linear")`. Aucun des deux n'est vrai : 10 m/s décode 10,1176 m/s après quantification, 0 m/s tombe sur l'octet 128 qui décode 0,235 m/s. Trouvé en TDD (T6), pas en revue. | Tolérance `toBeCloseTo(RADIUS, 6)` ; tests « vitesse > 0 »/« dt borné » réécrits avec `v = 12` (octet 153, exact) et la dérive attendue calculée plutôt que supposée ronde. Code de production inchangé — écart de test seulement. |
+| 2026-09-13 | Un sous-agent d'implémentation haiku a substitué son propre nom dans le trailer `Co-Authored-By` d'un commit malgré une instruction explicite le fixant à un autre modèle. | Message de commit réécrit par le contrôleur avant tout push (local seulement, aucun commit poussé avec le mauvais trailer) ; les dispatchs suivants ajoutent un `grep -c` obligatoire sur le trailer attendu avant d'accepter un commit d'implémenteur. |
+| 2026-09-13 | Aucun navigateur joignable pour la validation de la spec vent (T11b) : `mcp__claude-in-chrome__list_connected_browsers` vide, `brave-devtools` et `chrome-devtools` en `CONNECT_TIMEOUT` sur toute la session d'exécution. | T11 scindée (ruling, ledger) : T11a (câblage, tests, build, budget) livrée ; T11b (critères spec §13 n° 1–6 et 8, mesure du tick `high` en conditions réelles) reportée à une session où un Chrome est connecté — voir §9. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -348,7 +375,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
 | 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
-| 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches) ; branche `feat/wind` à créer en T1 | 📝 planifié, non exécuté | — | inchangés (docs seulement) |
+| 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | 🚧 exécutée, validation navigateur et merge à suivre | — | 184 passed / 9 skipped pytest local (Windows), 195 Actions ; 227 vitest (26 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -384,15 +411,75 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 28 | **Mineurs différés de l'exécution de la spec 4 lot A** (détail dans le ledger git-ignoré) : `ZoomControl.dispose()` sans appelant (pas de teardown de scène) ; moitié événementielle de `attachZoom`, `createTooltip` et câblage `main.ts` sans test (règle Vitest logique pure) ; test « limbe 80° » qui démarre derrière l'horizon ; `TapDetector` : `up` d'un id inconnu décrémente le compteur sans resynchroniser ; convergence molette testée sur `aNew` (facteur 4/3) ; `projectToScreen` sans test `ndc.z ≥ −1` | Polish, aucun impact sur les critères d'acceptation | 🟡 ouvert |
 | 29 | ~~`tiles.yml` invalide depuis `f18a90c` (2026-09-05)~~ : ligne 149, `run: echo "… : index.bin, …"` en scalaire YAML nu contenant `: ` → « Invalid workflow file », run rouge de 0 s à chaque push et **tout `workflow_dispatch` futur aurait échoué** (le dernier run manuel réussi, 33976497547, précède ce commit) | Régénération des tuiles impossible tant que non corrigé ; découvert par le faux rouge après le merge de la spec 4 | ✅ résolu 2026-09-06 (`b64a0da` puis correctif réel) : scalaire bloc `run: \|` ; en prime `fromJSON(inputs.boxes \|\| '[0,1,2,3,4,5,6,7]')` |
 | 30 | **`cfgrib`/`xarray` toujours listés dans `pipeline/requirements-grib.txt`** alors que le décodage GRIB (`grib_adapter.py`) appelle désormais `eccodes` directement par clés (spec couches, 2026-09-12) ; `grep -rn "cfgrib\|xarray" pipeline tests` ne trouve plus que ce fichier | Dépendance installée pour rien sur Actions (`eccodeslib` suffit) | 🟡 ouvert — élaguer `requirements-grib.txt` une fois confirmé qu'aucun outillage annexe ne s'appuie encore sur `xarray`/`cfgrib` |
-| 31 | **`gfs/latest.png`/`gfs/latest.json` (schema 1) republiés en parallèle de `layers/latest.json` (v2)**, pour les clients déjà chargés sur l'ancien contrat | Deux formats de sortie à maintenir, deux fois plus d'objets R2 pour `temp` | 🟡 ouvert — retrait prévu comme première tâche de la spec suivante (spec couches §7, §16) |
+| 31 | ~~`gfs/latest.png`/`gfs/latest.json` (schema 1) republiés en parallèle de `layers/latest.json` (v2)~~, pour les clients déjà chargés sur l'ancien contrat | Deux formats de sortie à maintenir, deux fois plus d'objets R2 pour `temp` | ✅ résolu 2026-09-13 (commit `596b247`, T1 spec vent) : code retiré (`config.py`, `metadata.py`, `main.py`) ; **objets R2 `gfs/latest.*` à supprimer à la main après déploiement** |
 | 32 | **Encodage 8 bits `pm25`/`dust` sature au-delà de 500/2 000 µg/m³** alors que la plage plausible brute a été élargie à 20 000/50 000 (T7, §5) — seule la validation d'ordre de grandeur a bougé, pas l'`Encoding` d'affichage | Un panache de pollution exceptionnel (> 500 µg/m³ pm25 ou > 2 000 µg/m³ dust, déjà observé une fois à 2 684/13 377 sur un run réel) s'affiche à la couleur du maximum de la légende au lieu d'une couleur distincte | 🟡 ouvert — revoir `Encoding.max` de `pipeline/layers.py` si ces dépassements se répètent |
 | 33 | **`except Exception` large dans `pipeline/main.py::_process_source`** (mandaté par le plan) | Une exception inattendue et non liée aux échecs source/décodage/validation prévus serait avalée comme un simple échec de source secondaire | 🟡 mineur, ouvert |
 | 34 | **`grib_adapter.py::_message_keys` avale les exceptions eccodes** (mandaté par le plan) | Une clé GRIB manquante ou un message corrompu se traduit en clé absente plutôt qu'en erreur explicite, potentiellement masquant un problème de fichier NOMADS | 🟡 mineur, ouvert |
 | 35 | **Disposition mobile validée à 500 px, pas 400 px** : le pont `mcp__brave-devtools__*` impose une largeur de fenêtre minimale de 500 px (`resize_page(400, …)` retombe à 500) | Le point de rupture CSS (`@media (max-width: 600px)`, `web/src/style.css:158`) rend le comportement à 400 px identique en théorie (pas de rupture intermédiaire), mais non mesuré directement | 🟡 ouvert — à re-tester avec un outillage sans plancher de largeur si disponible |
 | 36 | **Mineurs différés de l'exécution de la spec couches** (liste courte, détail dans le ledger git-ignoré) : `config.RUN_AVAILABILITY_DELAY`/`MAX_CANDIDATES`/`MAX_FORECAST_HOUR` dupliquent `sources.GFS` ; `pressure` sans `stepType` dans `grib_keys` ; `validate_range` non défensive sur NaN (couverte par `validate_grid` en amont) ; `upload_r2` avec liste vide non testé ; casts `as Rgba` (`colormap.ts`) et `as string` (éviction `LayerCache`) ; `lutFor` ré-indexe l'encodage à chaque appel ; `render()` de `layers-menu.ts` sans aucun bouton activé ; `setLegendVisible(false)` ajouté hors brief ; `setActive(id inconnu)` laisse tout le groupe à `tabIndex -1` ; `cursor: not-allowed` redondant sur un bouton déjà `disabled` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec couches | 🟡 ouvert |
 | 37 | ~~**Statut « Couche indisponible » (spec §13) invisible quand le repli réussit** : `activate()` pose `layerNotice` puis appelle le repli, dont le chemin nominal remet `layerNotice` à `null` avant tout `refreshBanner()` ; le message n'apparaît que si aucun repli valide n'existe~~ | L'utilisateur voit le bouton se griser et la vue revenir en arrière sans explication ; trouvé par la revue finale (I3), resté ouvert après la vague de correction unique | ✅ résolu 2026-09-12 (avant merge) : `layerNotice` posé après le retour du repli, avant le dernier `refreshBanner()` |
+| 38 | **Mineurs différés de l'exécution de la spec vent** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-13-wind/progress.md`) : nom de test `test_happy_path_publishes_seven_layers_and_manifest_last` inexact (9 couches, T2) ; `compassPoint(deg)` sans garde sur `deg` négatif (index négatif, inatteignable via `formatWind`, T4) ; `isVisible` avec une garde `p.length() \|\| 1` superflue (`p` toujours à 1,002, T5) ; `sampling.ts` alloue une closure `at` à chaque appel de `sampleValue` (2 appels/particule/tick) et le garde du constructeur de `WindSim` n'est pas testé (T6) ; `render/wind.ts` sans test sur la garde de taille du tampon, `matrixAutoUpdate = false` sans commentaire (T7) ; `wind/loader.ts` avec un helper `close()` dupliqué, sans test « U et V échouent » ni « un seul `generated_at` change » (T8) ; `controller.ts` avec un clamp `dt` redondant avec `sim.step` (idempotent, T9) ; `wind-toggle.ts` avec un `render()` initial redondant avec le HTML et `setDisabled` qui efface `title` (T10) | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec vent | 🟡 ouvert |
+| 39 | **Boucle `SceneHandle.onFrame`/`loop()` de `render/scene.ts` sans couverture Vitest** : parké en T9 (ruling, ledger) car `createScene` instancie un `WebGLRenderer`, non instanciable en Node — convention du projet « Vitest logique pure, rendu à l'œil » | Une régression sur l'inscription/désinscription des abonnés `onFrame`, ou sur le déclenchement du rendu continu, ne serait détectée que par la validation navigateur (critère 4 de la spec vent : 0 draw call vent inactif), pas par un test automatisé | 🟡 ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée sur feat/wind : 9 couches, particules CPU, legacy retiré, validation navigateur en attente
+
+Plan `docs/superpowers/plans/2026-09-13-wind.md` (12 tâches) exécuté en
+**subagent-driven development** sur `feat/wind` : une revue par tâche, rounds de
+correction T1 ×1 (renommage de test), T6 ×2 (tolérances de test Float32 et
+vitesse non représentable en 8 bits, §6), T8 ×1 (test de rechargement raté sur
+la même instance + garde dispose en vol), T11a ×1 (`refreshBanner()` dès que
+`windNotice` est effacé).
+
+Livré : côté pipeline, couches `wind_u`/`wind_v` (`pipeline/layers.py`, UGRD/VGRD
+10 m, `Encoding(-60, 60, "linear")`) portant le registre à 9 couches ; retrait
+complet du legacy `gfs/latest.*` (`config.py`, `metadata.py`, `main.py`, dette
+n° 31 §8 résolue) ; fixture réelle `tests/fixtures/gfs_wind.grib2` (1,9 Mo,
+NOMADS réel), décodage réel vert sur Actions (run 34756146343 : 195 pytest,
+dry-run 10 objets / 9 couches). Côté front : `web/src/wind/` (`sim.ts` —
+`WindSim`, tampon slot-major glissant par `copyWithin` — `select.ts`,
+`loader.ts`, `controller.ts`), `render/wind.ts` + `shaders/wind.{vert,frag}.glsl`
+(`WindLayer`, un seul `LineSegments`), `render/scene.ts::onFrame`,
+`ui/wind-toggle.ts`, `ui/tooltip.ts::setWind`, `ui/format.ts` (`formatWind`,
+`windDirection`, `compassPoint`), `ui/overlay.ts` (`layersMenu`/`windToggle`),
+`index.html` (`#layers-menu`, `#wind-toggle`), `style.css`, câblage `main.ts`
+(`applyWind`/`stopWind`, statut « Vent indisponible », crochet dev
+`__worldtempWind`), `.gitignore` (`web/public/dev-data/`) ; tests
+`web/tests/wind-{select,sim,layer,loader,controller}.test.ts` et
+`fixtures.ts::WIND_ENTRIES`.
+
+Décisions (spec §1–2, ne pas rouvrir, détaillées §5) : surimpression combinable
+(switch + `?wind=1|0`) plutôt qu'une 8ᵉ couche ; 10 m seulement ; **approche A**
+simulation CPU + un seul `LineSegments` plutôt que des particules GPU
+ping-pong (traînées à effacer à chaque rotation, extensions flottantes,
+rien de testable hors navigateur) ; deux entrées scalaires plutôt qu'un PNG RGB ;
+vitesse apparente constante (2 px/s par m/s) ; spawn uniforme en NDC via
+`pickSphere` ; actif par défaut en tier `high` seulement, inactif sous
+`prefers-reduced-motion` ; `SceneHandle.onFrame` garde le 0 draw call au repos
+quand le vent est inactif.
+
+Tests : `.venv/Scripts/python -m pytest -q` → 184 passed / 9 skipped local
+(Windows) ; 195 passed sur Actions ; `npm --prefix web run test` → 227 passed
+(26 fichiers) ; typecheck OK. Build : `index-*.js` 154,27 Ko gzip (+3,57 Ko vs
+150,70 Ko, budget ≤ +12 Ko respecté). Tick CPU `high` (N = 12 000, K = 12)
+mesuré en Node ≈ 4,57 ms — le critère 8 (≤ 4 ms **navigateur**) reste à mesurer
+en conditions réelles, pas équivalent à la mesure Node.
+
+**Validation navigateur non faite cette session** : aucun Chrome joignable
+(`list_connected_browsers` vide, `brave-devtools`/`chrome-devtools` en
+`CONNECT_TIMEOUT`, §6). Les critères 1 à 6 et 8 de la spec §13 (rendu des
+traînées, direction/vitesse du tooltip, interrupteur, disparition sous
+`prefers-reduced-motion`, tier `low`, budget mobile, tick réel) sont **non
+mesurés** — à ne pas prendre pour acquis. Seul le critère 7 (le pipeline publie
+bien 9 couches sans casser les 7 précédentes) est vérifié, par le dry-run CI
+ci-dessus.
+
+**Prochaine action :** dès qu'un Chrome est connecté, exécuter T11b (validation
+navigateur, critères 1–6 et 8, mesure réelle du tick `high`) ; puis revue finale
+de branche (`superpowers:finishing-a-development-branch`), merge `--no-ff` dans
+`master`, `gh workflow run pipeline.yml`, suppression manuelle de `gfs/latest.*`
+sur R2 (API Cloudflare), HISTORY.md final ; puis lot C (étiquettes).
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) : brainstorming, spec et plan écrits, exécution à suivre
 
@@ -869,7 +956,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-13 (**spec 4 lot B2 vent animé : brainstorming, spec `38e5f27` et plan `cda0f39` écrits, 12 tâches, aucun code touché, exécution subagent-driven sur `feat/wind` à suivre**)
+**Dernière mise à jour :** 2026-09-13 (**spec 4 lot B2 vent animé exécutée sur `feat/wind`** — plan `cda0f39` 12 tâches subagent-driven, rounds T1 ×1/T6 ×2/T8 ×1/T11a ×1, 9 couches (`wind_u`/`wind_v`), legacy `gfs/latest.*` retiré (`596b247`, dette n° 31 fermée), fixture réelle `gfs_wind.grib2` + décodage vert sur Actions (195 pytest, dry-run 9 couches), particules CPU + `LineSegments`, 184 pytest local/9 skipped, 227 vitest, bundle 154,27 Ko gzip (+3,57), tick Node ≈ 4,57 ms, **validation navigateur en attente** (aucun Chrome joignable, critères 1–6/8 non mesurés), pas encore mergée)
+**Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé : brainstorming, spec `38e5f27` et plan `cda0f39` écrits, 12 tâches, aucun code touché**)
 **Entrée précédente :** 2026-09-12 (**spec 4 lot B1 couches exécutée, session arrêtée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
 **Entrée précédente :** 2026-09-12 (**verdict téléphone spec 4 lot A** — critères 3 et 5 ✅ sur téléphone réel, dette n° 23 fermée, lot B retenu pour le brainstorming suivant)
 **Entrée précédente :** 2026-09-06 (**spec 4 lot A navigation exécutée** — branche `feat/navigation`, 10 tâches subagent-driven + 4 rounds + vague finale, zoom ancré sur l'altitude, pincement, tooltip, fondu, 146 vitest + 127 pytest local, dette n° 23 fermée côté code, critères 3 et 5 téléphone à confirmer)
