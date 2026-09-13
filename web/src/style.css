@@ -70,7 +70,7 @@ html, body {
   grid-row: 3; grid-column: 2; align-self: end;
   display: flex; flex-direction: column; gap: 0.25rem; align-items: stretch;
 }
-#controls [role="radio"] {
+#controls [role="radio"], #controls [role="switch"] {
   font: inherit;
   color: var(--panel-fg);
   background: transparent;
@@ -81,9 +81,14 @@ html, body {
   text-align: left;
   white-space: nowrap;
 }
-#controls [role="radio"][aria-checked="true"] { background: #ffd166; color: #1a1400; border-color: #ffd166; }
-#controls [role="radio"]:disabled { opacity: 0.4; cursor: not-allowed; }
-#controls [role="radio"]:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+#controls [role="radio"][aria-checked="true"], #controls [role="switch"][aria-checked="true"] { background: #ffd166; color: #1a1400; border-color: #ffd166; }
+#controls [role="radio"]:disabled, #controls [role="switch"]:disabled { opacity: 0.4; cursor: not-allowed; }
+#controls [role="radio"]:focus-visible, #controls [role="switch"]:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+#layers-menu { display: contents; } /* les radios restent des enfants flex directs de #controls, en colonne comme en ligne (mobile) */
+#wind-toggle { margin-top: 0.5rem; }
+#wind-toggle::before { content: "◌ "; }
+#wind-toggle[aria-checked="true"]::before { content: "≋ "; }
 #legend .title { font-size: 0.8rem; margin-bottom: 0.3rem; }
 #legend[hidden] { display: none; }
 #attribution {
@@ -135,7 +140,7 @@ html, body {
   left: 0;
   top: 0;
   pointer-events: none;
-  white-space: nowrap;
+  white-space: pre-line;
   font-variant-numeric: tabular-nums;
   padding: 0.25rem 0.6rem;
   will-change: transform;
@@ -163,6 +168,7 @@ html, body {
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;
     -webkit-overflow-scrolling: touch;
   }
-  #controls [role="radio"] { scroll-snap-align: start; min-height: 44px; flex: 0 0 auto; }
+  #controls [role="radio"], #controls [role="switch"] { scroll-snap-align: start; min-height: 44px; flex: 0 0 auto; }
+  #wind-toggle { margin-top: 0; }
   #attribution { grid-row: 5; }
 }

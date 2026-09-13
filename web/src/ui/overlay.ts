@@ -4,8 +4,10 @@ import { legendGradientCss } from "../render/colormap";
 import { legendTicks } from "./format";
 
 export interface Overlay {
-  /** Conteneur du menu des couches (ui/layers-menu.ts). */
-  controls: HTMLElement;
+  /** Conteneur du menu radio des couches (ui/layers-menu.ts). */
+  layersMenu: HTMLElement;
+  /** Bouton role="switch" du vent (ui/wind-toggle.ts). */
+  windToggle: HTMLButtonElement;
   setBanner(text: string): void;
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
@@ -24,7 +26,8 @@ export function createOverlay(): Overlay {
   const bannerText = byId<HTMLElement>("banner-text");
   const status = byId<HTMLElement>("status");
   const legend = byId<HTMLElement>("legend");
-  const controls = byId<HTMLElement>("controls");
+  const layersMenu = byId<HTMLElement>("layers-menu");
+  const windToggle = byId<HTMLButtonElement>("wind-toggle");
   const fatal = byId<HTMLElement>("fatal");
   const overlay = byId<HTMLElement>("overlay");
   const toggle = byId<HTMLButtonElement>("toggle-overlay");
@@ -35,7 +38,8 @@ export function createOverlay(): Overlay {
   });
 
   return {
-    controls,
+    layersMenu,
+    windToggle,
     setBanner(text) {
       bannerText.textContent = text;
     },
