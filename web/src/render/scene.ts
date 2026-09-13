@@ -15,6 +15,8 @@ export interface SceneHandle {
   requestRender(): void;
   /** Appelé avant chaque rendu avec la vue courante (sélection des tuiles). */
   onViewChange(cb: (view: ViewState) => void): void;
+  /** Callback appelé à chaque frame rAF avec l'horodatage ; renvoyer `true` demande un rendu. Renvoie la désinscription. */
+  onFrame(cb: (nowMs: number) => boolean): () => void;
   /** Place la caméra au-dessus d'un point (paramètres d'URL `lon`, `lat`, `d`). */
   setInitialView(lon: number, lat: number, distance: number): void;
   start(): void;
@@ -49,6 +51,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let dirty = true;
   let cap = 2;
   const viewListeners: Array<(view: ViewState) => void> = [];
+  const frameListeners = new Set<(nowMs: number) => boolean>();
 
   const applyPixelRatio = () => renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
 
@@ -83,11 +86,13 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     dirty = true;
   };
 
-  const loop = () => {
+  const loop = (now: number) => {
     try {
+      let animated = false;
+      for (const cb of frameListeners) if (cb(now)) animated = true;
       const zoomed = zoom.beforeUpdate();
       const moved = controls.update() || zoomed;
-      if (moved || dirty) {
+      if (moved || dirty || animated) {
         dirty = false;
         applyDistance();
         camera.updateMatrixWorld(true);
@@ -122,6 +127,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     },
     onViewChange(cb) {
       viewListeners.push(cb);
+    },
+    onFrame(cb) {
+      frameListeners.add(cb);
+      return () => {
+        frameListeners.delete(cb);
+      };
     },
     setInitialView(lon, lat, distance) {
       const d = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, distance));

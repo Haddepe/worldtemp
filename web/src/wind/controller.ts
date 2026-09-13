@@ -1,0 +1,55 @@
+/**
+ * Cadence de la simulation (spec vent §8) : un tick par frame au plus, quand ≥ TICK_MS se sont
+ * écoulées, dt borné à MAX_DT_S. Inscrit sur SceneHandle.onFrame seulement quand le vent est actif.
+ */
+import type * as THREE from "three";
+import type { WindLayer } from "../render/wind";
+import { mapStyleFor, viewStateFrom } from "../tiles/lod";
+import { MAX_DT_S, TICK_MS, type PickFn, type WindField, type WindSim } from "./sim";
+
+export interface WindControllerDeps {
+  sim: Pick<WindSim, "step">;
+  layer: Pick<WindLayer, "markDirty" | "setMapStyle">;
+  camera: THREE.PerspectiveCamera;
+  viewportHeight(): number;
+  pick: PickFn;
+}
+
+export class WindController {
+  private current: WindField | null = null;
+  private last: number | null = null;
+  private acc = 0;
+
+  constructor(private readonly deps: WindControllerDeps) {}
+
+  get field(): WindField | null {
+    return this.current;
+  }
+
+  setField(f: WindField | null): void {
+    this.current = f;
+    this.last = null;
+    this.acc = 0;
+  }
+
+  /** Callback de `SceneHandle.onFrame` : `true` si un tick a eu lieu (rendu nécessaire). */
+  frame(nowMs: number): boolean {
+    if (!this.current) return false;
+    if (this.last === null) {
+      this.last = nowMs;
+      return false;
+    }
+    this.acc += nowMs - this.last;
+    this.last = nowMs;
+    if (this.acc < TICK_MS) return false;
+    const dt = Math.min(this.acc / 1000, MAX_DT_S);
+    this.acc = 0;
+    const { camera, sim, layer } = this.deps;
+    camera.updateMatrixWorld(true);
+    const view = viewStateFrom(camera, this.deps.viewportHeight());
+    sim.step(this.current, dt, view, this.deps.pick);
+    layer.setMapStyle(mapStyleFor(view.cameraPosition.length()));
+    layer.markDirty();
+    return true;
+  }
+}
