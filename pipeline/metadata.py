@@ -1,5 +1,4 @@
-"""Manifeste `layers/latest.json` v2 et legacy `gfs/latest.json` v1 — contrat avec
-le globe (spec couches §7). Pur."""
+"""Manifeste `layers/latest.json` v2 — contrat avec le globe (spec couches §7). Pur."""
 
 from __future__ import annotations
 
@@ -49,24 +48,6 @@ def build_manifest(entries: Mapping[str, dict], generated_at: datetime) -> dict:
         "generated_at": iso_utc(generated_at),
         "grid": dict(GRID),
         "layers": ordered,
-    }
-
-
-def build_legacy(temp: dict) -> dict:
-    """`gfs/latest.json` schema 1, publié une version encore (spec §7)."""
-    enc = temp["encoding"]
-    return {
-        "schema_version": config.LEGACY_SCHEMA_VERSION,
-        "model": temp["model"],
-        "variable": temp["variable"],
-        "run": temp["run"],
-        "forecast_hour": temp["forecast_hour"],
-        "valid_time_utc": temp["valid_time_utc"],
-        "generated_at": temp["generated_at"],
-        "encoding": {"bits": 8, "min_c": enc["min"], "max_c": enc["max"]},
-        "grid": dict(GRID),
-        "texture": "latest.png",
-        "stats": {"min_c": temp["stats"]["min"], "max_c": temp["stats"]["max"]},
     }
 
 

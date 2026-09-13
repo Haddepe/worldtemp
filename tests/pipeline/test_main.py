@@ -81,16 +81,14 @@ def current_manifest(gfs=(GFS_RUN, GFS_FH), chem=(CHEM_RUN, CHEM_FH), with_chem=
 
 # --- chemin nominal -----------------------------------------------------------
 
-def test_happy_path_publishes_seven_layers_legacy_and_manifest_last(tmp_path):
+def test_happy_path_publishes_seven_layers_and_manifest_last(tmp_path):
     code, rec = make_run(tmp_path)
     assert code == EXIT_OK
     assert len(rec.downloads) == 2
     assert "filter_gfs_0p25_1hr" in rec.downloads[0] and "f008" in rec.downloads[0]
     assert "filter_gefs_chem_0p25" in rec.downloads[1] and "f006" in rec.downloads[1]
     keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + [f"layers/{i}.png" for i in CHEM_IDS] + [
-        "gfs/latest.png", "gfs/latest.json", "layers/latest.json",
-    ]
+    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + [f"layers/{i}.png" for i in CHEM_IDS] + ["layers/latest.json"]
     m = manifest_of(rec)
     assert m["schema_version"] == 2 and list(m["layers"]) == [s.id for s in LAYERS]
     assert m["layers"]["temp"]["run"] == GFS_RUN and m["layers"]["temp"]["forecast_hour"] == GFS_FH
@@ -99,9 +97,13 @@ def test_happy_path_publishes_seven_layers_legacy_and_manifest_last(tmp_path):
     assert m["layers"]["rain"]["stats"] == {"min": 3.6, "max": 3.6}
     for o in rec.uploads[0]:
         assert (tmp_path / o.key).read_bytes() == o.body
-    legacy = json.loads((tmp_path / "gfs/latest.json").read_text())
-    assert legacy["schema_version"] == 1 and legacy["encoding"] == {"bits": 8, "min_c": -90, "max_c": 60}
-    assert (tmp_path / "gfs/latest.png").read_bytes() == (tmp_path / "layers/temp.png").read_bytes()
+    assert not (tmp_path / "gfs").exists()
+
+
+def test_no_legacy_object_is_ever_published(tmp_path):
+    code, rec = make_run(tmp_path)
+    assert code == EXIT_OK
+    assert all(not o.key.startswith("gfs/") for o in rec.uploads[0])
 
 
 def test_run_applies_longitude_roll_on_each_layer(tmp_path):
@@ -250,7 +252,7 @@ def test_only_gfs_stale_republishes_gfs_and_reuses_chem_entries(tmp_path):
     assert code == EXIT_OK
     assert len(rec.downloads) == 1 and "filter_gfs" in rec.downloads[0]
     keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + ["gfs/latest.png", "gfs/latest.json", "layers/latest.json"]
+    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + ["layers/latest.json"]
     assert manifest_of(rec)["layers"]["pm25"] == cur["layers"]["pm25"]
 
 
