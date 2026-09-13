@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseManifest } from "../src/data/manifest";
 import { layerDef } from "../src/layers/registry";
-import { formatAgo, formatBanner, formatReading, legendTicks, sourceLabel } from "../src/ui/format";
+import { formatAgo, formatBanner, formatReading, legendTicks, sourceLabel, formatWind, windDirection, compassPoint } from "../src/ui/format";
 import { MANIFEST } from "./fixtures";
 
 const M = parseManifest(MANIFEST);
@@ -59,5 +59,28 @@ describe("formatReading", () => {
     expect(formatReading(layerDef("rain")!, 0.05)).toBe("—");
     expect(formatReading(layerDef("rain")!, 0.1)).toBe("0,1 mm/h");
     expect(formatReading(layerDef("pm25")!, 4.9)).toBe("—");
+  });
+});
+
+describe("formatWind — spec vent §10", () => {
+  it("vitesse en km/h entier, direction d'où vient le vent", () => {
+    expect(formatWind(0, 10)).toBe("Vent 36 km/h S");    // souffle vers le nord : vient du sud
+    expect(formatWind(-10, 0)).toBe("Vent 36 km/h E");
+    expect(formatWind(10, 0)).toBe("Vent 36 km/h O");
+    expect(formatWind(0, -10)).toBe("Vent 36 km/h N");
+    expect(formatWind(5, 5)).toBe("Vent 25 km/h SO");    // 7,07 m/s = 25,46 km/h
+  });
+  it("vent calme sous 1 km/h", () => {
+    expect(formatWind(0.1, 0)).toBe("Vent calme");
+    expect(formatWind(0, 0)).toBe("Vent calme");
+  });
+  it("windDirection est dans [0, 360[ et compassPoint arrondit au plus proche", () => {
+    expect(windDirection(0, 10)).toBeCloseTo(180, 9);
+    expect(windDirection(0, -10)).toBeCloseTo(0, 9);
+    expect(compassPoint(11.25)).toBe("NNE");
+    expect(compassPoint(11.24)).toBe("N");
+    expect(compassPoint(348.75)).toBe("N");
+    expect(compassPoint(348.74)).toBe("NNO");
+    expect(compassPoint(225)).toBe("SO");
   });
 });
