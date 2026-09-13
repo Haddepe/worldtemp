@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
-import { encode } from "../src/data/encoding";
+import { decode, encode } from "../src/data/encoding";
 import { vec3ToLonLat } from "../src/render/pick";
 import { viewStateFrom } from "../src/tiles/lod";
 import { lonLatToVec3 } from "../src/tiles/patch";
@@ -131,10 +131,9 @@ describe("WindSim.step — advection", () => {
     sim.step(field(0, 0), DT, v, pickAt(-100, 20), rng0);
     sim.step(field(0, 12), DT, v, pickAt(-100, 20), rng0);
     expect(sim.lat[0]).toBeCloseTo(20 + 12 * speedScale(v) * DT, 5);
-    // u = 0 non plus n'est pas représentable exactement en 8 bits (0 tombe pile
-    // entre les octets 127 et 128) : décodé ≈ 0,235294, d'où une dérive de
-    // longitude résiduelle (~2e-3°) non capturée par une tolérance à 1e-5.
-    expect(sim.lon[0]).toBeCloseTo(-100, 1);
+    // u = 0 encode en octet 128 → décodé 0,235 m/s : la dérive en longitude attendue en découle
+    const u0 = decode(encode(0, ENC), ENC);
+    expect(sim.lon[0]).toBeCloseTo(-100 + (u0 * speedScale(v) * DT) / Math.cos(20 * (Math.PI / 180)), 5);
     expect(sim.age[0]).toBe(1);
   });
   it("dlon est divisé par cos(lat) : même u, déplacement double à 60° qu'à 0°", () => {
