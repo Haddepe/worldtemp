@@ -256,7 +256,7 @@ def test_only_gfs_stale_republishes_gfs_and_reuses_chem_entries(tmp_path):
     assert manifest_of(rec)["layers"]["pm25"] == cur["layers"]["pm25"]
 
 
-def test_only_chem_stale_republishes_chem_without_legacy(tmp_path):
+def test_only_chem_stale_republishes_chem_only(tmp_path):
     cur = current_manifest(chem=("2026-09-12T00:00:00Z", 12))
     code, rec = make_run(tmp_path, current=cur)
     assert code == EXIT_OK
