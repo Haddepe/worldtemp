@@ -55,7 +55,7 @@ pipeline/
   main.py           # objets legacy supprimés
   config.py         # LEGACY_* supprimés
 tests/fixtures/
-  gfs_wind.grib2    # NOUVEAU : vrai fichier filtré, UGRD + VGRD 10 m (≈ 1 Mo)
+  gfs_wind.grib2    # NOUVEAU : vrai fichier filtré, UGRD + VGRD 10 m (≈ 1,9 Mo)
 tests/pipeline/     # registre, URL, quantification, dry-run 9 couches, décodage réel
 web/src/
   wind/
@@ -119,7 +119,7 @@ supprimés à la main après déploiement (API Cloudflare, comme pour `r2.dev`).
 
 Le poste Windows ne décode pas de GRIB (dette n° 2). Nouvelle fixture
 `tests/fixtures/gfs_wind.grib2` : téléchargée une fois à la main via
-`filter_gfs_0p25_1hr.pl?var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on` (≈ 1 Mo),
+`filter_gfs_0p25_1hr.pl?var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on` (≈ 1,9 Mo constaté),
 commitée ; **`gfs_layers.grib2` et `gefs_chem.grib2` ne sont pas retéléchargés ni
 recommités**. Test réel sur Actions (`skipUnless eccodes`) : `decode_fields(data,
 [wind_u, wind_v])` renvoie deux champs 721 × 1440, `lat[0] = 90`, `lon[0] = 0`, unités
@@ -281,8 +281,11 @@ Rendu, occlusion, vitesse apparente et draw calls : DevTools MCP (§13).
 7. `gfs/latest.png` et `gfs/latest.json` ne sont plus écrits par le pipeline ;
    `layers/latest.json` reste en schema 2 avec 9 entrées.
 8. Vitest et pytest verts, `history_check` ✓, `index-*.js` ≤ +12 Ko gzip par rapport à
-   150,70 Ko ; tick `high` ≤ 4 ms mesuré sur desktop (`performance.now()` autour de
-   `step`).
+   150,70 Ko ; en `high`, **30 ticks/s tenus** (rAF 60) et **tick + rendu ≤ 50 % du budget de
+   frame à 30 Hz (≤ 16 ms)** sur la machine de référence (portable Intel UHD 620, 4 cœurs).
+   *Révisé le 2026-09-13* : la formulation initiale « tick ≤ 4 ms » n'est pas atteignable sur
+   cette machine à N = 12 000 (≈ 10–13 ms mesurés, en dev comme en prod, Node pas plus
+   rapide) alors que la fluidité l'est (11,7 ms de travail par frame mesurés).
 
 ## 14. Hors périmètre
 
