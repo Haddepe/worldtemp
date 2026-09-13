@@ -55,6 +55,9 @@ async function boot(): Promise<void> {
   sceneHandle.setPixelRatioCap(PIXEL_RATIO_CAP[decision.tier]);
   const profile = TIER_PROFILE[decision.tier];
   const tooltip = createTooltip();
+  /** Assigné plus bas, une fois le vent construit : le gestionnaire `webglcontextlost` ci-dessous
+   * peut se déclencher pendant le chargement des tuiles, bien avant (sinon : TDZ, écran fatal perdu). */
+  let stopWind: () => void = () => {};
 
   canvas.addEventListener("webglcontextlost", (ev) => {
     ev.preventDefault();
@@ -302,7 +305,7 @@ async function boot(): Promise<void> {
     console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);
   };
 
-  const stopWind = () => {
+  stopWind = () => {
     windUnsub?.();
     windUnsub = null;
     windCtl.setField(null);
@@ -316,33 +319,31 @@ async function boot(): Promise<void> {
     const manifest = manifests.manifest;
     const entryU = manifest?.layers["wind_u"];
     const entryV = manifest?.layers["wind_v"];
-    const available = !!manifest && !!entryU && !!entryV && windFailedAt !== entryU.generated_at;
-    windToggle.setDisabled(!available);
-    if (!windOn || !available) {
-      stopWind();
-      return;
-    }
-    try {
-      await windLoader.load(entryU!, entryV!, manifest!.grid);
-      windNotice = null;
-      refreshBanner();
-    } catch (e) {
-      console.warn("[worldtemp] vent indisponible :", e);
-      windFailedAt = entryU!.generated_at;
-      if (!windLoader.field) {
-        windToggle.setDisabled(true);
-        windNotice = "Vent indisponible";
-        refreshBanner();
-        stopWind();
-        return;
+    const present = !!manifest && !!entryU && !!entryV;
+    // On ne retente qu'au prochain `generated_at` : `windFailedAt` gèle le téléchargement d'ici là.
+    if (present && windOn && windFailedAt !== entryU!.generated_at) {
+      try {
+        await windLoader.load(entryU!, entryV!, manifest!.grid);
+      } catch (e) {
+        console.warn("[worldtemp] vent indisponible :", e);
+        windFailedAt = entryU!.generated_at;
       }
-      // ancien champ encore là : on continue de l'animer, retentable au prochain generated_at
     }
-    if (!windOn) return; // basculé pendant le chargement
-    windCtl.setField(windLoader.field);
-    tooltip.setWind(windLoader.field);
-    windLayer.object.visible = true;
-    if (!windUnsub) windUnsub = sceneHandle.onFrame((t) => windCtl.frame(t));
+    // État recalculé après l'attente : `windOn` a pu basculer pendant le chargement.
+    const failed = present && windFailedAt === entryU!.generated_at;
+    const field = windLoader.field;
+    // Échec sans ancien champ = rien à animer ; échec avec ancien champ = il continue de tourner.
+    const usable = present && !(failed && field === null);
+    windToggle.setDisabled(!usable);
+    if (windOn && usable) {
+      windCtl.setField(field);
+      tooltip.setWind(field);
+      windLayer.object.visible = true;
+      if (!windUnsub) windUnsub = sceneHandle.onFrame((t) => windCtl.frame(t));
+    } else {
+      stopWind();
+    }
+    windNotice = windOn && present && failed && field === null ? "Vent indisponible" : null;
     refreshBanner();
   };
 
