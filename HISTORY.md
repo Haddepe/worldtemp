@@ -385,7 +385,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-05 | feat/tiles — spec 3 tuiles : pyramide géodésique, filtre température, domaine `globelayers.com` (spec + plan superpowers, 20 tâches) | ✅ mergé et déployé | `dcca866` | 91 vitest + 127 pytest local (5 skipped) / attendu 132 pytest Actions |
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
 | 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
-| 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`, critère 8 révisé en `d31a2a8`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | ✅ exécutée et validée, merge à suivre | — | 236 passed vitest (26 fichiers) ; 184 passed / 9 skipped pytest local (Windows), 195 Actions |
+| 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`, critère 8 révisé en `d31a2a8`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | ✅ mergée, déployée | `c120f81` | 236 passed vitest (26 fichiers) ; 184 passed / 9 skipped pytest local (Windows), 195 Actions |
 
 ## 8. Dette technique connue
 
@@ -559,9 +559,19 @@ continu seulement quand le vent est actif (0 draw call au repos conservé).
   validation navigateur (données du dry-run CI servies via `VITE_DATA_BASE_URL`) ; T12 HISTORY.
 - **Budgets** : bundle ≤ 150,70 + 12 Ko gzip ; tick `high` ≤ 4 ms ; 8 critères d'acceptation (spec §13).
 - **Tests / build :** inchangés (aucun code) ; `history_check` ✓.
-- **Prochaine action :** exécuter le plan en **subagent-driven development** sur `feat/wind`
-  (créée en T1), puis `finishing-a-development-branch`, `gh workflow run pipeline.yml`,
-  suppression manuelle de `gfs/latest.*` sur R2, puis lot C (étiquettes).
+- **Fait le soir même :** option 1 de `finishing-a-development-branch` (merge local) choisie par
+  l'utilisateur ; suites vertes sur l'arbre à intégrer (185 pytest local / 10 skipped, 236 vitest,
+  typecheck, build 154,69 Ko) ; merge `c120f81` (`--no-ff`, parents `209a38b` et `c80624f`),
+  suites vertes sur le résultat, `feat/wind` supprimée en local et sur `origin` ; push `master`
+  (`fe825eb..c120f81`) → CI run 34768511900 `test`/`web`/`deploy` verts ; `pipeline.yml`
+  déclenché (run 34768517485) : « publié … wind_u 2026-09-13T12:00:00Z f004, wind_v … » (8 objets,
+  9 couches, chem réutilisé) ; objets legacy `gfs/latest.json`/`gfs/latest.png` supprimés de R2 par
+  l'API REST (`DELETE …/r2/buckets/worldtemp/objects/{key}`, `wrangler` local non authentifié) ;
+  contrôle prod : `layers/latest.json` schema 2 à **9 entrées** (`wind_u` stats −19,2/21,4 m/s),
+  `wind_u.png`/`wind_v.png` en 200 (≈ 284 Ko chacun), `gfs/latest.json` en **404**, site en 200
+  avec le bundle mergé (`index-BZcaPaCk.js`). Dette n° 31 définitivement close.
+- **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays, Natural Earth) ;
+  surveiller le premier cron horaire du pipeline avec 9 couches ; dettes n° 38–40 (§8) au fil de l'eau.
 
 ### 2026-09-12 — Spec 4 lot B1 (couches) exécutée sur `feat/layers` : 7 couches scalaires, pipeline à deux sources, manifeste v2
 
@@ -1007,7 +1017,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-13 (**spec 4 lot B2 vent animé — revue finale, vague de correction, validation navigateur, critère 8 révisé** — revue finale (`209a38b..0003b29`) : I1 tick réel 9–15 ms (T6 mesuré sur grille de test non représentative), I2 `applyWind`/spec §11, I3 TDZ `stopWind`, I4 seuil d'horizon ; vague unique (`e4b4d6a`/`2e77ec7`/`73b3687`/`9458c3d`) : `WindField.uv` entrelacé + `sampleUV` fusionné, statut vent avec switch actif (déviation §11), seuil exact, `onFrame` isolé par callback ; correctif résiduel trouvé en validation (`0996837` statut, `a68d44b` double comptage de l'accumulateur) ; **236 vitest**, build 154,69 Ko gzip (+3,99) ; validation navigateur T11b (Brave) : critères 1–7 ✅, critère 8 initial (≤ 4 ms) non atteignable sur la machine de référence → **révisé par l'utilisateur** vers un budget de frame (≤ 16 ms, mesuré 11,7 ms moy/19,4 p90 high, 4,6 ms low) → ✅ ; **exécutée et validée, merge à suivre**)
+**Dernière mise à jour :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
+**Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé — revue finale, vague de correction, validation navigateur, critère 8 révisé** — revue finale (`209a38b..0003b29`) : I1 tick réel 9–15 ms (T6 mesuré sur grille de test non représentative), I2 `applyWind`/spec §11, I3 TDZ `stopWind`, I4 seuil d'horizon ; vague unique (`e4b4d6a`/`2e77ec7`/`73b3687`/`9458c3d`) : `WindField.uv` entrelacé + `sampleUV` fusionné, statut vent avec switch actif (déviation §11), seuil exact, `onFrame` isolé par callback ; correctif résiduel trouvé en validation (`0996837` statut, `a68d44b` double comptage de l'accumulateur) ; **236 vitest**, build 154,69 Ko gzip (+3,99) ; validation navigateur T11b (Brave) : critères 1–7 ✅, critère 8 initial (≤ 4 ms) non atteignable sur la machine de référence → **révisé par l'utilisateur** vers un budget de frame (≤ 16 ms, mesuré 11,7 ms moy/19,4 p90 high, 4,6 ms low) → ✅ ; **exécutée et validée, merge à suivre**)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé exécutée sur `feat/wind`** — plan `cda0f39` 12 tâches subagent-driven, rounds T1 ×1/T6 ×2/T8 ×1/T11a ×1, 9 couches (`wind_u`/`wind_v`), legacy `gfs/latest.*` retiré (`596b247`, dette n° 31 fermée), fixture réelle `gfs_wind.grib2` + décodage vert sur Actions (195 pytest, dry-run 9 couches), particules CPU + `LineSegments`, 184 pytest local/9 skipped, 227 vitest, bundle 154,27 Ko gzip (+3,57), tick Node ≈ 4,57 ms, **validation navigateur en attente** (aucun Chrome joignable, critères 1–6/8 non mesurés), pas encore mergée)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé : brainstorming, spec `38e5f27` et plan `cda0f39` écrits, 12 tâches, aucun code touché**)
 **Entrée précédente :** 2026-09-12 (**spec 4 lot B1 couches exécutée, session arrêtée** — branche `feat/layers`, 16 tâches subagent-driven + 3 rounds de correction, pipeline à deux sources GFS/GEFS-Aerosols, manifeste `layers/latest.json` v2, 7 couches scalaires + menu, 173 pytest local/9 skipped + 171 vitest, bundle gzip 151,01 Ko, validation brave-devtools 9/9, revue finale « With fixes » + vague de correction, dette n° 37 fermée avant merge, mergé `cd667bd` et déployé, 7 couches en production)
