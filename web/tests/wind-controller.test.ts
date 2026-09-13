@@ -29,7 +29,8 @@ describe("WindController — spec vent §8", () => {
     expect(ctl.frame(1020)).toBe(false);
     expect(ctl.frame(1040)).toBe(true);
     expect(sim.step).toHaveBeenCalledTimes(1);
-    expect(sim.step.mock.calls[0]![1]).toBeCloseTo(0.04, 9);
+    // 40 ms accumulées : un tick de 33,33 ms est consommé, les 6,67 ms restantes sont reportées
+    expect(sim.step.mock.calls[0]![1]).toBeCloseTo(TICK_MS / 1000, 9);
     expect(layer.markDirty).toHaveBeenCalledTimes(1);
     expect(layer.setMapStyle).toHaveBeenCalledWith(1); // d = 1,1 < MAP_FADE_END (1,14) → style carte
   });
@@ -44,14 +45,24 @@ describe("WindController — spec vent §8", () => {
     expect(ctl.frame(5000 + TICK_MS / 2)).toBe(true);
     expect(sim.step).toHaveBeenCalledTimes(2);
   });
-  it("le reste est reporté : 40 ms puis 30 ms font deux ticks", () => {
+  it("le reste est reporté : 40 ms puis 30 ms font deux ticks d'un tick chacun", () => {
     const { ctl, sim } = make();
     ctl.setField(FIELD);
     ctl.frame(0);
-    expect(ctl.frame(40)).toBe(true); // acc 40 → tick, reste 6,67 ms
+    expect(ctl.frame(40)).toBe(true); // acc 40 → tick de TICK_MS, reste 6,67 ms
     expect(ctl.frame(70)).toBe(true); // acc 36,67 ≥ 33,33 → tick malgré un intervalle de 30 ms
     expect(sim.step).toHaveBeenCalledTimes(2);
-    expect(sim.step.mock.calls[1]![1]).toBeCloseTo((40 - TICK_MS + 30) / 1000, 9);
+    // dt = temps consommé (un tick), pas l'accumulateur entier : le reste n'est pas advecté deux fois
+    expect(sim.step.mock.calls[0]![1]).toBeCloseTo(TICK_MS / 1000, 9);
+    expect(sim.step.mock.calls[1]![1]).toBeCloseTo(TICK_MS / 1000, 9);
+  });
+  it("la somme des dt ne dépasse jamais le temps écoulé (aucun double comptage)", () => {
+    const { ctl, sim } = make();
+    ctl.setField(FIELD);
+    ctl.frame(0);
+    for (const t of [40, 70, 100, 130]) ctl.frame(t);
+    const total = sim.step.mock.calls.reduce((a, c) => a + (c[1] as number), 0);
+    expect(total).toBeLessThanOrEqual(0.13 + 1e-9);
   });
   it("setField(null) arrête et réamorce l'horloge au prochain champ", () => {
     const { ctl, sim } = make();
@@ -63,7 +74,7 @@ describe("WindController — spec vent §8", () => {
     expect(ctl.frame(2000)).toBe(false); // réamorçage : pas de tick de 1 s
     expect(ctl.frame(2040)).toBe(true);
     expect(sim.step).toHaveBeenCalledTimes(1);
-    expect(sim.step.mock.calls[0]![1]).toBeCloseTo(0.04, 9);
+    expect(sim.step.mock.calls[0]![1]).toBeCloseTo(TICK_MS / 1000, 9);
   });
   it("la vue passée au step vient de la caméra courante", () => {
     const { ctl, sim } = make();
