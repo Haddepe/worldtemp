@@ -12,6 +12,7 @@ from pipeline.texture import (
 
 LIN = Encoding(-90, 60, "linear")
 SQRT = Encoding(0, 50, "sqrt")
+WIND = Encoding(-60, 60, "linear")
 
 
 def make_field(values=None, fill=288.15):
@@ -81,6 +82,7 @@ def test_reorient_rolls_longitude_zero_to_center():
 ROUNDTRIP_CASES = [
     (LIN, -90.0, 0), (LIN, 60.0, 255), (LIN, 0.0, 153), (LIN, 20.0, 187), (LIN, -100.0, 0), (LIN, 70.0, 255),
     (SQRT, 0.0, 0), (SQRT, 50.0, 255), (SQRT, 0.5, 26), (SQRT, 2.0, 51), (SQRT, 12.5, 128), (SQRT, 60.0, 255),
+    (WIND, -60.0, 0), (WIND, 60.0, 255), (WIND, 12.0, 153), (WIND, -36.0, 51), (WIND, 30.0, 191), (WIND, -70.0, 0), (WIND, 70.0, 255),
 ]
 
 
@@ -89,7 +91,7 @@ def test_quantize_known_values(enc, value, pixel):
     assert quantize(np.array([value]), enc)[0] == pixel
 
 
-@pytest.mark.parametrize("enc", [LIN, SQRT])
+@pytest.mark.parametrize("enc", [LIN, SQRT, WIND])
 def test_dequantize_is_inverse_within_one_step(enc):
     px = np.arange(256, dtype=np.uint8)
     back = quantize(dequantize(px, enc), enc)

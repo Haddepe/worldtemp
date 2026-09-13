@@ -35,8 +35,8 @@ def test_build_url_gfs_all_layers_exact():
     assert url == (
         "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25_1hr.pl"
         "?dir=/gfs.20260830/06/atmos&file=gfs.t06z.pgrb2.0p25.f008"
-        "&var_TMP=on&var_TCDC=on&var_PRATE=on&var_PRMSL=on&var_RH=on"
-        "&lev_2_m_above_ground=on&lev_entire_atmosphere=on&lev_surface=on&lev_mean_sea_level=on"
+        "&var_TMP=on&var_TCDC=on&var_PRATE=on&var_PRMSL=on&var_RH=on&var_UGRD=on&var_VGRD=on"
+        "&lev_2_m_above_ground=on&lev_entire_atmosphere=on&lev_surface=on&lev_mean_sea_level=on&lev_10_m_above_ground=on"
     )
 
 

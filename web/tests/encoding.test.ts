@@ -3,11 +3,13 @@ import { decode, encode, type Encoding } from "../src/data/encoding";
 
 const LIN: Encoding = { bits: 8, min: -90, max: 60, scale: "linear" };
 const SQRT: Encoding = { bits: 8, min: 0, max: 50, scale: "sqrt" };
+const WIND: Encoding = { bits: 8, min: -60, max: 60, scale: "linear" };
 
 // Table partagée avec tests/pipeline/test_texture.py::ROUNDTRIP_CASES — modifier les deux ensemble.
 const CASES: [Encoding, number, number][] = [
   [LIN, -90, 0], [LIN, 60, 255], [LIN, 0, 153], [LIN, 20, 187], [LIN, -100, 0], [LIN, 70, 255],
   [SQRT, 0, 0], [SQRT, 50, 255], [SQRT, 0.5, 26], [SQRT, 2, 51], [SQRT, 12.5, 128], [SQRT, 60, 255],
+  [WIND, -60, 0], [WIND, 60, 255], [WIND, 12, 153], [WIND, -36, 51], [WIND, 30, 191], [WIND, -70, 0], [WIND, 70, 255],
 ];
 
 describe("encode — miroir de pipeline/texture.py::quantize", () => {

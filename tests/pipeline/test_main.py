@@ -14,11 +14,12 @@ from pipeline.publish import PublishError
 NOW = datetime(2026, 9, 12, 14, 40, tzinfo=timezone.utc)
 GFS_RUN, GFS_FH = "2026-09-12T06:00:00Z", 8      # cible 14:00, délai 3 h 30 → run 06z
 CHEM_RUN, CHEM_FH = "2026-09-12T06:00:00Z", 6    # cible 12:00 (pas 3 h), délai 5 h → run 06z
-GFS_IDS = ["temp", "clouds", "rain", "pressure", "humidity"]
+GFS_IDS = ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v"]
 CHEM_IDS = ["pm25", "dust"]
 
 # Valeurs brutes plausibles par couche (avant conversion).
-RAW = {"temp": 288.15, "clouds": 40.0, "rain": 0.001, "pressure": 101325.0, "humidity": 55.0, "pm25": 12.0, "dust": 500.0}
+RAW = {"temp": 288.15, "clouds": 40.0, "rain": 0.001, "pressure": 101325.0, "humidity": 55.0,
+       "wind_u": -3.5, "wind_v": 7.25, "pm25": 12.0, "dust": 500.0}
 
 
 def field(value):
@@ -95,6 +96,8 @@ def test_happy_path_publishes_seven_layers_and_manifest_last(tmp_path):
     assert m["layers"]["pm25"]["run"] == CHEM_RUN and m["layers"]["pm25"]["forecast_hour"] == CHEM_FH
     assert m["layers"]["temp"]["stats"] == {"min": 15.0, "max": 15.0}
     assert m["layers"]["rain"]["stats"] == {"min": 3.6, "max": 3.6}
+    assert m["layers"]["wind_u"]["stats"] == {"min": -3.5, "max": -3.5}
+    assert m["layers"]["wind_v"]["encoding"] == {"bits": 8, "min": -60, "max": 60, "scale": "linear"}
     for o in rec.uploads[0]:
         assert (tmp_path / o.key).read_bytes() == o.body
     assert not (tmp_path / "gfs").exists()

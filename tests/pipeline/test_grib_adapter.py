@@ -34,7 +34,7 @@ def _assert_gfs_grid(field):
 def test_decode_all_gfs_layers_from_real_file():
     from pipeline.grib_adapter import decode_fields, list_messages
 
-    specs = by_source("gfs")
+    specs = [s for s in by_source("gfs") if not s.id.startswith("wind_")]  # gfs_layers.grib2 : 5 variables, vent en T3
     try:
         fields = decode_fields(GFS_FIXTURE.read_bytes(), specs)
     except Exception as exc:  # le listing est la seule façon de corriger grib_keys
@@ -96,4 +96,4 @@ def test_module_importable_without_eccodes():
 
     assert callable(decode_fields) and callable(list_messages) and issubclass(DecodeError, ValueError)
     assert Field(np.zeros((1, 1), np.float32), np.zeros(1), np.zeros(1)).values.shape == (1, 1)
-    assert len(LAYERS) == 7
+    assert len(LAYERS) == 9
