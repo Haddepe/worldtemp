@@ -6,8 +6,11 @@ import { legendTicks } from "./format";
 export interface Overlay {
   /** Conteneur du menu radio des couches (ui/layers-menu.ts). */
   layersMenu: HTMLElement;
-  /** Bouton role="switch" du vent (ui/wind-toggle.ts). */
+  /** Bouton role="switch" du vent (ui/toggle.ts). */
   windToggle: HTMLButtonElement;
+  labelsToggle: HTMLButtonElement;
+  riversToggle: HTMLButtonElement;
+  labels: HTMLElement;
   setBanner(text: string): void;
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
@@ -28,6 +31,9 @@ export function createOverlay(): Overlay {
   const legend = byId<HTMLElement>("legend");
   const layersMenu = byId<HTMLElement>("layers-menu");
   const windToggle = byId<HTMLButtonElement>("wind-toggle");
+  const labelsToggle = byId<HTMLButtonElement>("labels-toggle");
+  const riversToggle = byId<HTMLButtonElement>("rivers-toggle");
+  const labels = byId<HTMLElement>("labels");
   const fatal = byId<HTMLElement>("fatal");
   const overlay = byId<HTMLElement>("overlay");
   const toggle = byId<HTMLButtonElement>("toggle-overlay");
@@ -40,6 +46,9 @@ export function createOverlay(): Overlay {
   return {
     layersMenu,
     windToggle,
+    labelsToggle,
+    riversToggle,
+    labels,
     setBanner(text) {
       bannerText.textContent = text;
     },
