@@ -3,9 +3,10 @@ import { MAX_SEGMENT_DEG, RIVER_RADIUS, RiversError, parseRivers } from "../src/
 import { encodeRivers } from "./rivers-fixture";
 
 const len = (a: Float32Array, i: number) => Math.hypot(a[i * 3]!, a[i * 3 + 1]!, a[i * 3 + 2]!);
+/** Angle entre début et fin du segment i, mesuré par la corde : bien conditionné aux petits angles, contrairement à acos(dot) en Float32. */
 const angleDeg = (s: Float32Array, e: Float32Array, i: number) => {
-  const dot = (s[i * 3]! * e[i * 3]! + s[i * 3 + 1]! * e[i * 3 + 1]! + s[i * 3 + 2]! * e[i * 3 + 2]!) / (RIVER_RADIUS * RIVER_RADIUS);
-  return (Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+  const chord = Math.hypot(s[i * 3]! - e[i * 3]!, s[i * 3 + 1]! - e[i * 3 + 1]!, s[i * 3 + 2]! - e[i * 3 + 2]!);
+  return (2 * Math.asin(Math.min(1, chord / (2 * RIVER_RADIUS))) * 180) / Math.PI;
 };
 
 describe("parseRivers — spec repères §5", () => {
