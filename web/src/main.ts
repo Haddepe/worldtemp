@@ -261,16 +261,23 @@ async function boot(): Promise<void> {
 
   let rivers: RiversLayer | null = null;
   let riversOn = parseFlag(location.search, "rivers");
+  // Création non réentrante (I1) : un clic on/off/on pendant le téléchargement lançait deux
+  // créations (deux maillages, deux écouteurs onViewChange). `once` garantit un seul appel du
+  // corps, échec compris (l'interrupteur reste grisé tant qu'aucun `generated_at` neuf n'arrive —
+  // il n'y en a pas ici, ces fichiers sont statiques, donc un échec est définitif pour la session).
+  const buildRivers = once(async (): Promise<RiversLayer> => {
+    const layer = createRiversLayer(await riverSegments());
+    sceneHandle.scene.add(layer.object);
+    sceneHandle.onViewChange((view) => {
+      const d = view.cameraPosition.length();
+      layer.setView(d, mapStyleFor(d));
+    });
+    return layer;
+  });
   const applyRivers = async (): Promise<void> => {
     if (riversOn && !rivers) {
       try {
-        const layer = createRiversLayer(await riverSegments());
-        rivers = layer;
-        sceneHandle.scene.add(layer.object);
-        sceneHandle.onViewChange((view) => {
-          const d = view.cameraPosition.length();
-          layer.setView(d, mapStyleFor(d));
-        });
+        rivers = await buildRivers();
       } catch (e) {
         console.warn("[worldtemp] fleuves indisponibles :", e);
         riversToggle.setDisabled(true);
