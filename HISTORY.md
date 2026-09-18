@@ -475,8 +475,9 @@ Deux retours utilisateur sur la prod, traités en chemin **borné** du brainstor
 - **Verdict final sur la pluie** : à 0,4 aucune différence visible → flou
   **retiré** (merge `5c9b060`), `soften` ne concerne plus que les nuages ;
   bundle 156,08 Ko gzip, identique au premier déploiement du jour.
-- **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays) ;
-  verdict utilisateur sur le vent et les nuages encore attendu.
+- **Verdict utilisateur sur la prod** : vent « beaucoup plus visible, c'est bien »,
+  nuages « bien » — profils vent et `soften` 1,2 **validés**, ne pas rouvrir.
+- **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays).
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée et validée sur feat/wind : 9 couches, particules CPU, legacy retiré, critère 8 révisé
 
@@ -1066,7 +1067,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**flou retiré de la pluie** — verdict utilisateur final (0,8 trop flou, 0,4 invisible), merge `5c9b060`, `soften` sur les nuages seuls, 248 vitest ; puis lot C)
+**Dernière mise à jour :** 2026-09-18 (**vent et nuages validés par l'utilisateur en prod** — profils vent 5 000/K9 stride 3 et `soften` nuages 1,2 figés ; prochaine étape lot C)
+**Entrée précédente :** 2026-09-18 (**flou retiré de la pluie** — verdict utilisateur final (0,8 trop flou, 0,4 invisible), merge `5c9b060`, `soften` sur les nuages seuls, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)
 **Entrée précédente :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
