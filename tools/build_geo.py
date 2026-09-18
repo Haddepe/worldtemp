@@ -196,7 +196,12 @@ def _load(key: str) -> list[dict]:
     path = CACHE / f"{NE_TAG}-{SOURCES[key]}"
     if not path.exists():
         print(f"téléchargement {SOURCES[key]} ({NE_TAG})…")
-        urllib.request.urlretrieve(BASE_URL + SOURCES[key], path)
+        # Téléchargement atomique (M7) : écrire vers un fichier temporaire puis le renommer vers
+        # le chemin final, pour qu'un téléchargement interrompu ne laisse jamais de cache corrompu
+        # à supprimer à la main.
+        part = path.with_suffix(path.suffix + ".part")
+        urllib.request.urlretrieve(BASE_URL + SOURCES[key], part)
+        part.replace(path)
     return json.loads(path.read_text(encoding="utf-8"))["features"]
 
 
