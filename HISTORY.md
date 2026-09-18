@@ -143,7 +143,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
-      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2, pluie 0,4) des 7 couches, ordre du menu
+      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2 seulement) des 7 couches, ordre du menu
       select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
       cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
     data/
@@ -333,6 +333,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Nuages adoucis par un flou gaussien CPU au chargement** (`LayerDef.soften`, σ = 1,2 cellule, `data/blur.ts`) plutôt qu'un noyau plus large dans le shader ou un flou dans le pipeline *(2026-09-18, demande utilisateur)* | Le Catmull-Rom était déjà appliqué aux nuages : les bords carrés viennent de la **donnée** (TCDC saute de 0 à 100 % entre cellules voisines). Flou une fois par PNG, coût nul par frame, σ réglable par couche ; la donnée publiée et le tooltip (pixels bruts) restent exacts. Activable pour la pluie en une ligne. |
 | **Pluie adoucie aussi, σ = 0,8 cellule** plutôt que le 1,2 des nuages *(2026-09-18, demande utilisateur, à juger en prod)* | Même défaut de fronts raides. Un σ de 1,2 ramène une cellule isolée à ~11 % de son octet : en encodage racine, un cœur d'averse d'une ou deux cellules disparaîtrait de la palette. 0,8 en garde ~25 %. |
 | **σ de la pluie ramené de 0,8 à 0,4** *(2026-09-18, verdict utilisateur sur la prod)* | À 0,8 « trop flou, on perd trop d'information » : les bandes spiralées et les cœurs d'un cyclone au sud du Japon, nets sans flou, se fondaient. À 0,4 le noyau garde ~92 % du poids sur la cellule centrale : il casse juste l'arête des marches. La structure fine de la pluie est de l'information, contrairement aux bords des nuages. |
+| **Flou retiré de la pluie : `soften` reste propre aux nuages** *(2026-09-18, verdict utilisateur final)* | À 0,4 « pratiquement aucune différence avec ou sans » ; à 0,8 trop flou. Aucun σ utile entre les deux : le rendu bicubique brut de la pluie convient, sa structure fine est de l'information. Ne pas reproposer de flou sur la pluie. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -398,6 +399,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | feat/wind-clouds-polish — vent en quads instanciés (moins de particules, plus épaisses et plus longues) + nuages adoucis ; chemin borné (design en chat, pas de spec ni de plan) | ✅ mergée, déployée par CI | `0cc0d52` | 248 passed vitest (27 fichiers) ; pytest inchangé (aucun fichier Python touché) |
 | 2026-09-18 | feat/rain-soften — `soften` 0,8 sur la pluie (une ligne de registre + test) | ✅ mergée, déployée par CI | `39ca638` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-soften-04 — `soften` pluie 0,8 → 0,4 (verdict utilisateur) | ✅ mergée, déployée par CI | `1c66add` | 248 passed vitest (27 fichiers) |
+| 2026-09-18 | fix/rain-no-soften — flou retiré de la pluie (verdict utilisateur final) | ✅ mergée, déployée par CI | `5c9b060` | 248 passed vitest (27 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -470,8 +472,11 @@ Deux retours utilisateur sur la prod, traités en chemin **borné** du brainstor
   Benelux/Allemagne en taches douces), bundle 156,09 Ko gzip (+0,01).
 - **Verdict utilisateur sur la pluie** : 0,8 trop flou (cyclone au sud du Japon,
   §5) → **0,4**, merge `1c66add`, bundle 156,09 Ko gzip.
-- **Prochaine action :** verdict utilisateur sur la prod (vent, nuages, pluie à
-  0,4), puis brainstorming du **lot C** (étiquettes villes/pays).
+- **Verdict final sur la pluie** : à 0,4 aucune différence visible → flou
+  **retiré** (merge `5c9b060`), `soften` ne concerne plus que les nuages ;
+  bundle 156,08 Ko gzip, identique au premier déploiement du jour.
+- **Prochaine action :** brainstorming du **lot C** (étiquettes villes/pays) ;
+  verdict utilisateur sur le vent et les nuages encore attendu.
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée et validée sur feat/wind : 9 couches, particules CPU, legacy retiré, critère 8 révisé
 
@@ -1061,7 +1066,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
+**Dernière mise à jour :** 2026-09-18 (**flou retiré de la pluie** — verdict utilisateur final (0,8 trop flou, 0,4 invisible), merge `5c9b060`, `soften` sur les nuages seuls, 248 vitest ; puis lot C)
+**Entrée précédente :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)
 **Entrée précédente :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
 **Entrée précédente :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
