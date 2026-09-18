@@ -66,7 +66,7 @@ export const LAYERS: readonly LayerDef[] = [
       s(0, 60, 120, 255, 0), s(0.1, 60, 120, 255, 0), s(0.5, 60, 120, 255, 200), s(2, 40, 220, 240, 220),
       s(8, 250, 230, 40, 230), s(25, 230, 40, 30, 240), s(50, 200, 0, 200, 255),
     ],
-    ticks: [0.5, 2, 8, 25, 50], tooltipMin: 0.1, isoStep: null, soften: 0.4,
+    ticks: [0.5, 2, 8, 25, 50], tooltipMin: 0.1, isoStep: null,
   },
   {
     id: "pressure", label: "Pression", unit: "hPa", format: (v) => `${fixed(v, 0)} hPa`,
