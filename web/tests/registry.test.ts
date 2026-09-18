@@ -26,7 +26,7 @@ describe("registre des couches — spec couches §10", () => {
   it("nuages et pluie adoucis ; σ plus faible sur la pluie pour ne pas écraser les cœurs d'averse", () => {
     expect(LAYERS.filter((d) => d.soften !== undefined).map((d) => d.id)).toEqual(["clouds", "rain"]);
     expect(layerDef("clouds")!.soften).toBe(1.2);
-    expect(layerDef("rain")!.soften).toBe(0.8);
+    expect(layerDef("rain")!.soften).toBe(0.4);
   });
   it("formats", () => {
     expect(layerDef("temp")!.format(23.44)).toBe("23,4 °C");
