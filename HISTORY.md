@@ -143,7 +143,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
-      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2) des 7 couches, ordre du menu
+      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2, pluie 0,8) des 7 couches, ordre du menu
       select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
       cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
     data/
@@ -331,6 +331,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Traînées de vent en quads instanciés de 2 px** (plus liseré de teinte opposée) plutôt que `LineSegments` *(2026-09-18, demande utilisateur)* | `gl.lineWidth` est ignoré par ANGLE : un `LineSegments` reste à 1 px et se perdait sur la température jaune-orange, surtout sur terre. `aStart`/`aEnd` lisent le **même** tampon de simulation décalé d'un slot (offset d'`InterleavedBufferAttribute` > stride, non borné par three) : aucune copie CPU, un seul upload. |
 | **Profils vent révisés : 5 000/K9 `high`, 1 500/K5 `low`, `stride` 3, P = 3 px/s par m/s** — remplace 12 000/12, 3 000/8, P = 2 de la spec vent §7 *(2026-09-18, demande utilisateur, réglé à l'œil sur la France)* | « Trop nombreuses et trop petites ». À P = 2 un vent de 5 m/s donnait une traînée de 4 px (un point). `stride` : à 30 Hz un segment par tick mesure ≤ 2 px, et chaque segment est une instance à dessiner — 115 000 instances (essai 5 000/K24) coûtaient ~10 ms GPU sur l'UHD 620 en dev ; 40 000 segments de 3 ticks donnent la même longueur (24 ticks). Tick 6,4 ms (11 avant), 60 fps sur le build. |
 | **Nuages adoucis par un flou gaussien CPU au chargement** (`LayerDef.soften`, σ = 1,2 cellule, `data/blur.ts`) plutôt qu'un noyau plus large dans le shader ou un flou dans le pipeline *(2026-09-18, demande utilisateur)* | Le Catmull-Rom était déjà appliqué aux nuages : les bords carrés viennent de la **donnée** (TCDC saute de 0 à 100 % entre cellules voisines). Flou une fois par PNG, coût nul par frame, σ réglable par couche ; la donnée publiée et le tooltip (pixels bruts) restent exacts. Activable pour la pluie en une ligne. |
+| **Pluie adoucie aussi, σ = 0,8 cellule** plutôt que le 1,2 des nuages *(2026-09-18, demande utilisateur, à juger en prod)* | Même défaut de fronts raides. Un σ de 1,2 ramène une cellule isolée à ~11 % de son octet : en encodage racine, un cœur d'averse d'une ou deux cellules disparaîtrait de la palette. 0,8 en garde ~25 %. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -380,6 +381,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-13 | Validation navigateur (T11b) : un correctif mineur de la vague de correction (report du reste d'accumulateur entre deux ticks) comptait ce reste deux fois dans `dt` — la simulation tournait 10 à 30 % trop vite selon la gigue du rAF, invisible en test unitaire mais mesurable au ratio px/s. | `dt = acc − carry` au lieu de `acc` (`a68d44b`), test « Σ dt ≤ temps écoulé » ajouté. Leçon : un correctif de dernière minute sur une formule d'accumulateur mérite le même test de conservation qu'un bug initial. |
 | 2026-09-13 | Outillage de validation navigateur (Brave via `mcp__brave-devtools__*`) : sans `select_page`/`bringToFront`, Brave bride `requestAnimationFrame` à 1–2 Hz alors que `document.visibilityState` reste « visible » ; `resize_page` plafonne à 500 px de large (dette n° 35 déjà connue) mais `emulate(1000×800, dpr 1)` fonctionne ; `VITE_DATA_BASE_URL=/dev-data/...` passé en variable d'environnement est réécrit en chemin Windows par Git Bash avant d'atteindre Vite, imposant une URL absolue. | Onglet ramené au premier plan avant toute mesure de cadence ; `emulate` préféré à `resize_page` pour un viewport mobile précis ; `VITE_DATA_BASE_URL` toujours passée en URL absolue complète, jamais en chemin relatif, sous Git Bash. Les ratios px/s mesurés 2–3 s après une navigation étaient en outre faussés par le plafond de `dt` pendant le décodage des tuiles — mesurer en régime établi. |
 | 2026-09-18 | Mesure de fps du nouveau rendu du vent : 27–57 fps très instables sur le serveur **dev** Vite (deux onglets animés, machine chaude), alors que la prod tenait 60 | Mesurer sur `vite build` + `vite preview` dans le même état machine : 60 fps stables. Ne jamais conclure sur un fps mesuré en mode dev ; comparer en A/B entrelacé (visible/caché) plutôt qu'en séquence. |
+| 2026-09-18 | `TaskStop` sur un `npx vite` lancé en arrière-plan tue le shell mais **pas** le processus node : les ports 5173/4173 restaient pris, le serveur suivant échouait (`--strictPort`, exit 1) pendant que l'ancien continuait de servir la page | Inoffensif pour la validation (Vite dev relit les sources sur disque — vérifié par `curl /src/layers/registry.ts`), mais à nettoyer : `netstat -ano \| grep :5173` puis `taskkill //PID <pid> //F`. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -393,6 +395,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
 | 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`, critère 8 révisé en `d31a2a8`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | ✅ mergée, déployée | `c120f81` | 236 passed vitest (26 fichiers) ; 184 passed / 9 skipped pytest local (Windows), 195 Actions |
 | 2026-09-18 | feat/wind-clouds-polish — vent en quads instanciés (moins de particules, plus épaisses et plus longues) + nuages adoucis ; chemin borné (design en chat, pas de spec ni de plan) | ✅ mergée, déployée par CI | `0cc0d52` | 248 passed vitest (27 fichiers) ; pytest inchangé (aucun fichier Python touché) |
+| 2026-09-18 | feat/rain-soften — `soften` 0,8 sur la pluie (une ligne de registre + test) | ✅ mergée, déployée par CI | `39ca638` | 248 passed vitest (27 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -460,8 +463,12 @@ Deux retours utilisateur sur la prod, traités en chemin **borné** du brainstor
 
 - **Tests :** 248 vitest (27 fichiers) ; pytest non relancé (aucun fichier Python touché).
 - **Build :** `index-*.js` 156,08 Ko gzip (+1,39 Ko).
-- **Prochaine action :** verdict utilisateur sur la prod, puis brainstorming du
-  **lot C** (étiquettes villes/pays). Option ouverte : `soften` sur la pluie.
+- **Suite le même jour** : l'utilisateur demande le flou sur la pluie aussi →
+  `soften` 0,8 (`017ea4a`, merge `39ca638`), contrôlé à l'œil en local (averses
+  Benelux/Allemagne en taches douces), bundle 156,09 Ko gzip (+0,01).
+- **Prochaine action :** verdict utilisateur sur la prod (vent, nuages, pluie — σ
+  ajustables dans `layers/registry.ts`), puis brainstorming du **lot C**
+  (étiquettes villes/pays).
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée et validée sur feat/wind : 9 couches, particules CPU, legacy retiré, critère 8 révisé
 
@@ -1051,7 +1058,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
+**Dernière mise à jour :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)
+**Entrée précédente :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
 **Entrée précédente :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé — revue finale, vague de correction, validation navigateur, critère 8 révisé** — revue finale (`209a38b..0003b29`) : I1 tick réel 9–15 ms (T6 mesuré sur grille de test non représentative), I2 `applyWind`/spec §11, I3 TDZ `stopWind`, I4 seuil d'horizon ; vague unique (`e4b4d6a`/`2e77ec7`/`73b3687`/`9458c3d`) : `WindField.uv` entrelacé + `sampleUV` fusionné, statut vent avec switch actif (déviation §11), seuil exact, `onFrame` isolé par callback ; correctif résiduel trouvé en validation (`0996837` statut, `a68d44b` double comptage de l'accumulateur) ; **236 vitest**, build 154,69 Ko gzip (+3,99) ; validation navigateur T11b (Brave) : critères 1–7 ✅, critère 8 initial (≤ 4 ms) non atteignable sur la machine de référence → **révisé par l'utilisateur** vers un budget de frame (≤ 16 ms, mesuré 11,7 ms moy/19,4 p90 high, 4,6 ms low) → ✅ ; **exécutée et validée, merge à suivre**)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé exécutée sur `feat/wind`** — plan `cda0f39` 12 tâches subagent-driven, rounds T1 ×1/T6 ×2/T8 ×1/T11a ×1, 9 couches (`wind_u`/`wind_v`), legacy `gfs/latest.*` retiré (`596b247`, dette n° 31 fermée), fixture réelle `gfs_wind.grib2` + décodage vert sur Actions (195 pytest, dry-run 9 couches), particules CPU + `LineSegments`, 184 pytest local/9 skipped, 227 vitest, bundle 154,27 Ko gzip (+3,57), tick Node ≈ 4,57 ms, **validation navigateur en attente** (aucun Chrome joignable, critères 1–6/8 non mesurés), pas encore mergée)
