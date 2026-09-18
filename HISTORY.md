@@ -143,15 +143,16 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
-      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes) des 7 couches, ordre du menu
+      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2) des 7 couches, ordre du menu
       select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
       cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
     data/
       manifest.ts                # NOUVEAU, remplace l'ancien module de métadonnées v1 : parseManifest (schéma v2, multi-couches, `layers: {id: entrée}`)
       encoding.ts                # NOUVEAU : encode/decode linéaire et racine (miroir exact de pipeline/texture.py::quantize)
       sampling.ts                # sampleValue générique (remplace sampleTemperature) : lecture bilinéaire CPU, decode par couche
-      loader.ts                  # ManifestLoader (manifeste v2, non réentrant) + LayerLoader par couche (PNG → texture + pixels CPU, non réentrant)
+      loader.ts                  # ManifestLoader (manifeste v2, non réentrant) + LayerLoader par couche (PNG → texture + pixels CPU, non réentrant ; `soften` > 0 → `softenedTexture` : DataTexture RedFormat floutée, pixels bruts conservés pour le tooltip)
       pixels.ts                  # bitmapPixels : ImageBitmap → RGBA nord en haut via canvas 2D réutilisé (null si impossible)
+      blur.ts                    # blurRedChannel : flou gaussien séparable du canal R (bouclage en longitude, bornage en latitude, `flipRows` pour l’ordre texture), logique pure
     gpu/
       tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
     tiles/                       # spec 3 : pyramide géodésique de tuiles (miroir TS de tiler/)
@@ -162,7 +163,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       loader.ts                  # chargeur de tuiles : priorité, concurrence par tier, tentatives, LRU par budget mémoire
       patch.ts                   # géométrie des patches (quadtree) avec jupes orientées vers l'extérieur, lonLatToVec3
     wind/                       # NOUVEAU (spec vent 2026-09-13) : simulation CPU du vent, indépendante du rendu
-      sim.ts                      # WindSim : advection U/V, tampon slot-major [K][N][xyz] glissant (copyWithin), respawn (pickSphere), WIND_PROFILE par tier (high 12000/12, low 3000/8) ; WindField `{ uv: Uint8Array entrelacé [u,v], grid, encU, encV }` (2 Mo) et `sampleUV` fusionné sans allocation (revue finale + vague de correction, `e4b4d6a`) remplacent deux appels `sampleValue` par particule/tick ; seuil d'horizon `isVisible` exact au rayon 1,002 (`73b3687`)
+      sim.ts                      # WindSim : advection U/V, tampon slot-major [K][N][xyz] glissant (copyWithin), respawn (pickSphere), WIND_PROFILE par tier (high 5000/K9, low 1500/K5, `stride` 3 : la traînée ne glisse qu’un tick sur trois, la tête suit chaque tick ; P = 3 px/s par m/s — révisé le 2026-09-18) ; WindField `{ uv: Uint8Array entrelacé [u,v], grid, encU, encV }` (2 Mo) et `sampleUV` fusionné sans allocation (revue finale + vague de correction, `e4b4d6a`) remplacent deux appels `sampleValue` par particule/tick ; seuil d'horizon `isVisible` exact au rayon 1,002 (`73b3687`)
       select.ts                   # pur : parseWindParam (`?wind=1|0`, défaut par tier, reduced-motion), withWindParam
       loader.ts                   # WindLoader : pixels CPU des deux PNG U/V fusionnés en un seul tampon entrelacé `WindField.uv` (jamais de texture GPU, plus de tampons RGBA 8 Mo conservés), remplacement atomique, garde dispose en vol, non réentrant
       controller.ts               # WindController : step cadencé à TICK_MS (30 Hz), dt borné MAX_DT_S et égal au temps réellement consommé par le tick (le reste d'accumulateur est reporté sans être recompté, `a68d44b`), inscrit sur SceneHandle.onFrame seulement quand le vent est actif
@@ -171,11 +172,11 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
       globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setLayer(texture|null, w, h)/setIsoStep(step) remplacent setHeatmap/setFilter (spec couches)
       colormap.ts                # buildLut(def, enc)/legendGradientCss(def, enc) génériques par couche (registre `layers/registry.ts`), LUT 256×1 sRGB
-      wind.ts                    # NOUVEAU : WindLayer, un seul LineSegments sur le tampon slot-major de wind/sim.ts, index/alpha statiques (aAlpha), markDirty envoie les positions entières
+      wind.ts                    # WindLayer : un Mesh de quads instanciés (un par segment de traînée, 2 px CSS + liseré), `aStart`/`aEnd` = le tampon slot-major de wind/sim.ts lu deux fois, décalé de N sommets (InstancedInterleavedBuffer, sans copie), uniforms viewport/largeur posés dans onBeforeRender, markDirty envoie le tampon entier
       shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
       shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches)
-      shaders/wind.vert.glsl     # NOUVEAU : positions déjà sur la sphère (rayon 1,002), aAlpha statique par slot
-      shaders/wind.frag.glsl     # NOUVEAU : blanc (satellite) / gris foncé (carte) selon uMapStyle, alpha × 0,8
+      shaders/wind.vert.glsl     # élargit chaque segment en quad dans l’espace écran (segment nul → aire nulle), alpha dérivé de gl_InstanceID (k/(K−1) → (k+1)/(K−1))
+      shaders/wind.frag.glsl     # blanc (satellite) / gris foncé (carte) selon uMapStyle, liseré de teinte opposée, bords anti-crénelés (smoothstep sur la distance à l’axe)
     ui/
       layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
       wind-toggle.ts              # NOUVEAU : createWindToggle, interrupteur role="switch", DOM seul (état/URL portés par wind/select.ts)
@@ -204,11 +205,12 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     pick.test.ts                  # rayon → sphère, inverse de lonLatToVec3, horizon
     zoom.test.ts                  # courbe (35 crans), pincement, PinchTracker, keepAnchor, convergence d'ancre (< 0,5 px)
     pixels.test.ts
+    blur.test.ts                  # blurRedChannel : σ = 0 identité, champ uniforme stable, masse conservée, bouclage en longitude, flipRows
     tooltip.test.ts               # TapDetector, placeTooltip
     wind-sim.test.ts              # NOUVEAU : advection exacte pour u = 0, dérive bornée, spawn/respawn ; tolérances Float32 (T6, `toBeCloseTo(RADIUS, 6)`) et vitesse représentable 8 bits (v = 12) ; `sampleUV` accordé à 1e-9 avec `sampleValue` sur le même maillage cellulaire, seuil d'horizon exact au rayon 1,002
     wind-select.test.ts           # NOUVEAU : parseWindParam (défaut par tier, reduced-motion), withWindParam
     wind-loader.test.ts           # NOUVEAU : WindLoader, remplacement atomique, garde dispose en vol (rechargement raté sur la même instance) ; ancien champ conservé sur échec au même `generated_at`, tampon `uv` entrelacé
-    wind-layer.test.ts            # NOUVEAU : WindLayer, index de traînée, alpha statique par slot
+    wind-layer.test.ts            # WindLayer : instances N·(K−1), aStart/aEnd sur le même tampon décalés de 3N, uniforms N/K, onBeforeRender (viewport, largeur × pixel ratio), garde de taille
     wind-controller.test.ts       # NOUVEAU : WindController, cadence 30 Hz, dt borné MAX_DT_S ; Σ dt ≤ temps écoulé (reste d'accumulateur non recompté, `a68d44b`)
 ```
 
@@ -326,6 +328,9 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Seuil d'horizon exact** `(1 + √((d²−1)(R²−1))) / (d·R)` **pour un point à rayon R**, plutôt que `1/d` (valable seulement pour R = 1) *(2026-09-13, revue finale, `73b3687`)* | Les traînées de vent vivent au rayon 1,002 (au-dessus de la sphère unité) ; le seuil `1/d` hérité du picking (spec tuiles §5, où R = 1) laissait une bande de surface d'environ 3,6° se dessiner au-delà du limbe visible. |
 | **Statut « Vent indisponible » affiché avec le switch laissé actif**, même quand l'ancien champ continue de s'animer après un second échec au même `generated_at` *(2026-09-13, ruling du contrôleur pendant la vague de correction, confirmé par la re-revue, déviation assumée de la spec §11)* | La spec §11 prévoit un switch désactivé sur échec ; un switch grisé empêcherait l'utilisateur de couper lui-même une animation qu'il ne veut plus voir, sans rien y gagner puisque le statut informe déjà de l'indisponibilité. |
 | **Critère 8 de la spec vent révisé par l'utilisateur** : « tick ≤ 4 ms » → « 30 ticks/s tenus et tick + rendu ≤ 50 % du budget de frame (≤ 16 ms) sur la machine de référence » *(2026-09-13, après validation navigateur)* | Un tick seul de 10,9–13,2 ms était mesuré aussi bien en dev qu'en build de prod sur la machine de référence (Intel UHD 620, 4 cœurs), avec un micro-benchmark de lectures brutes à 1 ms (donc le moteur JS n'est pas en cause) et un bench Node du relecteur à 6,2 ms pour le seul échantillonnage : 4 ms n'est pas atteignable sur ce matériel avec un champ réel, alors que la fluidité perçue (30 ticks/s, rAF 60 Hz, 0 jank) est tenue. Le critère révisé mesure ce qui compte réellement (le budget de frame partagé avec le rendu), pas un chiffre absolu hérité d'une estimation optimiste. |
+| **Traînées de vent en quads instanciés de 2 px** (plus liseré de teinte opposée) plutôt que `LineSegments` *(2026-09-18, demande utilisateur)* | `gl.lineWidth` est ignoré par ANGLE : un `LineSegments` reste à 1 px et se perdait sur la température jaune-orange, surtout sur terre. `aStart`/`aEnd` lisent le **même** tampon de simulation décalé d'un slot (offset d'`InterleavedBufferAttribute` > stride, non borné par three) : aucune copie CPU, un seul upload. |
+| **Profils vent révisés : 5 000/K9 `high`, 1 500/K5 `low`, `stride` 3, P = 3 px/s par m/s** — remplace 12 000/12, 3 000/8, P = 2 de la spec vent §7 *(2026-09-18, demande utilisateur, réglé à l'œil sur la France)* | « Trop nombreuses et trop petites ». À P = 2 un vent de 5 m/s donnait une traînée de 4 px (un point). `stride` : à 30 Hz un segment par tick mesure ≤ 2 px, et chaque segment est une instance à dessiner — 115 000 instances (essai 5 000/K24) coûtaient ~10 ms GPU sur l'UHD 620 en dev ; 40 000 segments de 3 ticks donnent la même longueur (24 ticks). Tick 6,4 ms (11 avant), 60 fps sur le build. |
+| **Nuages adoucis par un flou gaussien CPU au chargement** (`LayerDef.soften`, σ = 1,2 cellule, `data/blur.ts`) plutôt qu'un noyau plus large dans le shader ou un flou dans le pipeline *(2026-09-18, demande utilisateur)* | Le Catmull-Rom était déjà appliqué aux nuages : les bords carrés viennent de la **donnée** (TCDC saute de 0 à 100 % entre cellules voisines). Flou une fois par PNG, coût nul par frame, σ réglable par couche ; la donnée publiée et le tooltip (pixels bruts) restent exacts. Activable pour la pluie en une ligne. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -374,6 +379,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-13 | Revue finale (I4) : seuil d'horizon `1/d` (valable pour un point à rayon 1) appliqué aux traînées de vent au rayon 1,002 — une bande de surface d'environ 3,6° se dessinait au-delà du limbe visible. | Seuil exact `(1 + √((d²−1)(R²−1)))/(d·R)` (§5, `73b3687`). |
 | 2026-09-13 | Validation navigateur (T11b) : un correctif mineur de la vague de correction (report du reste d'accumulateur entre deux ticks) comptait ce reste deux fois dans `dt` — la simulation tournait 10 à 30 % trop vite selon la gigue du rAF, invisible en test unitaire mais mesurable au ratio px/s. | `dt = acc − carry` au lieu de `acc` (`a68d44b`), test « Σ dt ≤ temps écoulé » ajouté. Leçon : un correctif de dernière minute sur une formule d'accumulateur mérite le même test de conservation qu'un bug initial. |
 | 2026-09-13 | Outillage de validation navigateur (Brave via `mcp__brave-devtools__*`) : sans `select_page`/`bringToFront`, Brave bride `requestAnimationFrame` à 1–2 Hz alors que `document.visibilityState` reste « visible » ; `resize_page` plafonne à 500 px de large (dette n° 35 déjà connue) mais `emulate(1000×800, dpr 1)` fonctionne ; `VITE_DATA_BASE_URL=/dev-data/...` passé en variable d'environnement est réécrit en chemin Windows par Git Bash avant d'atteindre Vite, imposant une URL absolue. | Onglet ramené au premier plan avant toute mesure de cadence ; `emulate` préféré à `resize_page` pour un viewport mobile précis ; `VITE_DATA_BASE_URL` toujours passée en URL absolue complète, jamais en chemin relatif, sous Git Bash. Les ratios px/s mesurés 2–3 s après une navigation étaient en outre faussés par le plafond de `dt` pendant le décodage des tuiles — mesurer en régime établi. |
+| 2026-09-18 | Mesure de fps du nouveau rendu du vent : 27–57 fps très instables sur le serveur **dev** Vite (deux onglets animés, machine chaude), alors que la prod tenait 60 | Mesurer sur `vite build` + `vite preview` dans le même état machine : 60 fps stables. Ne jamais conclure sur un fps mesuré en mode dev ; comparer en A/B entrelacé (visible/caché) plutôt qu'en séquence. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -386,6 +392,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-06 | feat/navigation — spec 4 lot A : zoom ancré sur l'altitude, pincement, tooltip, fondu (spec + plan superpowers, 10 tâches) | ✅ mergé, déployé par CI | `aa4ab6e` | 146 vitest + 127 pytest local (5 skipped) |
 | 2026-09-12 | feat/layers — spec 4 lot B1 : 7 couches scalaires, pipeline à deux sources (GFS + GEFS-Aerosols), manifeste v2 (spec + plan superpowers, 16 tâches) | ✅ mergée, déployée | `cd667bd` | 173 passed / 9 skipped pytest local (Windows) ; 171 vitest (21 fichiers) |
 | 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`, critère 8 révisé en `d31a2a8`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | ✅ mergée, déployée | `c120f81` | 236 passed vitest (26 fichiers) ; 184 passed / 9 skipped pytest local (Windows), 195 Actions |
+| 2026-09-18 | feat/wind-clouds-polish — vent en quads instanciés (moins de particules, plus épaisses et plus longues) + nuages adoucis ; chemin borné (design en chat, pas de spec ni de plan) | ✅ mergée, déployée par CI | `0cc0d52` | 248 passed vitest (27 fichiers) ; pytest inchangé (aucun fichier Python touché) |
 
 ## 8. Dette technique connue
 
@@ -433,6 +440,28 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 40 | **Critère 8 initial de la spec vent (tick ≤ 4 ms) non atteignable sur la machine de référence** avec un champ réel à `N = 12 000` (tick seul mesuré 10,9–13,2 ms, §6) ; critère révisé le 2026-09-13 vers un budget de frame (§5) | Si un tick ≤ 4 ms redevenait nécessaire (davantage de particules, machine plus modeste), l'échantillonnage bilinéaire CPU par particule resterait le poste dominant même après `sampleUV` fusionné | 🟡 ouvert — pistes non retenues faute de nécessité actuelle : champ `Float32` pré-décodé (évite le décodage linéaire par lecture), simulation déportée en Web Worker |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-18 — Vent plus lisible (quads 2 px, 5 000 particules, stride 3) et nuages adoucis
+
+Deux retours utilisateur sur la prod, traités en chemin **borné** du brainstorming
+(design en chat, validé, TDD, pas de spec) sur `feat/wind-clouds-polish`, mergée
+`--no-ff` en `0cc0d52`.
+
+- **Vent** (`d6289a9`) : `render/wind.ts` passe de `LineSegments` (1 px, ANGLE ignore
+  `lineWidth`) à des quads instanciés de 2 px CSS avec liseré et anti-crénelage ;
+  profils 5 000/K9 et 1 500/K5 avec `stride` 3, P = 3 px/s par m/s (§5). Crochet dev
+  `__worldtempWind.layer` ajouté. Mesuré (Brave, UHD 620, 1440×830) : tick médian
+  6,4 ms en dev, 60 fps sur le build.
+- **Nuages** (`2518e42`) : `LayerDef.soften` = 1,2 → `LayerLoader` floute le canal R
+  (`data/blur.ts`) et livre une `DataTexture` `RedFormat` ; tooltip sur pixels bruts
+  (vérifié : Espagne 0 %, Allemagne 100 %, orientation nord/sud cohérente).
+- Validation à l'œil sur la France (vue des captures utilisateur), données
+  `web/public/dev-data/`. Profil `low` non validé à l'œil (même code, N/K réduits).
+
+- **Tests :** 248 vitest (27 fichiers) ; pytest non relancé (aucun fichier Python touché).
+- **Build :** `index-*.js` 156,08 Ko gzip (+1,39 Ko).
+- **Prochaine action :** verdict utilisateur sur la prod, puis brainstorming du
+  **lot C** (étiquettes villes/pays). Option ouverte : `soften` sur la pluie.
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée et validée sur feat/wind : 9 couches, particules CPU, legacy retiré, critère 8 révisé
 
@@ -1022,7 +1051,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
+**Dernière mise à jour :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
+**Entrée précédente :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé — revue finale, vague de correction, validation navigateur, critère 8 révisé** — revue finale (`209a38b..0003b29`) : I1 tick réel 9–15 ms (T6 mesuré sur grille de test non représentative), I2 `applyWind`/spec §11, I3 TDZ `stopWind`, I4 seuil d'horizon ; vague unique (`e4b4d6a`/`2e77ec7`/`73b3687`/`9458c3d`) : `WindField.uv` entrelacé + `sampleUV` fusionné, statut vent avec switch actif (déviation §11), seuil exact, `onFrame` isolé par callback ; correctif résiduel trouvé en validation (`0996837` statut, `a68d44b` double comptage de l'accumulateur) ; **236 vitest**, build 154,69 Ko gzip (+3,99) ; validation navigateur T11b (Brave) : critères 1–7 ✅, critère 8 initial (≤ 4 ms) non atteignable sur la machine de référence → **révisé par l'utilisateur** vers un budget de frame (≤ 16 ms, mesuré 11,7 ms moy/19,4 p90 high, 4,6 ms low) → ✅ ; **exécutée et validée, merge à suivre**)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé exécutée sur `feat/wind`** — plan `cda0f39` 12 tâches subagent-driven, rounds T1 ×1/T6 ×2/T8 ×1/T11a ×1, 9 couches (`wind_u`/`wind_v`), legacy `gfs/latest.*` retiré (`596b247`, dette n° 31 fermée), fixture réelle `gfs_wind.grib2` + décodage vert sur Actions (195 pytest, dry-run 9 couches), particules CPU + `LineSegments`, 184 pytest local/9 skipped, 227 vitest, bundle 154,27 Ko gzip (+3,57), tick Node ≈ 4,57 ms, **validation navigateur en attente** (aucun Chrome joignable, critères 1–6/8 non mesurés), pas encore mergée)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé : brainstorming, spec `38e5f27` et plan `cda0f39` écrits, 12 tâches, aucun code touché**)
