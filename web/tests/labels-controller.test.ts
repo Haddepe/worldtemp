@@ -196,6 +196,14 @@ describe("LabelsController (spec repères §4)", () => {
     r.ctl.setEnabled(true);
     expect(r.darkCalls).toEqual([false]);
   });
+  it("immobile après une sélection : onView() ne repeint pas (M1)", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    const before = r.frames.length;
+    r.ctl.onView();
+    expect(r.frames.length).toBe(before);
+  });
   it("éteint : vide la couche", () => {
     const r = rig();
     r.ctl.setData(SET);

@@ -40,6 +40,11 @@ export class LabelsController {
   /** Taille CSS de la dernière sélection (F2) : une rotation d'écran ne bouge pas la caméra
    * mais change le plafond (`labelCap`) et compte donc comme un mouvement. */
   private lastSize = { width: Number.NaN, height: Number.NaN };
+  /** Pose et taille CSS du dernier `paint()` (M1, distinct de `lastPos`/`lastSize` qui datent
+   * de la dernière sélection) : permet à `onView()` de sauter la repeinture quand rien n'a
+   * bougé depuis le dernier rendu, même si une sélection reste due plus tard. */
+  private readonly lastPaintPos = new THREE.Vector3(Number.NaN, 0, 0);
+  private lastPaintSize = { width: Number.NaN, height: Number.NaN };
   private readonly now: () => number;
   private readonly defer: (cb: () => void, ms: number) => unknown;
 
@@ -78,6 +83,12 @@ export class LabelsController {
     return !this.lastPos.equals(this.deps.camera.position) || width !== this.lastSize.width || height !== this.lastSize.height;
   }
 
+  /** Vrai si la caméra ou la taille CSS ont changé depuis le dernier `paint()` (M1). */
+  private changedSinceLastPaint(): boolean {
+    const { width, height } = this.deps.size();
+    return !this.lastPaintPos.equals(this.deps.camera.position) || width !== this.lastPaintSize.width || height !== this.lastPaintSize.height;
+  }
+
   /** Avant chaque rendu WebGL (`SceneHandle.onViewChange`). */
   onView(): void {
     if (!this.enabled || !this.set) return;
@@ -87,6 +98,10 @@ export class LabelsController {
       return;
     }
     if (changed) this.scheduleCatchUp();
+    // M1 : pose et taille identiques à celles du dernier paint() (pas de la dernière sélection)
+    // → rien à repeindre. Entre deux sélections, la caméra qui bouge continue de repeindre à
+    // chaque vue puisque changedSinceLastPaint() reste vraie tant qu'elle n'a pas été rattrapée.
+    if (!this.changedSinceLastPaint()) return;
     this.paint();
   }
 
@@ -159,5 +174,7 @@ export class LabelsController {
       views.push({ id: item.id, kind: item.kind, name: item.name, value, x: s.x, y: s.y });
     }
     this.deps.layer.render(views);
+    this.lastPaintPos.copy(camera.position);
+    this.lastPaintSize = { width, height };
   }
 }
