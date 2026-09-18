@@ -26,6 +26,9 @@ export const COUNTRY_TIERS: readonly { minD: number; maxRank: number }[] = [
 ];
 export const LABEL_CAP: Record<Tier, number> = { high: 60, low: 30 };
 export const NARROW_PX = 600;
+/** Marge de limbe (F3) : un point trop proche du bord projeté pose son texte hors du disque
+ * du globe. Rejeté au-delà de LIMB_FRACTION × le rayon du limbe (0,92 ≈ 8 % de retrait). */
+export const LIMB_FRACTION = 0.92;
 
 /** Largeur moyenne d'un caractère (px CSS) à la taille de `.label`, et géométrie des boîtes. */
 const CHAR_W = 6.5;
@@ -86,9 +89,17 @@ export function selectLabels(input: SelectInput): Placed[] {
   const placed: Placed[] = [];
   const boxes: Box[] = [];
   const at = { x: 0, y: 0 };
+  // Rayon du limbe (bord du disque projeté), en unités où le rayon de la sphère vaut 1 : la
+  // tangente depuis la caméra fait un triangle rectangle d'hypoténuse d, donc de rayon
+  // 1/√(d² − 1) (indépendant du point, ne dépend que de la distance caméra).
+  const limbRadius = LIMB_FRACTION / Math.sqrt(d * d - 1);
   const tryPlace = (item: LabelItem): void => {
     const o = item.id * 3;
-    if (set.unit[o]! * camDir.x + set.unit[o + 1]! * camDir.y + set.unit[o + 2]! * camDir.z <= horizon) return;
+    const c = set.unit[o]! * camDir.x + set.unit[o + 1]! * camDir.y + set.unit[o + 2]! * camDir.z;
+    if (c <= horizon) return;
+    // Marge de limbe (F3) : rayon projeté du point ∝ √(1 − c²) / (d − c) (c = cosinus de
+    // l'angle au centre) ; au-delà de limbRadius, le texte déborderait du disque du globe.
+    if (Math.sqrt(Math.max(0, 1 - c * c)) / (d - c) > limbRadius) return;
     if (!eligible(item, d)) return;
     if (!input.project(item.id, at)) return;
     const box = labelBox(item, at.x, at.y, hasValue);

@@ -82,7 +82,10 @@ Constantes nommées et exportées (`CITY_TIERS`, `COUNTRY_TIERS`) : réglables �
 validation sans toucher à la logique.
 
 **Visibilité :** devant l'horizon (produit scalaire avec la direction caméra > 1/d — point à
-rayon 1, seuil de la spec tuiles §5), puis projection écran dans le viewport avec une marge.
+rayon 1, seuil de la spec tuiles §5), **et** son rayon projeté sous `LIMB_FRACTION` (0,92) × le
+rayon du limbe — sinon le texte, posé à droite ou centré sur le point, déborderait hors du disque
+du globe près du bord (F3) ; court-circuit avant projection, comme le test d'horizon — puis
+projection écran dans le viewport avec une marge.
 
 **Ordre de placement :** étiquettes déjà affichées et toujours éligibles d'abord (stabilité :
 pas de clignotement en rotation), puis pays, puis villes, chacun dans l'ordre du fichier.

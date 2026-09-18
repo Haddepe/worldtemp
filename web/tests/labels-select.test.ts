@@ -68,6 +68,17 @@ describe("selectLabels", () => {
     const set = buildLabelSet([city("Vue", 1e7, false, FRONT, 0), city("Hors", 1e7, false, FRONT, 1)], []);
     expect(selectLabels(input(set, { Vue: [100, 100] })).map((p) => p.id)).toEqual([0]);
   });
+  it("marge de limbe : un point trop près du bord est écarté sans être projeté, même devant l'horizon (F3)", () => {
+    // À d = 3, l'horizon est à ≈ 70,5° (acos(1/3)). 69° est devant l'horizon mais son rayon
+    // projeté dépasse LIMB_FRACTION × le rayon du limbe : le texte déborderait du disque.
+    const set = buildLabelSet([city("Limbe", 1e7, false, FRONT, 69), city("Centre", 1e7, false, FRONT, 40)], []);
+    const seen: string[] = [];
+    const inp = input(set, { Limbe: [10, 10], Centre: [400, 400] }, { d: 3 });
+    const project = inp.project;
+    inp.project = (id, out) => { seen.push(set.items[id]!.name); return project(id, out); };
+    expect(selectLabels(inp).map((p) => set.items[p.id]!.name)).toEqual(["Centre"]);
+    expect(seen).toEqual(["Centre"]);
+  });
   it("anti-chevauchement : le premier dans l'ordre de priorité gagne", () => {
     const set = buildLabelSet([city("Paris", 1e7, true, FRONT, 0), city("Versailles", 9e4, false, FRONT, 0.1), city("Lyon", 2e6, false, FRONT, 1)], []);
     const out = selectLabels(input(set, { Paris: [100, 100], Versailles: [110, 104], Lyon: [100, 300] }, { d: 1.1 }));
