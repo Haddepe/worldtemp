@@ -118,7 +118,7 @@ Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (hi
 - **Cadence** (`controller.ts`, branché en permanence sur `SceneHandle.onViewChange`, appelé
   avant chaque rendu — pas seulement quand l'interrupteur est actif — et qui sort tôt si
   l'interrupteur est éteint ou sans données) : sélection recalculée quand la caméra a bougé,
-  au plus toutes les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue,
+  au plus toutes les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue **dont la pose ou la taille a changé**,
   par `transform: translate3d`. Le contrôleur ne demande **jamais** de rendu WebGL.
 - **Valeurs :** `sampleValue` sur les pixels bruts de la couche active + `def.format`,
   comme le tooltip ; recalculées seulement quand la couche, ses données ou la sélection
