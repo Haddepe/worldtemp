@@ -127,3 +127,40 @@ def test_dump_json_est_compact_utf8_et_finit_par_un_saut_de_ligne():
     out = bg.dump_json({"version": 1, "places": [[2.35, 48.86, "Orléans", 1, 0]]})
     assert out == '{"version":1,"places":[[2.35,48.86,"Orléans",1,0]]}\n'.encode("utf-8")
     assert json.loads(out)["places"][0][2] == "Orléans"
+
+
+GEO = Path(__file__).resolve().parent.parent / "web" / "public" / "geo"
+
+
+def test_fichiers_commites_places():
+    raw = (GEO / "places.json").read_bytes()
+    assert len(raw) <= 300_000 and b"\r" not in raw
+    doc = json.loads(raw)
+    assert doc["version"] == 1
+    rows = doc["places"]
+    assert 5000 <= len(rows) <= 8000
+    assert all(len(r) == 5 and -180 <= r[0] <= 180 and -90 <= r[1] <= 90 and r[2] and r[4] in (0, 1) for r in rows)
+    assert rows == sorted(rows, key=lambda r: (-r[4], -r[3], r[2]))
+    names = {r[2] for r in rows}
+    assert {"Paris", "Tokyo", "Lyon", "Marseille"} <= names
+    paris = next(r for r in rows if r[2] == "Paris")
+    assert paris[4] == 1 and abs(paris[0] - 2.35) < 0.2 and abs(paris[1] - 48.86) < 0.2
+
+
+def test_fichiers_commites_countries():
+    raw = (GEO / "countries.json").read_bytes()
+    assert len(raw) <= 15_000 and b"\r" not in raw
+    rows = json.loads(raw)["countries"]
+    assert 150 <= len(rows) <= 260
+    assert rows == sorted(rows, key=lambda r: (r[3], r[2]))
+    assert {"France", "Japon", "Brésil"} <= {r[2] for r in rows}
+
+
+def test_fichiers_commites_rivers():
+    raw = (GEO / "rivers.bin").read_bytes()
+    assert len(raw) <= 400_000
+    lines = bg.decode_rivers(raw)
+    assert len(lines) > 200
+    assert [l[0] for l in lines] == sorted(l[0] for l in lines)
+    assert all(len(pts) >= 2 and all(abs(x) <= 18000 and abs(y) <= 9000 for x, y in pts) for _, pts in lines)
+    assert bg.segment_count(lines) <= 25_000
