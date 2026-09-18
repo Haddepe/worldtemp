@@ -88,7 +88,7 @@ async function boot(): Promise<void> {
   sceneHandle.scene.add(globe.group);
 
   const windProfile = WIND_PROFILE[decision.tier];
-  const windSim = new WindSim(windProfile.particles, windProfile.trail);
+  const windSim = new WindSim(windProfile.particles, windProfile.trail, windProfile.stride);
   const windLayer = createWindLayer(windSim.positions, windProfile.particles, windProfile.trail);
   sceneHandle.scene.add(windLayer.object);
   const windCtl = new WindController({
@@ -180,7 +180,7 @@ async function boot(): Promise<void> {
   await loadTiles();
 
   const manifests = new ManifestLoader(DATA_BASE_URL);
-  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL));
+  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL, undefined, layerDef(id)?.soften));
   const menu = createLayersMenu(ui.layersMenu, (id) => void activate(id, true));
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
@@ -211,7 +211,7 @@ async function boot(): Promise<void> {
   windToggle.setOn(windOn);
   // Crochet de validation (T11, critères 2, 3, 8) : dev seulement, comme `__worldtemp`.
   if (import.meta.env.DEV) {
-    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader };
+    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader, layer: windLayer };
   }
 
   const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {

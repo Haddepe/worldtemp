@@ -20,16 +20,18 @@ export function view(d: number, height = 800) {
 }
 
 describe("WIND_PROFILE", () => {
-  it("budgets de la spec §7", () => {
-    expect(WIND_PROFILE.high).toEqual({ particles: 12000, trail: 12 });
-    expect(WIND_PROFILE.low).toEqual({ particles: 3000, trail: 8 });
+  it("budgets révisés le 2026-09-18 : moins de particules, traînées plus longues", () => {
+    // longueur de traînée = (trail − 1) · stride ticks : 24 en high, 12 en low
+    expect(WIND_PROFILE.high).toEqual({ particles: 5000, trail: 9, stride: 3 });
+    expect(WIND_PROFILE.low).toEqual({ particles: 1500, trail: 5, stride: 3 });
+    expect(PX_PER_S_PER_MS).toBe(3);
     expect(MAX_LAT).toBe(85);
   });
 });
 
 describe("speedScale — vitesse apparente constante", () => {
   for (const d of [4, 1.1]) {
-    it(`20 m/s → 40 px/s à d = ${d}`, () => {
+    it(`20 m/s → 60 px/s à d = ${d}`, () => {
       const v = view(d);
       const worldPerPx = (2 * (d - 1) * Math.tan(v.fovYRad / 2)) / v.viewportHeight;
       const degPerS = speedScale(v) * 20;
@@ -38,7 +40,7 @@ describe("speedScale — vitesse apparente constante", () => {
     });
   }
   it("P injectable", () => {
-    expect(speedScale(view(4), 4)).toBeCloseTo(2 * speedScale(view(4)), 9);
+    expect(speedScale(view(4), 2 * PX_PER_S_PER_MS)).toBeCloseTo(2 * speedScale(view(4)), 9);
   });
 });
 
@@ -245,6 +247,32 @@ describe("WindSim.step — advection", () => {
     expect(slot(sim, 0, 0).distanceTo(p0)).toBe(0);
     expect(slot(sim, 1, 0).distanceTo(p1)).toBe(0);
     expect(slot(sim, 2, 0).distanceTo(p1)).toBeGreaterThan(0);
+  });
+  it("stride 3 : la tête suit chaque tick, la traînée ne glisse qu'un tick sur trois", () => {
+    const sim = new WindSim(1, 3, 3);
+    const v = view(3);
+    const f = field(0, 10);
+    sim.step(f, DT, v, pickAt(-100, 20), rng0); // naissance : K slots égaux
+    const p0 = slot(sim, 2, 0);
+    const heads: THREE.Vector3[] = [];
+    for (let t = 0; t < 3; t++) {
+      sim.step(f, DT, v, pickAt(-100, 20), rng0);
+      heads.push(slot(sim, 2, 0));
+    }
+    // la tête a avancé à chaque tick…
+    expect(heads[0]!.distanceTo(p0)).toBeGreaterThan(0);
+    expect(heads[1]!.distanceTo(heads[0]!)).toBeGreaterThan(0);
+    expect(heads[2]!.distanceTo(heads[1]!)).toBeGreaterThan(0);
+    // …mais un seul glissement a eu lieu sur ces trois ticks : le slot 1 tient une position
+    // de tête passée, le slot 0 est encore au point de naissance.
+    expect(slot(sim, 0, 0).distanceTo(p0)).toBe(0);
+    const mid = slot(sim, 1, 0);
+    expect([p0, ...heads.slice(0, 2)].some((h) => h.distanceTo(mid) === 0)).toBe(true);
+    for (let t = 0; t < 3; t++) sim.step(f, DT, v, pickAt(-100, 20), rng0);
+    expect(slot(sim, 0, 0).distanceTo(mid)).toBe(0); // second glissement : l'ancien slot 1 passe en queue
+  });
+  it("stride < 1 refusé", () => {
+    expect(() => new WindSim(1, 3, 0)).toThrowError();
   });
   it("dt borné à 0,1 s", () => {
     const sim = new WindSim(1, 3);
