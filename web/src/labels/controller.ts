@@ -80,13 +80,22 @@ export class LabelsController {
   }
 
   /** La caméra peut s'arrêter entre deux sélections, et plus aucune vue n'arrive (rendu à la demande). */
-  private scheduleCatchUp(): void {
+  private scheduleCatchUp(ms = SELECT_INTERVAL_MS): void {
     if (this.pending) return;
     this.pending = true;
     this.defer(() => {
       this.pending = false;
-      if (this.enabled && this.set && !this.lastPos.equals(this.deps.camera.position)) this.refresh();
-    }, SELECT_INTERVAL_MS);
+      if (!this.enabled || !this.set || this.lastPos.equals(this.deps.camera.position)) return;
+      // Une sélection naturelle a pu avoir lieu depuis l'armement de ce rattrapage (caméra en
+      // mouvement continu) : ne jamais re-sélectionner à moins de SELECT_INTERVAL_MS de la
+      // dernière sélection ; sinon on se réarme pour le temps restant.
+      const wait = SELECT_INTERVAL_MS - (this.now() - this.lastSelect);
+      if (wait > 0) {
+        this.scheduleCatchUp(wait);
+        return;
+      }
+      this.refresh();
+    }, ms);
   }
 
   private refresh(): void {

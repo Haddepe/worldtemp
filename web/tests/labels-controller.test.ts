@@ -17,11 +17,11 @@ function rig(d = 1.3) {
   look(2, 47, d);
   const frames: LabelView[][] = [];
   let t = 0;
-  const deferred: (() => void)[] = [];
+  const deferred: { cb: () => void; ms: number }[] = [];
   const ctl = new LabelsController({
     layer: { render: (v) => void frames.push(v.map((x) => ({ ...x }))), clear: () => void frames.push([]) },
     camera, size: () => ({ width: 800, height: 800 }), tier: "high",
-    now: () => t, defer: (cb) => void deferred.push(cb),
+    now: () => t, defer: (cb, ms) => void deferred.push({ cb, ms }),
   });
   return { ctl, camera, look, frames, deferred, advance: (ms: number) => { t += ms; }, last: () => frames[frames.length - 1]! };
 }
@@ -30,6 +30,11 @@ const SET = buildLabelSet(
   [{ lon: 2.35, lat: 48.86, name: "Paris", pop: 11e6, capital: true }, { lon: 4.84, lat: 45.77, name: "Lyon", pop: 1.7e6, capital: false },
    { lon: 139.69, lat: 35.69, name: "Tokyo", pop: 37e6, capital: true }],
   [],
+);
+
+const SET_WITH_COUNTRY = buildLabelSet(
+  [{ lon: 2.35, lat: 48.86, name: "Paris", pop: 11e6, capital: true }, { lon: 4.84, lat: 45.77, name: "Lyon", pop: 1.7e6, capital: false }],
+  [{ lon: 2.55, lat: 46.7, name: "France", rank: 2 }],
 );
 
 function temp(byte: number): TooltipData {
@@ -89,8 +94,48 @@ describe("LabelsController (spec repères §4)", () => {
     r.ctl.onView();            // trop tôt pour re-sélectionner : un rattrapage est programmé
     expect(r.deferred.length).toBe(1);
     r.advance(SELECT_INTERVAL_MS);
-    r.deferred[0]!();
+    r.deferred[0]!.cb();
     expect(r.last().map((v) => v.name)).toEqual(["Tokyo"]);
+  });
+  it("un rattrapage périmé ne re-sélectionne pas moins de 100 ms après une sélection naturelle", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);              // t=0 : sélection initiale, lastSelect=0
+    r.look(40, 47, 1.3);                 // Paris sort de l'écran par la gauche
+    r.advance(10);
+    r.ctl.onView();                      // t=10 : pas encore dû, rattrapage armé (deviendra périmé)
+    expect(r.deferred.length).toBe(1);
+    r.look(3, 47, 1.3);                  // toujours proche de Paris/Lyon, jamais Tokyo
+    r.advance(SELECT_INTERVAL_MS);       // t=110
+    r.ctl.onView();                      // sélection naturelle (>= 100 ms depuis t=0)
+    const afterNatural = r.last().map((v) => v.name);
+    expect(afterNatural).not.toEqual(["Tokyo"]);
+    r.look(139, 36, 1.3);                // vise Tokyo, mais sans passer par onView()
+    r.advance(4);                        // t=114 : le rattrapage armé à t=10 est maintenant périmé
+    const framesBefore = r.frames.length;
+    r.deferred[0]!.cb();
+    // Une sélection naturelle a déjà eu lieu à t=110 : re-sélectionner à t=114 violerait la
+    // cadence de 100 ms. Le rattrapage périmé ne doit ni re-sélectionner ni repeindre ; il se
+    // réarme pour le temps restant avant la prochaine échéance.
+    expect(r.last().map((v) => v.name)).toEqual(afterNatural);
+    expect(r.frames.length).toBe(framesBefore);
+    expect(r.deferred.length).toBe(2);
+    const rearmed = r.deferred[1]!;
+    expect(rearmed.ms).toBeGreaterThan(0);
+    expect(rearmed.ms).toBeLessThanOrEqual(SELECT_INTERVAL_MS);
+    r.advance(rearmed.ms);               // t=210 : désormais dû
+    rearmed.cb();
+    expect(r.last().map((v) => v.name)).toEqual(["Tokyo"]);
+  });
+  it("un pays n'a jamais de valeur", () => {
+    const r = rig();
+    r.ctl.setData(SET_WITH_COUNTRY);
+    r.ctl.setEnabled(true);
+    r.ctl.setValueSource(temp(255));
+    const france = r.last().find((v) => v.name === "France");
+    expect(france).toBeDefined();
+    expect(france!.value).toBeNull();
+    expect(r.last().some((v) => v.kind === "city" && v.value !== null)).toBe(true);
   });
   it("éteint : vide la couche", () => {
     const r = rig();
