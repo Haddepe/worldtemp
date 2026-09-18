@@ -39,9 +39,9 @@ export function createLabelsLayer(container: HTMLElement): LabelsLayer {
 
   const retire = (e: Entry): void => {
     e.el.classList.remove("on");
-    setTimeout(() => {
-      if (!e.el.classList.contains("on")) pool.push(e);
-    }, FADE_MS + 50);
+    // Une entrée retirée n'est plus référencée que par ce timeout : elle ne peut pas être
+    // remise au pool deux fois, ni y être pendant qu'elle est encore `live` — push sans garde.
+    setTimeout(() => pool.push(e), FADE_MS + 50);
   };
 
   return {
@@ -56,8 +56,15 @@ export function createLabelsLayer(container: HTMLElement): LabelsLayer {
           e.name.textContent = v.name;
           e.text = "";
           live.set(v.id, e);
-          const el = e.el;
-          requestAnimationFrame(() => el.classList.add("on")); // frame suivante : la transition d'opacité joue
+          const entry = e;
+          const id = v.id;
+          // Frame suivante : la transition d'opacité joue. Garde nécessaire si l'entrée a été
+          // créée puis retirée dans la même frame (ex. clear() ou une resélection synchrone
+          // avant que ce callback ne s'exécute) : sans elle, `on` réapparaîtrait sur un `div`
+          // déjà rendu au pool ou réutilisé pour une autre étiquette.
+          requestAnimationFrame(() => {
+            if (live.get(id) === entry) entry.el.classList.add("on");
+          });
         }
         const text = v.value ?? "";
         if (e.text !== text) {
