@@ -143,7 +143,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
-      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2, pluie 0,8) des 7 couches, ordre du menu
+      registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2, pluie 0,4) des 7 couches, ordre du menu
       select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
       cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
     data/
@@ -332,6 +332,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Profils vent révisés : 5 000/K9 `high`, 1 500/K5 `low`, `stride` 3, P = 3 px/s par m/s** — remplace 12 000/12, 3 000/8, P = 2 de la spec vent §7 *(2026-09-18, demande utilisateur, réglé à l'œil sur la France)* | « Trop nombreuses et trop petites ». À P = 2 un vent de 5 m/s donnait une traînée de 4 px (un point). `stride` : à 30 Hz un segment par tick mesure ≤ 2 px, et chaque segment est une instance à dessiner — 115 000 instances (essai 5 000/K24) coûtaient ~10 ms GPU sur l'UHD 620 en dev ; 40 000 segments de 3 ticks donnent la même longueur (24 ticks). Tick 6,4 ms (11 avant), 60 fps sur le build. |
 | **Nuages adoucis par un flou gaussien CPU au chargement** (`LayerDef.soften`, σ = 1,2 cellule, `data/blur.ts`) plutôt qu'un noyau plus large dans le shader ou un flou dans le pipeline *(2026-09-18, demande utilisateur)* | Le Catmull-Rom était déjà appliqué aux nuages : les bords carrés viennent de la **donnée** (TCDC saute de 0 à 100 % entre cellules voisines). Flou une fois par PNG, coût nul par frame, σ réglable par couche ; la donnée publiée et le tooltip (pixels bruts) restent exacts. Activable pour la pluie en une ligne. |
 | **Pluie adoucie aussi, σ = 0,8 cellule** plutôt que le 1,2 des nuages *(2026-09-18, demande utilisateur, à juger en prod)* | Même défaut de fronts raides. Un σ de 1,2 ramène une cellule isolée à ~11 % de son octet : en encodage racine, un cœur d'averse d'une ou deux cellules disparaîtrait de la palette. 0,8 en garde ~25 %. |
+| **σ de la pluie ramené de 0,8 à 0,4** *(2026-09-18, verdict utilisateur sur la prod)* | À 0,8 « trop flou, on perd trop d'information » : les bandes spiralées et les cœurs d'un cyclone au sud du Japon, nets sans flou, se fondaient. À 0,4 le noyau garde ~92 % du poids sur la cellule centrale : il casse juste l'arête des marches. La structure fine de la pluie est de l'information, contrairement aux bords des nuages. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -396,6 +397,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-13 | spec 4 lot B2 vent animé — spec `2026-09-13-wind-design.md` (`38e5f27`, critère 8 révisé en `d31a2a8`) + plan `2026-09-13-wind.md` (`cda0f39`, 12 tâches), exécutée subagent-driven sur `feat/wind` | ✅ mergée, déployée | `c120f81` | 236 passed vitest (26 fichiers) ; 184 passed / 9 skipped pytest local (Windows), 195 Actions |
 | 2026-09-18 | feat/wind-clouds-polish — vent en quads instanciés (moins de particules, plus épaisses et plus longues) + nuages adoucis ; chemin borné (design en chat, pas de spec ni de plan) | ✅ mergée, déployée par CI | `0cc0d52` | 248 passed vitest (27 fichiers) ; pytest inchangé (aucun fichier Python touché) |
 | 2026-09-18 | feat/rain-soften — `soften` 0,8 sur la pluie (une ligne de registre + test) | ✅ mergée, déployée par CI | `39ca638` | 248 passed vitest (27 fichiers) |
+| 2026-09-18 | fix/rain-soften-04 — `soften` pluie 0,8 → 0,4 (verdict utilisateur) | ✅ mergée, déployée par CI | `1c66add` | 248 passed vitest (27 fichiers) |
 
 ## 8. Dette technique connue
 
@@ -466,9 +468,10 @@ Deux retours utilisateur sur la prod, traités en chemin **borné** du brainstor
 - **Suite le même jour** : l'utilisateur demande le flou sur la pluie aussi →
   `soften` 0,8 (`017ea4a`, merge `39ca638`), contrôlé à l'œil en local (averses
   Benelux/Allemagne en taches douces), bundle 156,09 Ko gzip (+0,01).
-- **Prochaine action :** verdict utilisateur sur la prod (vent, nuages, pluie — σ
-  ajustables dans `layers/registry.ts`), puis brainstorming du **lot C**
-  (étiquettes villes/pays).
+- **Verdict utilisateur sur la pluie** : 0,8 trop flou (cyclone au sud du Japon,
+  §5) → **0,4**, merge `1c66add`, bundle 156,09 Ko gzip.
+- **Prochaine action :** verdict utilisateur sur la prod (vent, nuages, pluie à
+  0,4), puis brainstorming du **lot C** (étiquettes villes/pays).
 
 ### 2026-09-13 — Spec 4 lot B2 (vent animé) exécutée et validée sur feat/wind : 9 couches, particules CPU, legacy retiré, critère 8 révisé
 
@@ -1058,7 +1061,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)
+**Dernière mise à jour :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
+**Entrée précédente :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)
 **Entrée précédente :** 2026-09-18 (**vent plus lisible et nuages adoucis** — `feat/wind-clouds-polish` mergée `0cc0d52` : traînées en quads instanciés 2 px, 5 000/K9 stride 3, P = 3 ; `soften` 1,2 sur les nuages (flou gaussien CPU) ; 248 vitest, build 156,08 Ko gzip ; prochaine étape lot C)
 **Entrée précédente :** 2026-09-13 (**lot B2 mergé et déployé** — merge `c120f81`, push master, CI deploy vert, `pipeline.yml` run 34768517485 → 9 couches en production dont `wind_u`/`wind_v`, `gfs/latest.*` supprimés de R2, site en 200 avec le vent)
 **Entrée précédente :** 2026-09-13 (**spec 4 lot B2 vent animé — revue finale, vague de correction, validation navigateur, critère 8 révisé** — revue finale (`209a38b..0003b29`) : I1 tick réel 9–15 ms (T6 mesuré sur grille de test non représentative), I2 `applyWind`/spec §11, I3 TDZ `stopWind`, I4 seuil d'horizon ; vague unique (`e4b4d6a`/`2e77ec7`/`73b3687`/`9458c3d`) : `WindField.uv` entrelacé + `sampleUV` fusionné, statut vent avec switch actif (déviation §11), seuil exact, `onFrame` isolé par callback ; correctif résiduel trouvé en validation (`0996837` statut, `a68d44b` double comptage de l'accumulateur) ; **236 vitest**, build 154,69 Ko gzip (+3,99) ; validation navigateur T11b (Brave) : critères 1–7 ✅, critère 8 initial (≤ 4 ms) non atteignable sur la machine de référence → **révisé par l'utilisateur** vers un budget de frame (≤ 16 ms, mesuré 11,7 ms moy/19,4 p90 high, 4,6 ms low) → ✅ ; **exécutée et validée, merge à suivre**)
