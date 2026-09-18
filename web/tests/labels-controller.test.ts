@@ -17,13 +17,34 @@ function rig(d = 1.3) {
   look(2, 47, d);
   const frames: LabelView[][] = [];
   let t = 0;
+  let size = { width: 800, height: 800 };
   const deferred: { cb: () => void; ms: number }[] = [];
   const ctl = new LabelsController({
     layer: { render: (v) => void frames.push(v.map((x) => ({ ...x }))), clear: () => void frames.push([]) },
-    camera, size: () => ({ width: 800, height: 800 }), tier: "high",
+    camera, size: () => size, tier: "high",
     now: () => t, defer: (cb, ms) => void deferred.push({ cb, ms }),
   });
-  return { ctl, camera, look, frames, deferred, advance: (ms: number) => { t += ms; }, last: () => frames[frames.length - 1]! };
+  return {
+    ctl, camera, look, frames, deferred,
+    advance: (ms: number) => { t += ms; },
+    last: () => frames[frames.length - 1]!,
+    /** Taille CSS du canvas modifiable (F2) : simule une rotation d'écran sans bouger la caméra. */
+    setSize: (width: number, height: number) => { size = { width, height }; },
+  };
+}
+
+/** Grille de 441 capitales (toujours éligibles) réparties sur la face caméra : assez pour
+ * saturer le plafond `high` (60), en écran large comme étroit, et observer une baisse du
+ * nombre affiché quand le plafond se resserre (spec repères §3). */
+function manyCapitals() {
+  const places: { lon: number; lat: number; name: string; pop: number; capital: boolean }[] = [];
+  let n = 0;
+  for (let dlat = -20; dlat <= 20; dlat += 2) {
+    for (let dlon = -20; dlon <= 20; dlon += 2) {
+      places.push({ lon: 2 + dlon, lat: 47 + dlat, name: `C${n++}`, pop: 0, capital: true });
+    }
+  }
+  return buildLabelSet(places, []);
 }
 
 const SET = buildLabelSet(
@@ -136,6 +157,20 @@ describe("LabelsController (spec repères §4)", () => {
     expect(france).toBeDefined();
     expect(france!.value).toBeNull();
     expect(r.last().some((v) => v.kind === "city" && v.value !== null)).toBe(true);
+  });
+  it("redimensionnement sans mouvement de caméra : re-sélection au prochain onView (F2)", () => {
+    const r = rig();
+    r.ctl.setData(manyCapitals());
+    r.ctl.setEnabled(true);
+    const wideCount = r.last().length;
+    expect(wideCount).toBe(60); // plafond high, largeur ≥ 600 px : saturé
+    r.setSize(500, 500); // rotation d'écran : la caméra ne bouge pas
+    r.advance(SELECT_INTERVAL_MS);
+    r.ctl.onView();
+    // Une simple reprojection garderait les mêmes 60 étiquettes (visibilité inchangée) : une
+    // baisse du nombre affiché prouve qu'une nouvelle sélection a eu lieu, avec le plafond
+    // resserré sous 600 px.
+    expect(r.last().length).toBeLessThan(wideCount);
   });
   it("éteint : vide la couche", () => {
     const r = rig();

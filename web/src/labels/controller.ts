@@ -36,6 +36,9 @@ export class LabelsController {
   private lastTier = -1;
   private pending = false;
   private readonly lastPos = new THREE.Vector3(Number.NaN, 0, 0);
+  /** Taille CSS de la dernière sélection (F2) : une rotation d'écran ne bouge pas la caméra
+   * mais change le plafond (`labelCap`) et compte donc comme un mouvement. */
+  private lastSize = { width: Number.NaN, height: Number.NaN };
   private readonly now: () => number;
   private readonly defer: (cb: () => void, ms: number) => unknown;
 
@@ -67,25 +70,33 @@ export class LabelsController {
     }
   }
 
+  /** Vrai si la caméra a bougé ou si la taille CSS a changé depuis la dernière sélection (F2 :
+   * une rotation d'écran ne bouge pas la caméra mais change le plafond). */
+  private changedSinceLastSelect(): boolean {
+    const { width, height } = this.deps.size();
+    return !this.lastPos.equals(this.deps.camera.position) || width !== this.lastSize.width || height !== this.lastSize.height;
+  }
+
   /** Avant chaque rendu WebGL (`SceneHandle.onViewChange`). */
   onView(): void {
     if (!this.enabled || !this.set) return;
-    const moved = !this.lastPos.equals(this.deps.camera.position);
-    if (moved && this.now() - this.lastSelect >= SELECT_INTERVAL_MS) {
+    const changed = this.changedSinceLastSelect();
+    if (changed && this.now() - this.lastSelect >= SELECT_INTERVAL_MS) {
       this.refresh();
       return;
     }
-    if (moved) this.scheduleCatchUp();
+    if (changed) this.scheduleCatchUp();
     this.paint();
   }
 
-  /** La caméra peut s'arrêter entre deux sélections, et plus aucune vue n'arrive (rendu à la demande). */
+  /** La caméra (ou la taille) peut s'arrêter de changer entre deux sélections, et plus aucune
+   * vue n'arrive (rendu à la demande). */
   private scheduleCatchUp(ms = SELECT_INTERVAL_MS): void {
     if (this.pending) return;
     this.pending = true;
     this.defer(() => {
       this.pending = false;
-      if (!this.enabled || !this.set || this.lastPos.equals(this.deps.camera.position)) return;
+      if (!this.enabled || !this.set || !this.changedSinceLastSelect()) return;
       // Une sélection naturelle a pu avoir lieu depuis l'armement de ce rattrapage (caméra en
       // mouvement continu) : ne jamais re-sélectionner à moins de SELECT_INTERVAL_MS de la
       // dernière sélection ; sinon on se réarme pour le temps restant.
@@ -120,6 +131,7 @@ export class LabelsController {
     });
     this.lastSelect = this.now();
     this.lastPos.copy(camera.position);
+    this.lastSize = { width, height };
     this.paint();
   }
 
