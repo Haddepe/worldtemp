@@ -108,7 +108,11 @@ Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (hi
   (décoratif : le tooltip reste la voie de lecture) — tooltip, zoom et pincement inchangés.
 - Réserve de `div` réutilisés. Ville : point à la position exacte, nom à droite, valeur en
   gras dessous. Pays : capitales espacées, sans point ni valeur. Texte blanc, halo sombre
-  (`text-shadow`), lisible sur satellite, style carte et couches colorées.
+  (`text-shadow`), lisible sur satellite, style carte et couches colorées. **Variante sombre**
+  (F5) : `LabelsLayer.setDark(dark)` bascule la classe `dark` sur `#labels` — texte `#1b1f24`
+  à halo clair, point de ville sombre à halo clair, pays en `#2a2f36`. `controller.ts` l'active
+  en style carte (`mapStyleFor(d) ≥ 0,5`) **et** sans couche active lisible (`source === null`) :
+  avec une couche, le fond est sa couleur et le blanc à halo sombre reste le bon choix.
 - Apparition/disparition en fondu 150 ms ; aucun fondu si `prefers-reduced-motion`.
 - **Cadence** (`controller.ts`, inscrit sur `SceneHandle.onFrame` seulement quand
   l'interrupteur est actif) : sélection recalculée quand la caméra a bougé, au plus toutes

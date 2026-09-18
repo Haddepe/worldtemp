@@ -16,16 +16,21 @@ function rig(d = 1.3) {
   };
   look(2, 47, d);
   const frames: LabelView[][] = [];
+  const darkCalls: boolean[] = [];
   let t = 0;
   let size = { width: 800, height: 800 };
   const deferred: { cb: () => void; ms: number }[] = [];
   const ctl = new LabelsController({
-    layer: { render: (v) => void frames.push(v.map((x) => ({ ...x }))), clear: () => void frames.push([]) },
+    layer: {
+      render: (v) => void frames.push(v.map((x) => ({ ...x }))),
+      clear: () => void frames.push([]),
+      setDark: (dark) => void darkCalls.push(dark),
+    },
     camera, size: () => size, tier: "high",
     now: () => t, defer: (cb, ms) => void deferred.push({ cb, ms }),
   });
   return {
-    ctl, camera, look, frames, deferred,
+    ctl, camera, look, frames, darkCalls, deferred,
     advance: (ms: number) => { t += ms; },
     last: () => frames[frames.length - 1]!,
     /** Taille CSS du canvas modifiable (F2) : simule une rotation d'écran sans bouger la caméra. */
@@ -171,6 +176,25 @@ describe("LabelsController (spec repères §4)", () => {
     // baisse du nombre affiché prouve qu'une nouvelle sélection a eu lieu, avec le plafond
     // resserré sous 600 px.
     expect(r.last().length).toBeLessThan(wideCount);
+  });
+  it("setDark : style satellite ou vent (d = 1,3) — jamais sombre (F5)", () => {
+    const r = rig(1.3);
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    expect(r.darkCalls).toEqual([false]);
+  });
+  it("setDark : style carte sans couche (d = 1,1) — sombre (F5)", () => {
+    const r = rig(1.1);
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    expect(r.darkCalls).toEqual([true]);
+  });
+  it("setDark : style carte avec une couche lisible (d = 1,1) — pas sombre, la couleur de la couche suffit (F5)", () => {
+    const r = rig(1.1);
+    r.ctl.setData(SET);
+    r.ctl.setValueSource(temp(255));
+    r.ctl.setEnabled(true);
+    expect(r.darkCalls).toEqual([false]);
   });
   it("éteint : vide la couche", () => {
     const r = rig();

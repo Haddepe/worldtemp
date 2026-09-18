@@ -16,6 +16,8 @@ export interface LabelsLayer {
   /** Affiche exactement `views` : crée, met à jour, fait disparaître le reste en fondu. */
   render(views: LabelView[]): void;
   clear(): void;
+  /** Variante sombre (F5) : texte foncé à halo clair, lisible en style carte sans couche. */
+  setDark(dark: boolean): void;
 }
 
 const FADE_MS = 150;
@@ -25,6 +27,7 @@ interface Entry { el: HTMLDivElement; name: HTMLSpanElement; value: HTMLSpanElem
 export function createLabelsLayer(container: HTMLElement): LabelsLayer {
   const live = new Map<number, Entry>();
   const pool: Entry[] = [];
+  let dark = false;
 
   const make = (): Entry => {
     const el = document.createElement("div");
@@ -82,6 +85,11 @@ export function createLabelsLayer(container: HTMLElement): LabelsLayer {
     clear() {
       for (const e of live.values()) retire(e);
       live.clear();
+    },
+    setDark(next) {
+      if (next === dark) return;
+      dark = next;
+      container.classList.toggle("dark", dark);
     },
   };
 }

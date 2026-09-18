@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import type { Tier } from "../gpu/tier";
 import { projectToScreen } from "../render/pick";
+import { mapStyleFor } from "../tiles/lod";
 import type { TooltipData } from "../ui/tooltip";
 import type { LabelSet } from "./data";
 import type { LabelView, LabelsLayer } from "./layer";
@@ -15,7 +16,7 @@ import { labelValue } from "./text";
 export const SELECT_INTERVAL_MS = 100;
 
 export interface LabelsControllerDeps {
-  layer: Pick<LabelsLayer, "render" | "clear">;
+  layer: Pick<LabelsLayer, "render" | "clear" | "setDark">;
   camera: THREE.PerspectiveCamera;
   /** Taille CSS du canvas. */
   size(): { width: number; height: number };
@@ -141,6 +142,10 @@ export class LabelsController {
     if (!set) return;
     const { camera } = this.deps;
     const { width, height } = this.deps.size();
+    // Style carte (fond clair) sans couche lisible : le blanc à halo sombre devient illisible,
+    // il faut la variante sombre (F5). Avec une couche, le fond est sa couleur : le blanc reste
+    // le bon choix quelle que soit la distance.
+    this.deps.layer.setDark(mapStyleFor(camera.position.length()) >= 0.5 && this.source === null);
     const views: LabelView[] = [];
     for (const pl of this.placed) {
       const s = projectToScreen(p.fromArray(set.unit, pl.id * 3), camera, width, height);
