@@ -18,7 +18,7 @@ import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { createOverlay } from "./ui/overlay";
 import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
-import { createWindToggle } from "./ui/wind-toggle";
+import { createToggle } from "./ui/toggle";
 import { WindController } from "./wind/controller";
 import { WindLoader } from "./wind/loader";
 import { parseWindParam, withWindParam } from "./wind/select";
@@ -203,11 +203,11 @@ async function boot(): Promise<void> {
   let windFailedAt: string | null = null;
   /** Statut « Vent indisponible », après layerNotice dans l'ordre de priorité. */
   let windNotice: string | null = null;
-  const windToggle = createWindToggle(ui.windToggle, (on) => {
+  const windToggle = createToggle(ui.windToggle, (on) => {
     windOn = on;
     history.replaceState(null, "", withWindParam(location.search, on));
     void applyWind();
-  });
+  }, "Vent indisponible");
   windToggle.setOn(windOn);
   // Crochet de validation (T11, critères 2, 3, 8) : dev seulement, comme `__worldtemp`.
   if (import.meta.env.DEV) {
