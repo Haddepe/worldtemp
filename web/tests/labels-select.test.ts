@@ -46,11 +46,11 @@ describe("paliers de zoom (spec repères §3)", () => {
     expect(names(1.4)).toEqual(["Un", "Quatre", "Sept"]);
     expect(names(1.1)).toEqual([]);
   });
-  it("plafond par tier, divisé par deux sous 600 px", () => {
+  it("plafond par tier, ramené aux deux tiers sous 600 px", () => {
     expect(LABEL_CAP).toEqual({ high: 60, low: 30 });
     expect(labelCap("high", 1440)).toBe(60);
-    expect(labelCap("high", 599)).toBe(30);
-    expect(labelCap("low", 500)).toBe(15);
+    expect(labelCap("high", 599)).toBe(40);
+    expect(labelCap("low", 500)).toBe(20);
   });
 });
 

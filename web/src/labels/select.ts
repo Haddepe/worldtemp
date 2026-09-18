@@ -26,6 +26,10 @@ export const COUNTRY_TIERS: readonly { minD: number; maxRank: number }[] = [
 ];
 export const LABEL_CAP: Record<Tier, number> = { high: 60, low: 30 };
 export const NARROW_PX = 600;
+/** Sous NARROW_PX, le plafond est ramené aux deux tiers plutôt qu'à la moitié (F4) : l'anti-
+ * chevauchement limite déjà la densité, un plafond à la moitié laissait de la place inutilisée
+ * sur mobile (Marseille, Toulouse, Bordeaux manquants alors que l'écran en avait la place). */
+const NARROW_FACTOR = 2 / 3;
 /** Marge de limbe (F3) : un point trop proche du bord projeté pose son texte hors du disque
  * du globe. Rejeté au-delà de LIMB_FRACTION × le rayon du limbe (0,92 ≈ 8 % de retrait). */
 export const LIMB_FRACTION = 0.92;
@@ -45,7 +49,7 @@ export function tierIndex(d: number): number {
 
 export function labelCap(tier: Tier, viewportWidth: number): number {
   const cap = LABEL_CAP[tier];
-  return viewportWidth < NARROW_PX ? Math.floor(cap / 2) : cap;
+  return viewportWidth < NARROW_PX ? Math.floor(cap * NARROW_FACTOR) : cap;
 }
 
 export function eligible(item: LabelItem, d: number): boolean {

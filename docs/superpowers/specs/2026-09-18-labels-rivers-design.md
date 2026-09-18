@@ -96,7 +96,9 @@ vide l'ensemble « déjà affichées », ce qui rétablit l'ordre de priorité s
 **Anti-chevauchement glouton :** boîte estimée sans mesure DOM — largeur =
 `max(len(nom), len(valeur)) × CHAR_W + marges`, hauteur fixe (une ou deux lignes) ; une
 étiquette dont la boîte touche une boîte déjà posée est rejetée. Arrêt au **plafond** :
-`LABEL_CAP = { high: 60, low: 30 }`. Sous 600 px de large, le plafond est divisé par deux.
+`LABEL_CAP = { high: 60, low: 30 }`. Sous 600 px de large, le plafond est ramené aux deux tiers
+(F4 : l'anti-chevauchement limite déjà la densité, diviser par deux laissait de la place inutilisée
+sur mobile).
 
 Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (high).
 
