@@ -24,6 +24,10 @@ export interface LayerDef {
   tooltipMin: number | null;
   /** Pas des isolignes en unité physique (pression : 4 hPa) ; null = aucune. */
   isoStep: number | null;
+  /** σ (en cellules) du flou appliqué à la texture affichée, pour les champs à fronts raides
+   * que le bicubique restitue en marches d'escalier ; absent = texture brute. Le tooltip lit
+   * toujours la donnée brute. */
+  soften?: number;
 }
 
 function fixed(v: number, decimals: number): string {
@@ -54,7 +58,7 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "clouds", label: "Nuages", unit: "%", format: percent,
     stops: [s(0, 255, 255, 255, 0), s(100, 255, 255, 255, 230)],
-    ticks: [0, 25, 50, 75, 100], tooltipMin: null, isoStep: null,
+    ticks: [0, 25, 50, 75, 100], tooltipMin: null, isoStep: null, soften: 1.2,
   },
   {
     id: "rain", label: "Pluie", unit: "mm/h", format: (v) => `${fixed(v, 1)} mm/h`,

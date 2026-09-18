@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { type Grid, type LayerEntry, type Manifest, parseManifest } from "./manifest";
+import { blurRedChannel } from "./blur";
 import { bitmapPixels } from "./pixels";
 
 export class TextureError extends Error {
@@ -45,7 +46,10 @@ export function bitmapToTexture(bitmap: ImageBitmap, grid: Pick<Grid, "width" | 
     if (typeof bitmap.close === "function") bitmap.close();
     throw new TextureError(`texture ${bitmap.width}×${bitmap.height}, grille ${grid.width}×${grid.height} attendue`);
   }
-  const texture = new THREE.Texture(bitmap);
+  return asDataTexture(new THREE.Texture(bitmap));
+}
+
+function asDataTexture<T extends THREE.Texture>(texture: T): T {
   texture.colorSpace = THREE.NoColorSpace;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
@@ -55,6 +59,20 @@ export function bitmapToTexture(bitmap: ImageBitmap, grid: Pick<Grid, "width" | 
   texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
+}
+
+/**
+ * Variante adoucie (`LayerDef.soften`) : canal R flouté sur CPU (`data/blur.ts`), rangées sud
+ * en premier comme l'ImageBitmap `flipY`, même filtrage et même bouclage que `bitmapToTexture`.
+ * Le shader ne lit que `.r` : une texture `RedFormat` lui suffit (1 Mo au lieu de 4).
+ */
+export function softenedTexture(
+  pixels: Uint8ClampedArray, grid: Pick<Grid, "width" | "height">, sigma: number,
+): THREE.DataTexture {
+  const data = blurRedChannel(pixels, grid.width, grid.height, sigma, true);
+  const texture = new THREE.DataTexture(data, grid.width, grid.height, THREE.RedFormat, THREE.UnsignedByteType);
+  texture.unpackAlignment = 1; // 1440 est multiple de 4, mais le contrat ne l'impose pas
+  return asDataTexture(texture);
 }
 
 export const browserDeps: LoaderDeps = {
@@ -113,6 +131,8 @@ export class LayerLoader {
     readonly id: string,
     private readonly baseUrl: string,
     private readonly deps: LoaderDeps = browserDeps,
+    /** σ du flou en cellules (`LayerDef.soften`) ; 0 = texture brute. */
+    private readonly soften = 0,
   ) {}
 
   get data(): LoadedLayer | null {
@@ -124,12 +144,18 @@ export class LayerLoader {
     const run = async (): Promise<LoadedLayer | null> => {
       if (!needsTextureFetch(this.current?.entry ?? null, entry)) return null;
       const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, entry));
-      const texture = bitmapToTexture(bitmap, grid);
+      let texture = bitmapToTexture(bitmap, grid);
       let pixels: Uint8ClampedArray | null = null;
       try {
         pixels = this.deps.bitmapPixels(bitmap);
       } catch (e) {
         console.warn(`[worldtemp] lecture des pixels de la couche ${this.id} impossible :`, e);
+      }
+      if (this.soften > 0 && pixels) {
+        // sans pixels lisibles, on garde la texture brute : rendu moins doux, jamais absent
+        texture.dispose();
+        if (typeof bitmap.close === "function") bitmap.close();
+        texture = softenedTexture(pixels, grid, this.soften);
       }
       if (this.disposed) {
         texture.dispose();

@@ -116,6 +116,34 @@ describe("LayerLoader", () => {
     expect(got?.pixels).toBeNull();
     expect(got?.texture).toBeInstanceOf(THREE.Texture);
   });
+  it("soften > 0 : texture DataTexture R floutée (sud en premier), bitmap fermé, pixels bruts conservés", async () => {
+    const small = { width: 4, height: 3 };
+    const raw = new Uint8ClampedArray(4 * 3 * 4);
+    for (let x = 0; x < 4; x++) raw[x * 4] = 240; // rangée nord à 240, le reste à 0
+    const bitmap = fakeBitmap(4, 3);
+    const ll = new LayerLoader("clouds", BASE, deps(null, bitmap, () => raw), 1.2);
+    const got = await ll.load(TEMP, small);
+    expect(got?.texture).toBeInstanceOf(THREE.DataTexture);
+    const t = got!.texture as THREE.DataTexture;
+    expect(t.format).toBe(THREE.RedFormat);
+    expect(t.colorSpace).toBe(THREE.NoColorSpace);
+    expect(t.wrapS).toBe(THREE.RepeatWrapping);
+    expect(t.wrapT).toBe(THREE.ClampToEdgeWrapping);
+    expect(t.magFilter).toBe(THREE.LinearFilter);
+    expect(t.flipY).toBe(false);
+    const data = t.image.data as Uint8Array;
+    expect(data.length).toBe(12);
+    expect(data[8]!).toBeGreaterThan(data[0]!); // nord (dernière rangée de la texture) > sud
+    expect(data[8]!).toBeLessThan(240);         // flouté
+    expect(got?.pixels).toBe(raw);
+    expect(bitmap.close).toHaveBeenCalled();
+  });
+  it("soften > 0 sans pixels lisibles → texture bitmap brute, comme sans soften", async () => {
+    const ll = new LayerLoader("clouds", BASE, deps(null, fakeBitmap(), () => null), 1.2);
+    const got = await ll.load(TEMP, GRID);
+    expect(got?.texture).not.toBeInstanceOf(THREE.DataTexture);
+    expect(got?.pixels).toBeNull();
+  });
   it("non réentrant : deux load concurrents partagent la même promesse", async () => {
     const d = deps(null);
     const ll = new LayerLoader("temp", BASE, d);

@@ -180,7 +180,7 @@ async function boot(): Promise<void> {
   await loadTiles();
 
   const manifests = new ManifestLoader(DATA_BASE_URL);
-  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL));
+  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL, undefined, layerDef(id)?.soften));
   const menu = createLayersMenu(ui.layersMenu, (id) => void activate(id, true));
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
