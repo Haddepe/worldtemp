@@ -23,9 +23,10 @@ describe("registre des couches — spec couches §10", () => {
     expect(LAYERS.filter((d) => d.isoStep !== null).map((d) => d.id)).toEqual(["pressure"]);
     expect(layerDef("pressure")!.isoStep).toBe(4);
   });
-  it("nuages seuls adoucis (σ = 1,2 cellule)", () => {
-    expect(LAYERS.filter((d) => d.soften !== undefined).map((d) => d.id)).toEqual(["clouds"]);
+  it("nuages et pluie adoucis ; σ plus faible sur la pluie pour ne pas écraser les cœurs d'averse", () => {
+    expect(LAYERS.filter((d) => d.soften !== undefined).map((d) => d.id)).toEqual(["clouds", "rain"]);
     expect(layerDef("clouds")!.soften).toBe(1.2);
+    expect(layerDef("rain")!.soften).toBe(0.8);
   });
   it("formats", () => {
     expect(layerDef("temp")!.format(23.44)).toBe("23,4 °C");
