@@ -57,7 +57,10 @@ export function createLabelsLayer(container: HTMLElement): LabelsLayer {
           e = pool.pop() ?? make();
           e.el.className = `label ${v.kind}`;
           e.name.textContent = v.name;
+          // Un `div` recyclé garde le `textContent` de l'étiquette précédente si on ne le vide
+          // pas explicitement : le témoin `text` seul ne suffit pas à le refléter (C1).
           e.text = "";
+          e.value.textContent = "";
           live.set(v.id, e);
           const entry = e;
           const id = v.id;
