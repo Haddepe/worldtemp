@@ -1,6 +1,6 @@
 # Spec — Repères géographiques (lot C) : étiquettes villes/pays avec valeur, fleuves
 
-**Date :** 2026-09-18 · **Statut :** validée en brainstorming, à planifier
+**Date :** 2026-09-18 · **Statut :** implémentée, amendée à la validation navigateur (F1–F7)
 **Périmètre :** sous-projet 4, lot C « étiquettes », élargi aux **fleuves** à la demande de
 l'utilisateur. Outil de préparation de données (Natural Earth → `web/public/geo/`), front
 (étiquettes DOM, fleuves en quads instanciés, deux interrupteurs). **Aucun changement** du
@@ -85,7 +85,8 @@ validation sans toucher à la logique.
 rayon 1, seuil de la spec tuiles §5), **et** son rayon projeté sous `LIMB_FRACTION` (0,92) × le
 rayon du limbe — sinon le texte, posé à droite ou centré sur le point, déborderait hors du disque
 du globe près du bord (F3) ; court-circuit avant projection, comme le test d'horizon — puis
-projection écran dans le viewport avec une marge.
+projection écran dans le viewport, sans marge : une étiquette peut être coupée au bord de
+l'écran (dette connue).
 
 **Ordre de placement :** étiquettes déjà affichées et toujours éligibles d'abord (stabilité :
 pas de clignotement en rotation), puis pays, puis villes, chacun dans l'ordre du fichier.
@@ -114,10 +115,11 @@ Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (hi
   en style carte (`mapStyleFor(d) ≥ 0,5`) **et** sans couche active lisible (`source === null`) :
   avec une couche, le fond est sa couleur et le blanc à halo sombre reste le bon choix.
 - Apparition/disparition en fondu 150 ms ; aucun fondu si `prefers-reduced-motion`.
-- **Cadence** (`controller.ts`, inscrit sur `SceneHandle.onFrame` seulement quand
-  l'interrupteur est actif) : sélection recalculée quand la caméra a bougé, au plus toutes
-  les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue, par
-  `transform: translate3d`. Le contrôleur ne demande **jamais** de rendu WebGL.
+- **Cadence** (`controller.ts`, branché en permanence sur `SceneHandle.onViewChange`, appelé
+  avant chaque rendu — pas seulement quand l'interrupteur est actif — et qui sort tôt si
+  l'interrupteur est éteint ou sans données) : sélection recalculée quand la caméra a bougé,
+  au plus toutes les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue,
+  par `transform: translate3d`. Le contrôleur ne demande **jamais** de rendu WebGL.
 - **Valeurs :** `sampleValue` sur les pixels bruts de la couche active + `def.format`,
   comme le tooltip ; recalculées seulement quand la couche, ses données ou la sélection
   changent. Nom seul : aucune couche, valeur < `tooltipMin`, pixels `null`. Le vent
@@ -147,10 +149,12 @@ fois), `renderOrder` sous le vent. Le GLSL d'élargissement en espace écran est
 dans un fragment partagé** par `wind.vert.glsl` et `rivers.vert.glsl` (concaténation des
 `?raw` côté TS), pour ne pas diverger.
 
-**Apparition selon le zoom :** rang maximal `RIVER_TIERS` — d ≥ 2,5 → 3 ; d ≥ 1,6 → 5 ;
-d ≥ 1,25 → 7 ; en dessous → tous. `instanceCount = countByRank[rangMax]` (préfixe, grâce au
-tri) ; le dernier rang admis apparaît en fondu (uniform `uMaxRank` flottant, `smoothstep`
-sur un rang) plutôt que d'un coup. Mis à jour par le même `onFrame`, sans tick propre.
+**Apparition selon le zoom :** `RIVER_TIERS` sont des **points de contrôle** (d, rang) interpolés
+linéairement — 3 à d ≥ 2,5 ; 5 à d = 1,6 ; 7 à d = 1,25 ; tous à d ≤ 1,05. `instanceCount =
+countByRank[rangMax]` (préfixe, grâce au tri) ; le dernier rang admis apparaît en fondu (uniform
+`uMaxRank` flottant, `clamp` linéaire sur un rang, pas un `smoothstep`) plutôt que d'un coup. Mis
+à jour par le même `SceneHandle.onViewChange` que les étiquettes, branché dès la première
+activation des fleuves, sans tick propre.
 
 **Style :** 1,5 px CSS × pixel ratio, bords anti-crénelés ; couleur bleu-cyan clair
 `(0,55 ; 0,82 ; 1,0)` sur satellite, bleu soutenu `(0,25 ; 0,50 ; 0,85)` en style carte
