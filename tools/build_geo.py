@@ -30,6 +30,10 @@ MAGIC = b"WTRV"
 VERSION = 1
 SEGMENT_BUDGET = 25_000
 MAX_SEGMENT_DEG = 2.0  # miroir de web/src/rivers/data.ts
+# Un micro-État sous ce seuil de population voit son LABELRANK majoré de 2 (moins prioritaire) :
+# Natural Earth mélange micro-États et vrais pays au rang 6, et TINY est incohérent (F1, brief
+# task-11). pop_est absente ou nulle = pas de majoration, pour ne pas pénaliser une donnée manquante.
+MICRO_STATE_POP = 200_000
 
 
 def props(feature: dict) -> dict:
@@ -63,7 +67,11 @@ def build_countries(features: list[dict]) -> list[list]:
         name = _name(p)
         if not name or p.get("label_x") is None or p.get("label_y") is None:
             continue
-        rows.append([round(p["label_x"], 2), round(p["label_y"], 2), name, int(p.get("labelrank") or 9)])
+        rank = int(p.get("labelrank") or 9)
+        pop_est = p.get("pop_est")
+        if pop_est and pop_est < MICRO_STATE_POP:
+            rank += 2
+        rows.append([round(p["label_x"], 2), round(p["label_y"], 2), name, rank])
     rows.sort(key=lambda r: (r[3], r[2]))
     return rows
 

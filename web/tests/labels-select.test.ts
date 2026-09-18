@@ -35,8 +35,11 @@ describe("paliers de zoom (spec repères §3)", () => {
     expect(names(1.4)).toEqual(["Cap", "Méga", "Grande", "Moyenne"]);
     expect(names(1.1)).toEqual(["Cap", "Méga", "Grande", "Moyenne", "Petite"]);
   });
-  it("pays : par rang, puis tous, puis aucun de près", () => {
-    const set = buildLabelSet([], [country("Un", 1), country("Quatre", 4), country("Sept", 7)]);
+  it("pays : par rang, puis tous les vrais pays (micro-États exclus), puis aucun de près", () => {
+    const set = buildLabelSet(
+      [],
+      [country("Un", 1), country("Quatre", 4), country("Sept", 7), country("MicroÉtat", 8)],
+    );
     const names = (d: number) => set.items.filter((i) => eligible(i, d)).map((i) => i.name);
     expect(names(3)).toEqual(["Un"]);
     expect(names(2)).toEqual(["Un", "Quatre"]);

@@ -43,8 +43,13 @@ sans GDAL. Sources : GeoJSON du dépôt `nvkelso/natural-earth-vector`, **figés
 | Source | Usage |
 |---|---|
 | `ne_10m_populated_places.geojson` | villes : `NAME_FR` (repli `NAME`), `POP_MAX`, `FEATURECLA` (`Admin-0 capital` → capitale) |
-| `ne_50m_admin_0_countries.geojson` | pays : `LABEL_X`/`LABEL_Y`, `NAME_FR` (repli `NAME`), `LABELRANK` |
+| `ne_50m_admin_0_countries.geojson` | pays : `LABEL_X`/`LABEL_Y`, `NAME_FR` (repli `NAME`), `LABELRANK`, `POP_EST` |
 | `ne_10m_rivers_lake_centerlines.geojson` | fleuves : géométrie, `scalerank` |
+
+`build_countries` majore le `LABELRANK` de **2** pour un pays dont `POP_EST` < `MICRO_STATE_POP`
+(200 000) : Natural Earth mélange micro-États et vrais pays au rang 6 (Monaco, Andorre, Cité du
+Vatican… à côté de la Croatie, du Luxembourg) et l'attribut `TINY` est incohérent ; `POP_EST`
+absente ou nulle ne majore pas (donnée manquante non pénalisée) (F1, brief task-11).
 
 Lancé à la main (`python tools/build_geo.py`), il télécharge dans un cache git-ignoré et
 écrit trois fichiers **commités** :
@@ -70,7 +75,7 @@ affichées, plafond.
 |---|---|---|
 | ≥ 2,5 | capitales et `pop` ≥ 5 M | `rang` ≤ 3 |
 | ≥ 1,6 | `pop` ≥ 1 M (et capitales) | `rang` ≤ 5 |
-| ≥ 1,25 | `pop` ≥ 100 k (et capitales) | tous |
+| ≥ 1,25 | `pop` ≥ 100 k (et capitales) | `rang` ≤ 7 (micro-États exclus : leur capitale reste une étiquette de ville) |
 | < 1,25 | toutes | aucun |
 
 Constantes nommées et exportées (`CITY_TIERS`, `COUNTRY_TIERS`) : réglables à l'œil en

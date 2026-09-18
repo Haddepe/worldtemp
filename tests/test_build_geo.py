@@ -58,11 +58,20 @@ def test_build_places_name_fr_vide_replie_sur_name():
     assert bg.build_places([place("London", 9_000_000, -0.13, 51.51, name_fr="")])[0][2] == "London"
 
 
+def country(name, rank, lon, lat, pop_est=None, name_fr=None):
+    p = {"NAME": name, "LABEL_X": lon, "LABEL_Y": lat, "LABELRANK": rank}
+    if name_fr is not None:
+        p["NAME_FR"] = name_fr
+    if pop_est is not None:
+        p["POP_EST"] = pop_est
+    return {"properties": p}
+
+
 def test_build_countries_point_d_etiquette_rang_et_tri():
     feats = [
-        {"properties": {"NAME": "Germany", "NAME_FR": "Allemagne", "LABEL_X": 9.678, "LABEL_Y": 50.961, "LABELRANK": 2}},
-        {"properties": {"NAME": "France", "NAME_FR": "France", "LABEL_X": 2.552, "LABEL_Y": 46.696, "LABELRANK": 2}},
-        {"properties": {"NAME": "Russia", "NAME_FR": "Russie", "LABEL_X": 44.69, "LABEL_Y": 58.25, "LABELRANK": 1}},
+        country("Germany", 2, 9.678, 50.961, pop_est=8e7, name_fr="Allemagne"),
+        country("France", 2, 2.552, 46.696, pop_est=6.7e7, name_fr="France"),
+        country("Russia", 1, 44.69, 58.25, pop_est=1.4e8, name_fr="Russie"),
         {"properties": {"NAME": "Sans point", "LABELRANK": 3}},
     ]
     assert bg.build_countries(feats) == [
@@ -70,6 +79,29 @@ def test_build_countries_point_d_etiquette_rang_et_tri():
         [9.68, 50.96, "Allemagne", 2],
         [2.55, 46.7, "France", 2],
     ]
+
+
+def test_build_countries_majore_le_rang_des_micro_etats():
+    feats = [country("Monaco", 6, 7.42, 43.73, pop_est=38_964, name_fr="Monaco")]
+    assert bg.build_countries(feats)[0][3] == 8
+
+
+def test_build_countries_ne_majore_pas_un_vrai_pays_de_rang_6():
+    feats = [country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_fr="Croatie")]
+    assert bg.build_countries(feats)[0][3] == 6
+
+
+def test_build_countries_pop_est_absente_ne_penalise_pas():
+    feats = [country("Kosovo", 6, 20.9, 42.6, name_fr="Kosovo")]
+    assert bg.build_countries(feats)[0][3] == 6
+
+
+def test_build_countries_tri_tient_compte_du_rang_majore():
+    feats = [
+        country("Luxembourg", 6, 6.13, 49.75, pop_est=619_896, name_fr="Luxembourg"),
+        country("Vatican", 6, 12.45, 41.9, pop_est=825, name_fr="Cité du Vatican"),
+    ]
+    assert [r[2] for r in bg.build_countries(feats)] == ["Luxembourg", "Cité du Vatican"]
 
 
 def test_simplify_retire_les_points_alignes_et_garde_les_coudes():
@@ -154,6 +186,11 @@ def test_fichiers_commites_countries():
     assert 150 <= len(rows) <= 260
     assert rows == sorted(rows, key=lambda r: (r[3], r[2]))
     assert {"France", "Japon", "Brésil"} <= {r[2] for r in rows}
+    by_name = {r[2]: r[3] for r in rows}
+    for micro in ("Monaco", "Andorre", "Cité du Vatican"):
+        assert by_name[micro] >= 8
+    for real in ("Croatie", "Luxembourg"):
+        assert by_name[real] == 6
 
 
 def test_fichiers_commites_rivers():

@@ -13,11 +13,15 @@ export const CITY_TIERS: readonly { minD: number; minPop: number }[] = [
   { minD: 1.25, minPop: 100_000 },
   { minD: 0, minPop: 0 },
 ];
-/** Mêmes bornes que CITY_TIERS ; `maxRank` −1 = aucun pays (de près, les villes prennent la place). */
+/**
+ * Mêmes bornes que CITY_TIERS ; `maxRank` −1 = aucun pays (de près, les villes prennent la
+ * place). Rang 7 = tous les vrais pays : les micro-États (rang ≥ 8, F1) restent exclus, leur
+ * capitale reste une étiquette de ville plutôt que de masquer une vraie capitale.
+ */
 export const COUNTRY_TIERS: readonly { minD: number; maxRank: number }[] = [
   { minD: 2.5, maxRank: 3 },
   { minD: 1.6, maxRank: 5 },
-  { minD: 1.25, maxRank: Number.POSITIVE_INFINITY },
+  { minD: 1.25, maxRank: 7 },
   { minD: 0, maxRank: -1 },
 ];
 export const LABEL_CAP: Record<Tier, number> = { high: 60, low: 30 };
