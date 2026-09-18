@@ -34,13 +34,18 @@ def test_build_places_trie_capitales_puis_population_puis_nom():
         place("Shanghai", 24_000_000, 121.4737, 31.2304),
         place("Bern", 400_000, 7.4474, 46.948, cla="Admin-0 capital", name_fr="Berne"),
         place("Aaa", 1_700_000, 0, 0),
+        place("Monaco", 36_000, 7.4246, 43.7314, cla="Admin-0 capital"),
     ]
+    # Berne (capitale, 400 000) reste parmi les grandes capitales (major) ; Monaco (capitale,
+    # 36 000 < MAJOR_CAPITAL_POP) descend au rang d'une ville ordinaire et se classe par
+    # population, derrière Aaa/Lyon (1 700 000) — sans perdre son `cap == 1` (F7).
     assert bg.build_places(feats) == [
         [2.35, 48.86, "Paris", 11_000_000, 1],
         [7.45, 46.95, "Berne", 400_000, 1],
         [121.47, 31.23, "Shanghai", 24_000_000, 0],
         [0.0, 0.0, "Aaa", 1_700_000, 0],
         [4.84, 45.77, "Lyon", 1_700_000, 0],
+        [7.42, 43.73, "Monaco", 36_000, 1],
     ]
 
 
@@ -51,7 +56,10 @@ def test_build_places_ecarte_sans_nom_et_population_nulle_hors_capitale():
         place("Capitale vide", 0, 3, 3, cla="Admin-0 capital"),
         place("Minuscules", 10, 4, 4, upper=False),
     ]
-    assert [p[2] for p in bg.build_places(feats)] == ["Capitale vide", "Minuscules"]
+    # « Capitale vide » (pop 0) est gardée (une capitale n'est jamais écartée pour population
+    # nulle) mais, n'étant pas une grande capitale, se classe par population comme une ville
+    # ordinaire : elle passe après « Minuscules » (pop 10) plutôt qu'en tête (F7).
+    assert [p[2] for p in bg.build_places(feats)] == ["Minuscules", "Capitale vide"]
 
 
 def test_build_places_name_fr_vide_replie_sur_name():
@@ -172,11 +180,18 @@ def test_fichiers_commites_places():
     rows = doc["places"]
     assert 5000 <= len(rows) <= 8000
     assert all(len(r) == 5 and -180 <= r[0] <= 180 and -90 <= r[1] <= 90 and r[2] and r[4] in (0, 1) for r in rows)
-    assert rows == sorted(rows, key=lambda r: (-r[4], -r[3], r[2]))
+    # Tri (F7) : « major » = grande capitale (cap == 1 et pop ≥ 100 000) d'abord, puis pop
+    # décroissante, puis nom — une petite capitale (Monaco…) se classe parmi les villes.
+    major = lambda r: 1 if r[4] == 1 and r[3] >= 100_000 else 0  # noqa: E731
+    assert rows == sorted(rows, key=lambda r: (-major(r), -r[3], r[2]))
     names = {r[2] for r in rows}
     assert {"Paris", "Tokyo", "Lyon", "Marseille"} <= names
     paris = next(r for r in rows if r[2] == "Paris")
     assert paris[4] == 1 and abs(paris[0] - 2.35) < 0.2 and abs(paris[1] - 48.86) < 0.2
+    marseille_idx = next(i for i, r in enumerate(rows) if r[2] == "Marseille")
+    monaco_idx, monaco = next((i, r) for i, r in enumerate(rows) if r[2] == "Monaco")
+    assert marseille_idx < monaco_idx  # Marseille (1,4 M) ne doit plus être masquée par Monaco
+    assert monaco[4] == 1  # Monaco reste une capitale (toujours éligible), juste mal classée
 
 
 def test_fichiers_commites_countries():

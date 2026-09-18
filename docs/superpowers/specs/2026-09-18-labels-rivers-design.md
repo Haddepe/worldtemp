@@ -56,7 +56,7 @@ Lancé à la main (`python tools/build_geo.py`), il télécharge dans un cache g
 
 | Fichier | Forme | Taille visée |
 |---|---|---|
-| `places.json` | `{"version":1,"places":[[lon,lat,"nom",pop,cap],…]}` — coordonnées arrondies à 0,01°, `cap` ∈ {0,1}, **trié par priorité** : capitales d'abord, puis `pop` décroissante, puis nom (déterminisme) | ≤ 300 Ko brut |
+| `places.json` | `{"version":1,"places":[[lon,lat,"nom",pop,cap],…]}` — coordonnées arrondies à 0,01°, `cap` ∈ {0,1}, **trié par priorité** : capitales de ≥ 100 000 habitants (`MAJOR_CAPITAL_POP`) d'abord, puis `pop` décroissante, puis nom (déterminisme) ; une petite capitale garde `cap` = 1 (toujours éligible, spec §3) mais se classe par population, pour ne pas masquer une grande ville voisine (Monaco devant Marseille, F7) | ≤ 300 Ko brut |
 | `countries.json` | `{"version":1,"countries":[[lon,lat,"nom",rang],…]}` trié par `rang` croissant puis nom | ≤ 15 Ko |
 | `rivers.bin` | binaire, §5 | ≤ 400 Ko brut |
 

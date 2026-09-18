@@ -38,6 +38,12 @@ MAX_SEGMENT_DEG = 2.0  # miroir de web/src/rivers/data.ts
 # Natural Earth mélange micro-États et vrais pays au rang 6, et TINY est incohérent (F1, brief
 # task-11). pop_est absente ou nulle = pas de majoration, pour ne pas pénaliser une donnée manquante.
 MICRO_STATE_POP = 200_000
+# Une capitale sous ce seuil de population n'est pas classée en tête de places.json avec les
+# grandes capitales (Paris, Tokyo…) : triée par population comme une ville ordinaire, elle ne
+# masque plus une grande ville voisine plus peuplée (Monaco devant Marseille, F7, brief task-11).
+# Le flag `cap` de sa ligne reste à 1 : elle passe toujours l'éligibilité (spec §3), c'est
+# seulement sa position dans le fichier — donc sa priorité de placement — qui change.
+MAJOR_CAPITAL_POP = 100_000
 
 
 def props(feature: dict) -> dict:
@@ -60,7 +66,11 @@ def build_places(features: list[dict]) -> list[list]:
             continue
         lon, lat = f["geometry"]["coordinates"][:2]
         rows.append([round(lon, 2), round(lat, 2), name, pop, cap])
-    rows.sort(key=lambda r: (-r[4], -r[3], r[2]))
+    # F7 : seules les grandes capitales (pop ≥ MAJOR_CAPITAL_POP) priment sur la population ; une
+    # petite capitale garde cap == 1 dans sa ligne (toujours éligible) mais se classe par
+    # population parmi les villes ordinaires.
+    major = lambda r: 1 if r[4] == 1 and r[3] >= MAJOR_CAPITAL_POP else 0  # noqa: E731
+    rows.sort(key=lambda r: (-major(r), -r[3], r[2]))
     return rows
 
 
