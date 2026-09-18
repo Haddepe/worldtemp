@@ -88,7 +88,7 @@ async function boot(): Promise<void> {
   sceneHandle.scene.add(globe.group);
 
   const windProfile = WIND_PROFILE[decision.tier];
-  const windSim = new WindSim(windProfile.particles, windProfile.trail);
+  const windSim = new WindSim(windProfile.particles, windProfile.trail, windProfile.stride);
   const windLayer = createWindLayer(windSim.positions, windProfile.particles, windProfile.trail);
   sceneHandle.scene.add(windLayer.object);
   const windCtl = new WindController({
@@ -211,7 +211,7 @@ async function boot(): Promise<void> {
   windToggle.setOn(windOn);
   // Crochet de validation (T11, critères 2, 3, 8) : dev seulement, comme `__worldtemp`.
   if (import.meta.env.DEV) {
-    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader };
+    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader, layer: windLayer };
   }
 
   const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {

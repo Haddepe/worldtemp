@@ -10,15 +10,20 @@ import type { Tier } from "../gpu/tier";
 import { lonLatToVec3 } from "../tiles/patch";
 import type { ViewState } from "../tiles/lod";
 
-export const WIND_PROFILE: Record<Tier, { particles: number; trail: number }> = {
-  high: { particles: 12_000, trail: 12 },
-  low: { particles: 3_000, trail: 8 },
+/**
+ * `stride` : la traînée ne glisse qu'un tick sur `stride` (la tête, elle, suit chaque tick).
+ * À 30 Hz un segment par tick mesure ≤ 2 px : sur-échantillonné, et chaque segment est un quad
+ * à dessiner. Longueur de traînée = (trail − 1) · stride ticks.
+ */
+export const WIND_PROFILE: Record<Tier, { particles: number; trail: number; stride: number }> = {
+  high: { particles: 5_000, trail: 9, stride: 3 },
+  low: { particles: 1_500, trail: 5, stride: 3 },
 };
 
 export const TICK_MS = 1000 / 30;
 export const MAX_DT_S = 0.1;
-/** Vitesse apparente : px CSS par seconde et par m/s (20 m/s → 40 px/s). */
-export const PX_PER_S_PER_MS = 2;
+/** Vitesse apparente : px CSS par seconde et par m/s (20 m/s → 60 px/s). */
+export const PX_PER_S_PER_MS = 3;
 export const RADIUS = 1.002;
 export const MAX_LAT = 85;
 export const MIN_SPEED = 0.5;
@@ -134,8 +139,11 @@ export class WindSim {
   readonly age: Uint16Array;
   readonly life: Uint16Array;
 
-  constructor(readonly count: number, readonly trail: number) {
-    if (!(count >= 1) || !(trail >= 2)) throw new Error("count ≥ 1 et trail ≥ 2 attendus");
+  /** Ticks écoulés depuis le dernier glissement de la traînée, modulo `stride`. */
+  private phase = 0;
+
+  constructor(readonly count: number, readonly trail: number, readonly stride = 1) {
+    if (!(count >= 1) || !(trail >= 2) || !(stride >= 1)) throw new Error("count ≥ 1, trail ≥ 2 et stride ≥ 1 attendus");
     this.positions = new Float32Array(trail * count * 3);
     this.lon = new Float32Array(count);
     this.lat = new Float32Array(count);
@@ -155,7 +163,9 @@ export class WindSim {
     const N = this.count;
     const K = this.trail;
     const head = K - 1;
-    this.positions.copyWithin(0, N * 3); // slots 1…K−1 → 0…K−2
+    // slots 1…K−1 → 0…K−2, un tick sur `stride` ; entre-temps la tête est réécrite sur place
+    if (this.phase === 0) this.positions.copyWithin(0, N * 3);
+    this.phase = (this.phase + 1) % this.stride;
     const S = speedScale(view);
     for (let i = 0; i < N; i++) {
       let lon = this.lon[i]!;
