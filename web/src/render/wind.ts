@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import fragmentShader from "./shaders/wind.frag.glsl?raw";
 import vertexShader from "./shaders/wind.vert.glsl?raw";
+import screenQuad from "./shaders/screen-quad.glsl?raw";
 
 /** Largeur du trait en px CSS, hors liseré. */
 export const WIND_WIDTH_PX = 2;
@@ -43,13 +44,13 @@ export function createWindLayer(positions: Float32Array, count: number, trail: n
     uPixelRatio: { value: 1 },
   };
   const material = new THREE.ShaderMaterial({
-    uniforms, vertexShader, fragmentShader,
+    uniforms, vertexShader: `${screenQuad}\n${vertexShader}`, fragmentShader,
     transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
   });
   const object = new THREE.Mesh(geometry, material);
   object.frustumCulled = false;
   object.matrixAutoUpdate = false;
-  object.renderOrder = 1;
+  object.renderOrder = 2; // au-dessus des fleuves (render/rivers.ts, 1)
   object.visible = false;
   object.onBeforeRender = (renderer) => {
     const ratio = renderer.getPixelRatio();
