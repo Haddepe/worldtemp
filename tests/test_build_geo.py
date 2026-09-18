@@ -200,4 +200,7 @@ def test_fichiers_commites_rivers():
     assert len(lines) > 200
     assert [l[0] for l in lines] == sorted(l[0] for l in lines)
     assert all(len(pts) >= 2 and all(abs(x) <= 18000 and abs(y) <= 9000 for x, y in pts) for _, pts in lines)
-    assert bg.segment_count(lines) <= 25_000
+    # Budget relevé à 50 000 le 2026-09-18 (F6, validation navigateur : 0,045° était anguleux
+    # sous d ≈ 1,2). Borne basse : preuve que la tolérance fine (0,02°) est bien committée, pas
+    # l'ancienne (0,045° ne produisait que 22 046 segments).
+    assert 40_000 < bg.segment_count(lines) <= 50_000

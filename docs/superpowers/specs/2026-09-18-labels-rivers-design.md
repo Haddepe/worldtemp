@@ -136,9 +136,11 @@ taille cohérente) ; produit les segments 3D au **rayon 1,001** (sous le vent à
 subdivise tout segment > 2° (sinon la corde passe sous la surface), renvoie
 `{ starts, ends, ranks, countByRank }` où `countByRank[r]` = nombre de segments de rang ≤ r.
 
-**Budget : ≤ 25 000 segments** après subdivision (leçon du 2026-09-18 : le coût par
-instance est sensible sur l'UHD 620). Le script affiche le compte ; un test le vérifie sur
-le fichier commité.
+**Budget : ≤ 50 000 segments** après subdivision. Relevé de 25 000 à 50 000 le 2026-09-18, après
+validation navigateur : le coût mesuré des fleuves est faible (tampons statiques envoyés une
+fois) et la tolérance de 0,045° imposée par l'ancien budget rendait les fleuves anguleux sous
+d ≈ 1,2 ; `instanceCount` continue de limiter les vues lointaines aux rangs majeurs. Le script
+affiche le compte ; un test le vérifie sur le fichier commité.
 
 **`render/rivers.ts`** : un `Mesh` de quads instanciés (tampons statiques, envoyés une
 fois), `renderOrder` sous le vent. Le GLSL d'élargissement en espace écran est **extrait
@@ -182,7 +184,7 @@ couches, comme les frontières.
 **pytest** (`tests/test_build_geo.py`) : tri par priorité, arrondi, repli `NAME_FR` → `NAME`,
 écartement des lieux sans nom, Douglas-Peucker sur une polyligne connue, encodage/relecture
 de `rivers.bin`, déterminisme ; **validité des fichiers commités** (schéma, ordre, Paris et
-Tokyo présents, ≤ 25 000 segments, tailles sous budget). Aucun accès réseau dans les tests.
+Tokyo présents, ≤ 50 000 segments, tailles sous budget). Aucun accès réseau dans les tests.
 
 **Vitest :** `labels/select` (seuils par d, horizon, hors viewport, chevauchement, plafond,
 plafond mobile, stabilité des déjà-affichées, ordre pays/villes) ; `labels/data` (valide /

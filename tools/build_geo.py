@@ -28,7 +28,11 @@ OUT = ROOT / "web" / "public" / "geo"
 
 MAGIC = b"WTRV"
 VERSION = 1
-SEGMENT_BUDGET = 25_000
+# Relevé de 25 000 à 50 000 le 2026-09-18 (F6, validation navigateur) : à la tolérance de 0,02°
+# le coût GPU mesuré des fleuves est faible (tampons statiques envoyés une fois), alors que
+# 0,045° (imposée par l'ancien budget) rendait les fleuves anguleux sous d ≈ 1,2 ; instanceCount
+# continue de limiter les vues lointaines aux rangs majeurs.
+SEGMENT_BUDGET = 50_000
 MAX_SEGMENT_DEG = 2.0  # miroir de web/src/rivers/data.ts
 # Un micro-État sous ce seuil de population voit son LABELRANK majoré de 2 (moins prioritaire) :
 # Natural Earth mélange micro-États et vrais pays au rang 6, et TINY est incohérent (F1, brief

@@ -17,7 +17,7 @@
 - Fichiers texte en **LF**. Commentaires et messages en français, dans le style du dépôt.
 - Tests front : `cd web && npx vitest run` ; typage : `cd web && npx tsc --noEmit -p .` ; tests Python : `.venv/Scripts/python -m pytest` depuis la racine (venv Windows, sans eccodes ni GDAL).
 - Vitest tourne **sans DOM** : tout test qui a besoin d'un bouton utilise un faux objet ; `labels/layer.ts` (DOM pur) n'a pas de test, il se valide à l'œil (T11).
-- Budgets (spec §2, §5, §9) : `places.json` ≤ 300 Ko, `countries.json` ≤ 15 Ko, `rivers.bin` ≤ 400 Ko, **≤ 25 000 segments** de fleuve après subdivision, bundle ≤ **+8 Ko gzip** par rapport à 156,08 Ko, sélection d'étiquettes ≤ 2 ms.
+- Budgets (spec §2, §5, §9) : `places.json` ≤ 300 Ko, `countries.json` ≤ 15 Ko, `rivers.bin` ≤ 400 Ko, **≤ 50 000 segments (relevé le 2026-09-18, validation navigateur)** de fleuve après subdivision, bundle ≤ **+8 Ko gzip** par rapport à 156,08 Ko, sélection d'étiquettes ≤ 2 ms.
 - Toute mesure de performance se fait sur `vite build` + `vite preview`, jamais en mode dev (HISTORY §6). `TaskStop` ne tue pas le node de Vite : libérer le port par `netstat -ano | grep :4173` puis `taskkill //PID <pid> //F`.
 - Seuils de zoom et plafonds sont des **constantes exportées** (`CITY_TIERS`, `COUNTRY_TIERS`, `LABEL_CAP`, `RIVER_TIERS`) : réglables en T11 sans toucher à la logique.
 - Ne jamais committer `tools/.geo-cache/` (téléchargements Natural Earth).
