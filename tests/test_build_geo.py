@@ -89,9 +89,21 @@ def test_build_countries_point_d_etiquette_rang_et_tri():
     ]
 
 
-def test_build_countries_majore_le_rang_des_micro_etats():
-    feats = [country("Monaco", 6, 7.42, 43.73, pop_est=38_964, name_fr="Monaco")]
-    assert bg.build_countries(feats)[0][3] == 8
+def test_country_rank_majore_le_rang_des_micro_etats():
+    assert bg.country_rank({"labelrank": 6, "pop_est": 38_964}) == 8
+    assert bg.country_rank({"labelrank": 6, "pop_est": 4_067_500}) == 6
+    assert bg.country_rank({"labelrank": 6}) == 6
+    assert bg.country_rank({}) == 9
+
+
+def test_build_countries_ecarte_les_rangs_jamais_affichables():
+    """Au-delà de MAX_COUNTRY_RANK, aucun palier du front n'affiche le pays : ligne morte (dette n° 41)."""
+    feats = [
+        country("Monaco", 6, 7.42, 43.73, pop_est=38_964, name_fr="Monaco"),
+        country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_fr="Croatie"),
+        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_fr="Malte"),
+    ]
+    assert [(r[2], r[3]) for r in bg.build_countries(feats)] == [("Croatie", 6), ("Malte", 7)]
 
 
 def test_build_countries_ne_majore_pas_un_vrai_pays_de_rang_6():
@@ -107,9 +119,9 @@ def test_build_countries_pop_est_absente_ne_penalise_pas():
 def test_build_countries_tri_tient_compte_du_rang_majore():
     feats = [
         country("Luxembourg", 6, 6.13, 49.75, pop_est=619_896, name_fr="Luxembourg"),
-        country("Vatican", 6, 12.45, 41.9, pop_est=825, name_fr="Cité du Vatican"),
+        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_fr="Malte"),
     ]
-    assert [r[2] for r in bg.build_countries(feats)] == ["Luxembourg", "Cité du Vatican"]
+    assert [r[2] for r in bg.build_countries(feats)] == ["Luxembourg", "Malte"]
 
 
 def test_simplify_retire_les_points_alignes_et_garde_les_coudes():
@@ -147,6 +159,12 @@ def test_fit_budget_releve_la_tolerance_jusqu_a_tenir():
     lines, tol = bg.fit_budget([river(2, zigzag)], budget=20, tol=0.02)
     assert bg.segment_count(lines) <= 20
     assert tol > 0.02
+
+
+def test_fit_budget_abandonne_si_le_budget_est_intenable():
+    """Une ligne garde toujours au moins un segment : sans plafond d'itérations, boucle infinie (dette n° 41)."""
+    with pytest.raises(RuntimeError, match="budget"):
+        bg.fit_budget([river(2, [[0, 0], [1, 1]])], budget=0)
 
 
 def test_encode_decode_rivers_aller_retour_et_entete():
@@ -203,7 +221,8 @@ def test_fichiers_commites_countries():
     assert {"France", "Japon", "Brésil"} <= {r[2] for r in rows}
     by_name = {r[2]: r[3] for r in rows}
     for micro in ("Monaco", "Andorre", "Cité du Vatican"):
-        assert by_name[micro] >= 8
+        assert micro not in by_name  # rang majoré au-delà de MAX_COUNTRY_RANK : jamais affichable, non écrit
+    assert max(by_name.values()) <= bg.MAX_COUNTRY_RANK
     for real in ("Croatie", "Luxembourg"):
         assert by_name[real] == 6
 

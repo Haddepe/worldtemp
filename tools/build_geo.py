@@ -38,6 +38,12 @@ MAX_SEGMENT_DEG = 2.0  # miroir de web/src/rivers/data.ts
 # Natural Earth mélange micro-États et vrais pays au rang 6, et TINY est incohérent (F1, brief
 # task-11). pop_est absente ou nulle = pas de majoration, pour ne pas pénaliser une donnée manquante.
 MICRO_STATE_POP = 200_000
+# Rang le plus élevé qu'un palier du front affiche (miroir de COUNTRY_TIERS, web/src/labels/select.ts).
+# Au-delà, la ligne ne serait jamais affichée : on ne l'écrit pas. À relever avec les paliers.
+MAX_COUNTRY_RANK = 7
+# Garde-fou de fit_budget : 0,02° × 1,5^40 dépasse de loin la taille de la Terre ; si le budget
+# n'est toujours pas tenu, il ne le sera jamais (chaque ligne garde au moins un segment).
+MAX_FIT_ITERATIONS = 40
 # Une capitale sous ce seuil de population n'est pas classée en tête de places.json avec les
 # grandes capitales (Paris, Tokyo…) : triée par population comme une ville ordinaire, elle ne
 # masque plus une grande ville voisine plus peuplée (Monaco devant Marseille, F7, brief task-11).
@@ -74,6 +80,14 @@ def build_places(features: list[dict]) -> list[list]:
     return rows
 
 
+def country_rank(p: dict) -> int:
+    rank = int(p.get("labelrank") or 9)
+    pop_est = p.get("pop_est")
+    if pop_est and pop_est < MICRO_STATE_POP:
+        rank += 2
+    return rank
+
+
 def build_countries(features: list[dict]) -> list[list]:
     rows = []
     for f in features:
@@ -81,10 +95,9 @@ def build_countries(features: list[dict]) -> list[list]:
         name = _name(p)
         if not name or p.get("label_x") is None or p.get("label_y") is None:
             continue
-        rank = int(p.get("labelrank") or 9)
-        pop_est = p.get("pop_est")
-        if pop_est and pop_est < MICRO_STATE_POP:
-            rank += 2
+        rank = country_rank(p)
+        if rank > MAX_COUNTRY_RANK:
+            continue
         rows.append([round(p["label_x"], 2), round(p["label_y"], 2), name, rank])
     rows.sort(key=lambda r: (r[3], r[2]))
     return rows
@@ -154,10 +167,12 @@ def segment_count(lines) -> int:
 
 def fit_budget(features, budget: int = SEGMENT_BUDGET, tol: float = 0.02):
     lines = river_lines(features, tol)
-    while segment_count(lines) > budget:
+    for _ in range(MAX_FIT_ITERATIONS):
+        if segment_count(lines) <= budget:
+            return lines, tol
         tol *= 1.5
         lines = river_lines(features, tol)
-    return lines, tol
+    raise RuntimeError(f"budget de {budget} segments intenable (tolérance atteinte : {tol:.4f}°)")
 
 
 def encode_rivers(lines) -> bytes:
