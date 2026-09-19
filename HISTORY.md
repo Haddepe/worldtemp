@@ -488,6 +488,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-19 | feat/public-site — lot D « site public » : site entièrement en anglais (`i18n/en.ts`, noms `name_en`), référencement (Open Graph, JSON-LD, robots, sitemap, favicon, manifeste, `og.jpg`), panneau About, beacon Cloudflare Web Analytics, commentaires GLSL retirés à la transformation (spec `2026-09-19-public-site-design.md`, plan `2026-09-19-public-site.md` 10 tâches, subagent-driven) | ✅ mergée, déployée par CI | `1295853` | 441 passed vitest (43 fichiers) ; 207 passed / 10 skipped pytest local (Windows) ; bundle 159,82 Ko gzip ; Lighthouse SEO 100 |
 | 2026-09-19 | fix/geo-cache-bust — `GEO_VERSION` en `?v=` sur les URL de `geo/` : le cache navigateur d'un jour gardait les noms français après le lot D (signalé par l'utilisateur) | ✅ mergée, déployée par CI | `e359ebd` | 442 passed vitest (43 fichiers) ; bundle 159,84 Ko gzip |
 | 2026-09-19 | feat/starfield — ciel étoilé procédural derrière le globe (`render/stars.ts`, 6 000 / 3 000 points à l'infini, passe opaque avant le globe), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `668cf7a` | 452 passed vitest (44 fichiers) ; bundle 160,88 Ko gzip (+1,04 Ko) |
+| 2026-09-19 | feat/halo — halo d'atmosphère sur le pourtour du globe (`render/halo.ts`, feuille de route P3), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `dd7f8f0` | 461 passed vitest (45 fichiers) ; bundle 161,71 Ko gzip (+0,83 Ko) |
 
 ## 8. Dette technique connue
 
@@ -577,6 +578,18 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 **Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (7) — Halo d'atmosphère (merge `dd7f8f0`) : le globe vu depuis l'espace est complet
+
+- À la suite du ciel étoilé, l'utilisateur a demandé le halo (feuille de route P3). Chemin
+  borné : design validé en chat (§5), TDD, validation navigateur — lueur fine contre le limbe
+  par-dessus les étoiles, aucune erreur GLSL, carte non voilée à d = 1,3, 60 images/s ; aucun
+  réglage nécessaire ; `og.jpg` recapturé (120 Ko : globe, halo, étoiles) ; aperçu validé par
+  l'utilisateur.
+- **Tests :** 461 vitest (45 fichiers), `tsc` propre. **Build :** 161,71 Ko gzip. 11 shaders
+  sous le garde-fou de langue.
+- **Prochaine action :** aucun chantier en cours ; lot E (curseur temporel) ou F (recherche de
+  ville) au choix de l'utilisateur ; reste des finitions : rotation automatique (P2), publicité (P4).
 
 ### 2026-09-19 (6) — Ciel étoilé derrière le globe (merge `668cf7a`), H1 renforcé, indexation Google constatée
 
@@ -1379,7 +1392,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**ciel étoilé procédural derrière le globe, mergé `668cf7a` et déployé** — 452 vitest, bundle 160,88 Ko gzip ; page indexée par Google ; aucun chantier en cours)
+**Dernière mise à jour :** 2026-09-19 (**halo d'atmosphère mergé `dd7f8f0` et déployé** — avec le ciel étoilé, le globe est vu depuis l'espace ; 461 vitest, bundle 161,71 Ko gzip ; aucun chantier en cours)
+**Entrée précédente :** 2026-09-19 (**ciel étoilé procédural derrière le globe, mergé `668cf7a` et déployé** — 452 vitest, bundle 160,88 Ko gzip ; page indexée par Google ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**H1 du panneau About renforcé (`68823c1`) ; lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**Bing Webmaster : site vérifié (`BingSiteAuth.xml`), sitemap envoyé ; Google Search Console : propriété de domaine ajoutée, vérification DNS TXT en attente de l'utilisateur**)
 **Entrée précédente :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
