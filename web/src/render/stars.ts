@@ -9,16 +9,16 @@ import fragmentShader from "./shaders/stars.frag.glsl?raw";
 import vertexShader from "./shaders/stars.vert.glsl?raw";
 
 /** Réglables à l'œil : densité du ciel par profil. */
-export const STAR_COUNT: Record<Tier, number> = { high: 4000, low: 2000 };
+export const STAR_COUNT: Record<Tier, number> = { high: 6000, low: 3000 };
 export const STAR_SEED = 20260919;
 
 /** Taille des points en px CSS. */
 const SIZE_MIN = 1.2;
 const SIZE_MAX = 3;
 /** Luminosité de l'étoile la plus faible ; la plus brillante vaut 1. */
-const BRIGHTNESS_MIN = 0.18;
+const BRIGHTNESS_MIN = 0.3;
 /** Exposant de la loi de luminosité : plus il est grand, plus les étoiles brillantes sont rares. */
-const BRIGHTNESS_POWER = 3.2;
+const BRIGHTNESS_POWER = 2.8;
 
 const WHITE = [1, 1, 1] as const;
 const BLUISH = [0.72, 0.84, 1] as const;
