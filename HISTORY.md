@@ -447,6 +447,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | fix/rain-soften-04 — `soften` pluie 0,8 → 0,4 (verdict utilisateur) | ✅ mergée, déployée par CI | `1c66add` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-no-soften — flou retiré de la pluie (verdict utilisateur final) | ✅ mergée, déployée par CI | `5c9b060` | 248 passed vitest (27 fichiers) |
 | 2026-09-19 | feat/labels-rivers — lot C : étiquettes villes/pays avec valeur de couche, fleuves (spec `2026-09-18-labels-rivers-design.md` `fae97ec`, plan `2026-09-18-labels-rivers.md` `d545af6`, 12 tâches, subagent-driven le 2026-09-18 ; validée sur vrai téléphone par l'utilisateur le 2026-09-19) | ✅ mergée, déployée par CI | `c4ed59e` | 326 passed vitest (37 fichiers) ; 204 passed / 10 skipped pytest local (Windows) ; bundle 160,65 Ko gzip |
+| 2026-09-19 | refactor/geo-wiring — dettes n° 42 (câblage geo extrait de `main.ts`, testable en Node) et n° 41 (étiquettes hors cadre ou sous un panneau, variante sombre, reliquats du lot C) ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `116991f` | 348 passed vitest (38 fichiers) ; 206 passed / 10 skipped pytest local (Windows) ; bundle 161,62 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -497,7 +498,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 ## 9. État actuel & prochaine action
 
-### 2026-09-19 (2) — Dettes n° 42 puis n° 41 traitées sur `refactor/geo-wiring`, NON MERGÉ — validation navigateur en attente
+### 2026-09-19 (2) — Dettes n° 42 puis n° 41 traitées, validées dans le navigateur, mergées (`116991f`) et déployées
 
 Chemin borné (design en chat, TDD, pas de spec ni de plan), à la demande de l'utilisateur.
 
@@ -511,16 +512,17 @@ Chemin borné (design en chat, TDD, pas de spec ni de plan), à la demande de l'
   `places.json` et `rivers.bin` identiques à l'octet), `fit_budget` borné. Décisions en §5.
   Le test rouge de `fit_budget` a d'abord bouclé sans fin (le défaut lui-même) : lancer pytest
   sous `timeout` quand on teste une boucle non bornée.
-- **Non fait : validation navigateur.** `panelRects()` lit le DOM réel (non testable en Node) ;
-  1,2 Go de RAM libre, serveur de prévisualisation déjà coupé une fois ce jour par Claude Code →
-  pas relancé sans accord de l'utilisateur. **Ne pas merger avant.**
+- **Validation navigateur** (Brave, `vite build` + `vite preview`, après libération de mémoire par
+  l'utilisateur : 2,0 Go libres) : 1000 × 800, 60 étiquettes, aucune sous bandeau / légende /
+  contrôles / attribution ni hors écran (mesuré sur les rectangles DOM réels) ; 500 × 800 mobile :
+  28 étiquettes panneaux déployés, 33 repliés (jusqu'à y = 751), retour à 28 au dépli **sans
+  mouvement de caméra** (`relayout`) ; d = 1,1 : température → blanc, « Aucune » → sombre, pluie →
+  blanc (valeurs absentes = pas de pluie, `tooltipMin`) ; fleuves off/on : `aria-checked` et
+  `?rivers=` cohérents. Onglet 3D fermé et serveur arrêté ensuite.
 - **Tests :** 348 vitest (38 fichiers), `tsc` propre ; 206 passed / 10 skipped pytest local.
 - **Build :** `index-*.js` 161,62 Ko gzip (+0,97 Ko).
-- **Prochaine action :** (1) mémoire libérée, `npx vite build` + `npx vite preview --port 5173
-  --strictPort` dans `web/`, vérifier sur `http://localhost:5173/?layer=temp&lon=2&lat=46.5&d=1.35` :
-  aucune étiquette sous le bandeau, la légende, les contrôles ni coupée à droite ; repli/dépli des
-  panneaux ; largeur 500 px ; style carte sans couche = sombre, avec couche = blanc ; fleuves
-  on/off ; (2) merge `--no-ff`, §7, push, vérifier la prod (`countries.json` 206 lignes).
+- **Prochaine action :** aucun chantier en cours. Dettes ouvertes restantes en §8 (n° 30, 33–35,
+  38–40 notamment) ; machine à états des couches et du vent toujours dans `main.ts`.
 
 
 ### 2026-09-19 — Lot C validé sur vrai téléphone, mergé (`c4ed59e`) et déployé
@@ -1199,7 +1201,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**dettes n° 42 et n° 41 traitées sur `refactor/geo-wiring`, non mergé** — `geo/wiring.ts` testable en Node, étiquettes qui évitent panneaux et bords, countries.json 206 lignes ; 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; **validation navigateur en attente** avant merge)
+**Dernière mise à jour :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
+**Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 traitées sur `refactor/geo-wiring`, non mergé** — `geo/wiring.ts` testable en Node, étiquettes qui évitent panneaux et bords, countries.json 206 lignes ; 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; **validation navigateur en attente** avant merge)
 **Entrée précédente :** 2026-09-19 (**lot C validé sur vrai téléphone, mergé `c4ed59e` et déployé** — étiquettes villes/pays avec valeur de couche + fleuves en prod ; 326 vitest + 204 pytest, bundle 160,65 Ko gzip ; aucun lot en cours)
 **Entrée précédente :** 2026-09-18 (**lot C implémenté et revu sur `feat/labels-rivers`, non mergé** — étiquettes villes/pays avec valeur de couche + fleuves ; T1–T11 faites, revue finale « With fixes » corrigée (`77d1e8f`), 326 vitest + 19 pytest, bundle 160,65 Ko gzip ; **en attente de la validation utilisateur sur vrai téléphone**, puis T12 merge/déploiement)
 **Entrée précédente :** 2026-09-18 (**vent et nuages validés par l'utilisateur en prod** — profils vent 5 000/K9 stride 3 et `soften` nuages 1,2 figés ; prochaine étape lot C)
