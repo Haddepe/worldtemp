@@ -11,3 +11,13 @@ export function beaconTag(token: string): string {
   if (!/^[0-9a-f]{32}$/i.test(t)) throw new Error("invalid Cloudflare beacon token");
   return `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${t}"}'></script>`;
 }
+
+/**
+ * Insère `tag` juste avant `</body>`. Une balise vide (pas de jeton) laisse le HTML intact ;
+ * un `</body>` manquant lève, sinon le beacon disparaîtrait sans bruit du site déployé.
+ */
+export function injectBeacon(html: string, tag: string): string {
+  if (tag === "") return html;
+  if (!html.includes("</body>")) throw new Error("index.html has no </body>");
+  return html.replace("</body>", `  ${tag}\n  </body>`);
+}

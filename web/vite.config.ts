@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vitest/config";
-import { CF_BEACON_TOKEN, beaconTag } from "./src/build/beacon.ts";
+import { CF_BEACON_TOKEN, beaconTag, injectBeacon } from "./src/build/beacon.ts";
 import { stripGlslComments } from "./src/build/glsl.ts";
 
 /**
@@ -25,10 +25,7 @@ function cloudflareBeacon(): Plugin {
   return {
     name: "worldtemp:cloudflare-beacon",
     apply: "build",
-    transformIndexHtml: (html) => {
-      const tag = beaconTag(CF_BEACON_TOKEN);
-      return tag === "" ? html : html.replace("</body>", `  ${tag}\n  </body>`);
-    },
+    transformIndexHtml: (html) => injectBeacon(html, beaconTag(CF_BEACON_TOKEN)),
   };
 }
 
