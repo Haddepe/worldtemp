@@ -582,6 +582,11 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
   `google-site-verification=…` publié sur la zone, contrôlé par `nslookup` ; ne pas le supprimer),
   `sitemap.xml` envoyé le 2026-09-19 (statut « pending »). Le connecteur Search Console ne donne
   pas la valeur du TXT : elle ne se lit que dans l'interface.
+- **H1 renforcé** à la demande de l'utilisateur (`68823c1`) : « GlobeLayers — live 3D weather globe » au lieu de
+  la seule marque. Contrôle du HTML reçu par Googlebot : `lang="en"`, titre, description de 143
+  caractères, un seul H1, quatre H2 + ~210 mots du panneau About, `index, follow`, canonical,
+  aucun `X-Robots-Tag`. Limite connue : ce texte vit dans un `<dialog>` fermé par défaut (indexé,
+  mais peut-être moins pondéré que du texte visible — compromis accepté en spec §2).
 - **Lot D entièrement clos**, critère d'acceptation 8 compris. À surveiller dans quelques jours :
   indexation (Search Console, Bing), premières visites dans Cloudflare Web Analytics ; Google
   signalera `WebApplication` « inéligible » aux résultats enrichis (pas de notes) : attendu.
@@ -1348,7 +1353,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
+**Dernière mise à jour :** 2026-09-19 (**H1 du panneau About renforcé (`68823c1`) ; lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**Bing Webmaster : site vérifié (`BingSiteAuth.xml`), sitemap envoyé ; Google Search Console : propriété de domaine ajoutée, vérification DNS TXT en attente de l'utilisateur**)
 **Entrée précédente :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
 **Entrée précédente :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
