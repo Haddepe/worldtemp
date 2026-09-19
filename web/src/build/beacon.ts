@@ -3,7 +3,7 @@
  * `vite.config.ts` seulement, jamais par le site — il n'entre pas dans le bundle.
  * Le jeton est public par nature (il est lu dans le HTML de la page).
  */
-export const CF_BEACON_TOKEN = "";
+export const CF_BEACON_TOKEN = "5e96332c41944b9586f926c1ac44f884";
 
 export function beaconTag(token: string): string {
   const t = token.trim();
