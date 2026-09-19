@@ -506,7 +506,7 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 
 | Lot | Contenu | Pourquoi / coût | Statut |
 |---|---|---|---|
-| **D — « site public »** | Référencement, partage, mesure d'audience (détail : lignes R1–R2 ci-dessous) | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — brainstorming |
+| **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — spec écrite (`3766919`), plan à suivre |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | 🟡 à faire |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | 🟡 à faire |
 
@@ -520,6 +520,8 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 | R4 | **Recherche et localisation** | Ni recherche de ville ni « ma position » | F |
 | R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS) | — |
 | R6 | **PWA et hors-ligne** | Rien | — |
+| R7 | **Autres langues, unités impériales** | Après le lot D le site est en anglais seul, unités métriques ; `web/src/i18n/` est prévu pour accueillir d'autres langues (pas de sélecteur aujourd'hui) | — |
+| R8 | **Pages de contenu par couche, événements d'usage (PostHog), image Open Graph par couche** | Écartés du lot D (spec §10) | — |
 
 **Prévu par `docs/PLAN.md`, pas fait**
 
@@ -542,7 +544,12 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 - Relief 3D géométrique (P1) analysé à la demande de l'utilisateur : peu de coût par image, mais
   gros chantier pour un effet visible seulement au limbe → déconseillé, hillshade conservé.
 - **Choix utilisateur : lot D** (référencement, partage, mesure d'audience) ; E et F gardés en §8.
-- **Prochaine action :** brainstorming du lot D → spec `docs/superpowers/specs/` → plan → exécution.
+- **Brainstorming du lot D fait** : Cloudflare Web Analytics (sans cookie), image Open Graph =
+  capture réelle statique, panneau « About » indexable, tout statique ; puis **décision
+  utilisateur : tout le site passe en anglais** (une seule langue, autres langues plus tard,
+  vérification finale exigée). Spec `docs/superpowers/specs/2026-09-19-public-site-design.md`.
+  `globelayers.com` n'est déclaré ni dans Google Search Console ni dans Bing Webmaster (vérifié).
+- **Prochaine action :** relecture de la spec par l'utilisateur → plan (`writing-plans`) → exécution.
 
 ### 2026-09-19 (2) — Dettes n° 42 puis n° 41 traitées, validées dans le navigateur, mergées (`116991f`) et déployées
 

@@ -51,8 +51,9 @@ fragments du bandeau et du tooltip, légende, titres d'indisponibilité, rose de
 `web/src/i18n/index.ts` réexporte `STRINGS` (`export { STRINGS } from "./en"`) : ajouter une
 langue plus tard = ajouter un fichier et choisir ici, sans toucher aux appelants.
 **Pas** de moteur d'interpolation ni de changement de langue à l'exécution : les phrases à
-variable sont des fonctions (`ago: (h, m) => …`). Les messages de console et d'exception restent
-en ligne dans leur module (développeur seulement, jamais traduits).
+variable sont des fonctions (`ago: (h, m) => …`). Les messages de console et d'exception sont écrits en anglais (§3.1) mais restent
+en ligne dans leur module, hors de `STRINGS` : destinés au développeur, ils ne seront jamais
+localisés dans une autre langue.
 
 Le texte du panneau « About » et les balises vivent dans `index.html` (HTML initial, §5).
 
@@ -159,8 +160,8 @@ Croatia, Luxembourg).
 - **`english.test.ts` — contrôle « tout est en anglais »** : (a) aucune lettre accentuée française
   `[àâçèéêëîïôùûœÀÂÇÈÉÊËÎÏÔÙÛŒ]` dans `index.html` ; (b) aucune dans les **littéraux de chaîne** des
   fichiers `web/src/**/*.ts` (commentaires exclus par un découpage simple) ; (c) liste de mots
-  français interdits dans ces mêmes littéraux (`indisponible`, `Vent`, `Pluie`, `Nuages`,
-  `attendu`, `invalide`, `il y a`…). Les données `geo/` sont exclues de (a) : les noms anglais
+  français interdits dans ces mêmes littéraux, **en mots entiers** (pour ne pas prendre `Event`
+  pour `Vent`) : `indisponible`, `Vent`, `Pluie`, `Nuages`, `attendu`, `invalide`, `il y a`… Les données `geo/` sont exclues de (a) : les noms anglais
   portent des accents légitimes (São Paulo) ; elles sont couvertes par pytest (§8.2).
 - **`about.test.ts`** : ouverture, fermeture, clic sur le fond.
 - Tests existants mis à jour : `format`, `registry`, `wind-select`/`format` (rose des vents),
