@@ -12,6 +12,7 @@ import { buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
+import { createStarsLayer } from "./render/stars";
 import { createWindLayer } from "./render/wind";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
@@ -90,6 +91,7 @@ async function boot(): Promise<void> {
   const globe = createTiledGlobe(decision.tier, loader, 0);
   ui.setLegendVisible(false); // aucune couche au démarrage : la légende n'a rien à montrer
   sceneHandle.scene.add(globe.group);
+  sceneHandle.scene.add(createStarsLayer(decision.tier).object); // ciel étoilé, dessiné avant tout le reste
 
   const windProfile = WIND_PROFILE[decision.tier];
   const windSim = new WindSim(windProfile.particles, windProfile.trail, windProfile.stride);
