@@ -483,6 +483,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-19 | refactor/geo-wiring — dettes n° 42 (câblage geo extrait de `main.ts`, testable en Node) et n° 41 (étiquettes hors cadre ou sous un panneau, variante sombre, reliquats du lot C) ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `116991f` | 348 passed vitest (38 fichiers) ; 206 passed / 10 skipped pytest local (Windows) ; bundle 161,62 Ko gzip |
 | 2026-09-19 | feat/public-site — lot D « site public » : site entièrement en anglais (`i18n/en.ts`, noms `name_en`), référencement (Open Graph, JSON-LD, robots, sitemap, favicon, manifeste, `og.jpg`), panneau About, beacon Cloudflare Web Analytics, commentaires GLSL retirés à la transformation (spec `2026-09-19-public-site-design.md`, plan `2026-09-19-public-site.md` 10 tâches, subagent-driven) | ✅ mergée, déployée par CI | `1295853` | 441 passed vitest (43 fichiers) ; 207 passed / 10 skipped pytest local (Windows) ; bundle 159,82 Ko gzip ; Lighthouse SEO 100 |
 | 2026-09-19 | fix/geo-cache-bust — `GEO_VERSION` en `?v=` sur les URL de `geo/` : le cache navigateur d'un jour gardait les noms français après le lot D (signalé par l'utilisateur) | ✅ mergée, déployée par CI | `e359ebd` | 442 passed vitest (43 fichiers) ; bundle 159,84 Ko gzip |
+| 2026-09-19 | feat/starfield — ciel étoilé procédural derrière le globe (`render/stars.ts`, 6 000 / 3 000 points à l'infini, passe opaque avant le globe), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `668cf7a` | 452 passed vitest (44 fichiers) ; bundle 160,88 Ko gzip (+1,04 Ko) |
 
 ## 8. Dette technique connue
 
@@ -572,6 +573,22 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 **Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (6) — Ciel étoilé derrière le globe (merge `668cf7a`), H1 renforcé, indexation Google constatée
+
+- **Ciel étoilé**, à la demande de l'utilisateur (« comme si on observait le globe depuis
+  l'espace ») : chemin borné, design validé en chat (procédural plutôt que photo de Voie lactée,
+  pas de scintillement — §5), TDD, validation navigateur : étoiles derrière le globe, aucune à
+  travers, aucune erreur GLSL, 60 images/s en `low` avec le vent ; réglé à l'œil de 4 000 à
+  6 000 étoiles (`high`) et luminosité minimale 0,18 → 0,3 ; `og.jpg` recapturé (131 Ko) ;
+  aperçu validé par l'utilisateur. Piège évité à la conception : passe transparente (§6).
+- **H1** « GlobeLayers — live 3D weather globe » (`68823c1`) ; **Google a indexé la page le jour
+  même** (inspection d'URL : « La page est indexée », Googlebot smartphone, canonical retenu).
+  « Erreur de traitement temporaire » du sitemap dans l'inspection = retard d'affichage (l'API dit
+  `Valid`, 0 erreur) ; « Aucune page d'origine détectée » = aucun lien entrant encore : normaux.
+- **Tests :** 452 vitest (44 fichiers), `tsc` propre. **Build :** 160,88 Ko gzip.
+- **Prochaine action :** aucun chantier en cours ; lot E (curseur temporel) ou F (recherche de
+  ville) au choix de l'utilisateur (§8). Le référencement dépend maintenant des liens entrants.
 
 ### 2026-09-19 (5) — Correctif : noms restés en français chez les visiteurs déjà venus (cache d'un jour de `geo/`)
 
@@ -1358,7 +1375,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**H1 du panneau About renforcé (`68823c1`) ; lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
+**Dernière mise à jour :** 2026-09-19 (**ciel étoilé procédural derrière le globe, mergé `668cf7a` et déployé** — 452 vitest, bundle 160,88 Ko gzip ; page indexée par Google ; aucun chantier en cours)
+**Entrée précédente :** 2026-09-19 (**H1 du panneau About renforcé (`68823c1`) ; lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**Bing Webmaster : site vérifié (`BingSiteAuth.xml`), sitemap envoyé ; Google Search Console : propriété de domaine ajoutée, vérification DNS TXT en attente de l'utilisateur**)
 **Entrée précédente :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
 **Entrée précédente :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
