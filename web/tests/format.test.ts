@@ -11,7 +11,7 @@ const NOW = Date.parse("2026-09-12T14:24:40Z"); // 12 min après generated_at de
 
 describe("formatAgo", () => {
   it("minutes", () => expect(formatAgo(TEMP.generated_at, NOW)).toBe("12 min ago"));
-  it("just now sous 1 min", () => expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 30_000)).toBe("just now"));
+  it("à l'instant sous 1 min", () => expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 30_000)).toBe("just now"));
   it("heures et minutes au-delà de 60 min", () =>
     expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 95 * 60_000)).toBe("1 h 35 min ago"));
 });
