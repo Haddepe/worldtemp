@@ -575,8 +575,14 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 - Rappel donné à l'utilisateur : la liste de mots de `english.test.ts` est une **liste noire** —
   y ajouter des mots français durcit le contrôle, elle ne contient rien qui soit affiché.
 - **Tests :** 442 vitest, `tsc` propre. **Build :** 159,84 Ko gzip.
-- **Prochaine action :** Google Search Console et Bing Webmaster (accord de l'utilisateur à
-  chaque action), puis lot E ou F (§8).
+- **Bing Webmaster : fait.** Site ajouté, vérifié par `web/public/BingSiteAuth.xml` (`540deb6`,
+  déployé), `sitemap.xml` envoyé, page d'accueil soumise à l'indexation.
+- **Google Search Console : propriété de domaine `sc-domain:globelayers.com` ajoutée, NON
+  vérifiée.** Une propriété de domaine ne se vérifie que par un enregistrement DNS TXT
+  `google-site-verification=…`, et le connecteur Search Console ne donne pas cette valeur :
+  l'utilisateur doit la lire dans l'interface (ou y lancer la vérification automatique
+  Cloudflare). Ensuite : TXT sur la zone Cloudflare, vérification, envoi de `sitemap.xml`.
+- **Prochaine action :** finir Google Search Console (ci-dessus), puis lot E ou F (§8).
 
 ### 2026-09-19 (4) — Lot D (« site public ») : implémenté, revu, validé dans le navigateur, mergé (`1295853`) et déployé
 
@@ -1338,7 +1344,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
+**Dernière mise à jour :** 2026-09-19 (**Bing Webmaster : site vérifié (`BingSiteAuth.xml`), sitemap envoyé ; Google Search Console : propriété de domaine ajoutée, vérification DNS TXT en attente de l'utilisateur**)
+**Entrée précédente :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
 **Entrée précédente :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
 **Entrée précédente :** 2026-09-19 (**lot D « site public » implémenté, revu et validé dans le navigateur sur `feat/public-site`, non mergé** — site en anglais, SEO (Lighthouse 100), About, beacon, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; **attend le jeton d'audience et l'accord de merge**)
 **Entrée précédente :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
