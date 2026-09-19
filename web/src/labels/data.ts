@@ -36,31 +36,31 @@ export interface LabelSet {
 }
 
 function rows(json: unknown, key: string, width: number): unknown[][] {
-  if (typeof json !== "object" || json === null) throw new GeoDataError(`${key} : objet attendu`);
+  if (typeof json !== "object" || json === null) throw new GeoDataError(`${key}: expected an object`);
   const doc = json as Record<string, unknown>;
-  if (doc.version !== 1) throw new GeoDataError(`${key} : version ${String(doc.version)} inconnue`);
+  if (doc.version !== 1) throw new GeoDataError(`${key}: unknown version ${String(doc.version)}`);
   const list = doc[key];
-  if (!Array.isArray(list)) throw new GeoDataError(`${key} : tableau attendu`);
+  if (!Array.isArray(list)) throw new GeoDataError(`${key}: expected an array`);
   for (const r of list) {
-    if (!Array.isArray(r) || r.length !== width) throw new GeoDataError(`${key} : ligne de ${width} champs attendue`);
+    if (!Array.isArray(r) || r.length !== width) throw new GeoDataError(`${key}: expected rows of ${width} fields`);
   }
   return list as unknown[][];
 }
 
 function lonLatName(r: unknown[], key: string): { lon: number; lat: number; name: string } {
   const [lon, lat, name] = r;
-  if (typeof lon !== "number" || !Number.isFinite(lon) || Math.abs(lon) > 180) throw new GeoDataError(`${key} : longitude invalide`);
-  if (typeof lat !== "number" || !Number.isFinite(lat) || Math.abs(lat) > 90) throw new GeoDataError(`${key} : latitude invalide`);
-  if (typeof name !== "string" || name === "") throw new GeoDataError(`${key} : nom invalide`);
+  if (typeof lon !== "number" || !Number.isFinite(lon) || Math.abs(lon) > 180) throw new GeoDataError(`${key}: invalid longitude`);
+  if (typeof lat !== "number" || !Number.isFinite(lat) || Math.abs(lat) > 90) throw new GeoDataError(`${key}: invalid latitude`);
+  if (typeof name !== "string" || name === "") throw new GeoDataError(`${key}: invalid name`);
   return { lon, lat, name };
 }
 
 export function parsePlaces(json: unknown): Place[] {
   return rows(json, "places", 5).map((r) => {
     const pop = r[3];
-    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places : population invalide");
+    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places: invalid population");
     const cap = r[4];
-    if (cap !== 0 && cap !== 1) throw new GeoDataError("places : drapeau de capitale hors {0, 1}");
+    if (cap !== 0 && cap !== 1) throw new GeoDataError("places: capital flag outside {0, 1}");
     return { ...lonLatName(r, "places"), pop, capital: cap === 1 };
   });
 }
@@ -68,7 +68,7 @@ export function parsePlaces(json: unknown): Place[] {
 export function parseCountries(json: unknown): Country[] {
   return rows(json, "countries", 4).map((r) => {
     const rank = r[3];
-    if (typeof rank !== "number" || !Number.isFinite(rank)) throw new GeoDataError("countries : rang invalide");
+    if (typeof rank !== "number" || !Number.isFinite(rank)) throw new GeoDataError("countries: invalid rank");
     return { ...lonLatName(r, "countries"), rank };
   });
 }

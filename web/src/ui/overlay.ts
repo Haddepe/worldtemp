@@ -26,7 +26,7 @@ export interface Overlay {
 
 export function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
-  if (!el) throw new Error(`élément #${id} introuvable`);
+  if (!el) throw new Error(`element #${id} not found`);
   return el as T;
 }
 

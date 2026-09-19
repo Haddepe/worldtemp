@@ -31,11 +31,11 @@ const HEADER = 10;
 const MAX_STEP = (MAX_SEGMENT_DEG * Math.PI) / 180;
 
 export function parseRivers(buffer: ArrayBuffer): RiverSegments {
-  if (buffer.byteLength < HEADER) throw new RiversError("en-tête tronqué");
+  if (buffer.byteLength < HEADER) throw new RiversError("truncated header");
   const view = new DataView(buffer);
   const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
-  if (magic !== "WTRV") throw new RiversError("magic WTRV attendu");
-  if (view.getUint16(4, true) !== 1) throw new RiversError(`version ${view.getUint16(4, true)} inconnue`);
+  if (magic !== "WTRV") throw new RiversError("expected magic WTRV");
+  if (view.getUint16(4, true) !== 1) throw new RiversError(`unknown version ${view.getUint16(4, true)}`);
   const lines = view.getUint32(6, true);
 
   const starts: number[] = [];
@@ -48,20 +48,20 @@ export function parseRivers(buffer: ArrayBuffer): RiverSegments {
   let o = HEADER;
   let lastRank = 0;
   for (let l = 0; l < lines; l++) {
-    if (o + 4 > buffer.byteLength) throw new RiversError("ligne tronquée");
+    if (o + 4 > buffer.byteLength) throw new RiversError("truncated line");
     const rank = view.getUint8(o);
     // Réservé = 0 en version 1 : autre chose annonce un format qu'on lirait de travers.
-    if (view.getUint8(o + 1) !== 0) throw new RiversError("octet réservé non nul");
+    if (view.getUint8(o + 1) !== 0) throw new RiversError("non-zero reserved byte");
     const n = view.getUint16(o + 2, true);
     o += 4;
-    if (n < 2) throw new RiversError("ligne de moins de deux points");
-    if (rank < lastRank) throw new RiversError("lignes non triées par rang");
+    if (n < 2) throw new RiversError("line with fewer than two points");
+    if (rank < lastRank) throw new RiversError("lines not sorted by rank");
     lastRank = rank;
-    if (o + n * 4 > buffer.byteLength) throw new RiversError("points tronqués");
+    if (o + n * 4 > buffer.byteLength) throw new RiversError("truncated points");
     for (let i = 0; i < n; i++, o += 4) {
       const lon = view.getInt16(o, true);
       const lat = view.getInt16(o + 2, true);
-      if (Math.abs(lon) > 18000 || Math.abs(lat) > 9000) throw new RiversError("coordonnée hors bornes");
+      if (Math.abs(lon) > 18000 || Math.abs(lat) > 9000) throw new RiversError("coordinate out of range");
       lonLatToVec3(lon / 100, lat / 100, b);
       if (i > 0) {
         const angle = a.angleTo(b);
@@ -84,7 +84,7 @@ export function parseRivers(buffer: ArrayBuffer): RiverSegments {
       a.copy(b);
     }
   }
-  if (o !== buffer.byteLength) throw new RiversError("octets en trop");
+  if (o !== buffer.byteLength) throw new RiversError("trailing bytes");
 
   const countByRank = new Uint32Array(lastRank + 1);
   for (const r of ranks) countByRank[r] = countByRank[r]! + 1;

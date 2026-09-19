@@ -39,7 +39,7 @@ export class WindLoader {
       if (prev && !needsTextureFetch(prev.entryU, entryU) && !needsTextureFetch(prev.entryV, entryV)) return null;
       // `sampleUV` décode en ligne, en linéaire : un encodage racine passerait silencieusement faux
       if (entryU.encoding.scale !== "linear" || entryV.encoding.scale !== "linear") {
-        throw new TextureError("encodage du vent non linéaire");
+        throw new TextureError("non-linear wind encoding");
       }
       const results = await Promise.allSettled([
         this.deps.fetchBitmap(textureUrl(this.baseUrl, entryU)),
@@ -55,12 +55,12 @@ export class WindLoader {
       try {
         for (const b of [bu, bv]) {
           if (b.width !== grid.width || b.height !== grid.height) {
-            throw new TextureError(`vent ${b.width}×${b.height}, grille ${grid.width}×${grid.height} attendue`);
+            throw new TextureError(`wind ${b.width}×${b.height}, expected grid ${grid.width}×${grid.height}`);
           }
         }
         const u = this.deps.bitmapPixels(bu);
         const v = this.deps.bitmapPixels(bv);
-        if (!u || !v) throw new Error("pixels du vent illisibles");
+        if (!u || !v) throw new Error("unreadable wind pixels");
         if (this.disposed) return null;
         const n = grid.width * grid.height;
         const uv = new Uint8Array(n * 2); // canal R des deux RGBA, entrelacé

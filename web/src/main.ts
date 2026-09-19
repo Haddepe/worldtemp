@@ -31,17 +31,17 @@ const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "
 
 async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex }> {
   const m = await fetch(`${TILES_BASE_URL}/manifest.json`, { cache: "no-cache", signal: AbortSignal.timeout(10_000) });
-  if (!m.ok) throw new Error(`HTTP ${m.status} sur manifest.json`);
+  if (!m.ok) throw new Error(`HTTP ${m.status} for manifest.json`);
   const manifest = parseManifest(await m.json());
   const i = await fetch(`${TILES_BASE_URL}/${manifest.map.index}`, { signal: AbortSignal.timeout(10_000) });
-  if (!i.ok) throw new Error(`HTTP ${i.status} sur ${manifest.map.index}`);
+  if (!i.ok) throw new Error(`HTTP ${i.status} for ${manifest.map.index}`);
   return { manifest, index: TileIndex.parse(await i.arrayBuffer()) };
 }
 
 async function boot(): Promise<void> {
   const ui = createOverlay();
   const canvas = document.getElementById("globe") as HTMLCanvasElement | null;
-  if (!canvas) throw new Error("canvas #globe introuvable");
+  if (!canvas) throw new Error("canvas #globe not found");
 
   let sceneHandle: ReturnType<typeof createScene>;
   try {
@@ -163,9 +163,9 @@ async function boot(): Promise<void> {
       fallback?.dispose();
       fallback = null;
       tilesReady = true;
-      console.info(`[worldtemp] tuiles : map ≤ ${manifest.map.maxLevel}, sat ≤ ${manifest.sat.maxLevel}`);
+      console.info(`[worldtemp] tiles: map ≤ ${manifest.map.maxLevel}, sat ≤ ${manifest.sat.maxLevel}`);
     } catch (e) {
-      console.warn("[worldtemp] tuiles indisponibles, repli Blue Marble 4K :", e);
+      console.warn("[worldtemp] tiles unavailable, falling back to Blue Marble 4K:", e);
       if (!fallback) {
         fallback = await new THREE.TextureLoader().loadAsync("/textures/blue-marble-4k.jpg").catch(() => null);
         if (fallback) {
@@ -283,7 +283,7 @@ async function boot(): Promise<void> {
     try {
       await layerLoader.load(entry, manifest.grid);
     } catch (e) {
-      console.warn(`[worldtemp] couche ${id} indisponible :`, e);
+      console.warn(`[worldtemp] layer ${id} unavailable:`, e);
       failed.set(id!, entry.generated_at);
       menu.setDisabled(id!, true);
       if (activeId === id) {
@@ -310,7 +310,7 @@ async function boot(): Promise<void> {
     geo.setValueSource(tooltipData, true); // couche affichée, même si ses pixels sont illisibles
     sceneHandle.requestRender();
     refreshBanner();
-    console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);
+    console.info(`[worldtemp] layer ${id} ${entry.run} f${entry.forecast_hour}, valid ${entry.valid_time_utc}`);
   };
 
   stopWind = () => {
@@ -333,7 +333,7 @@ async function boot(): Promise<void> {
       try {
         await windLoader.load(entryU!, entryV!, manifest!.grid);
       } catch (e) {
-        console.warn("[worldtemp] vent indisponible :", e);
+        console.warn("[worldtemp] wind unavailable:", e);
         windFailedAt = entryU!.generated_at;
       }
     }
@@ -386,7 +386,7 @@ async function boot(): Promise<void> {
       await applyWind();
       refreshBanner();
     } catch (e) {
-      console.warn("[worldtemp] manifeste indisponible :", e);
+      console.warn("[worldtemp] manifest unavailable:", e);
       updateFailed = manifests.manifest !== null;
       await applyWind(); // manifeste absent → switch désactivé
       refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)

@@ -57,7 +57,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
         deps.labels.setData(await labelSet());
         labelsLoaded = true;
       } catch (e) {
-        console.warn("[worldtemp] étiquettes indisponibles :", e);
+        console.warn("[worldtemp] labels unavailable:", e);
         labelsToggle.setDisabled(true);
         return;
       }
@@ -92,7 +92,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
       try {
         rivers = await buildRivers();
       } catch (e) {
-        console.warn("[worldtemp] fleuves indisponibles :", e);
+        console.warn("[worldtemp] rivers unavailable:", e);
         riversToggle.setDisabled(true);
         return;
       }
@@ -129,7 +129,7 @@ export interface GeoHandle {
 
 async function fetchGeo(url: string): Promise<Response> {
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
   return r;
 }
 

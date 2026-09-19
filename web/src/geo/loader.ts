@@ -17,9 +17,9 @@ export async function loadLabelSet(base: string, fetchJson: (url: string) => Pro
     fetchJson(`${base}/places.json`).then(parsePlaces),
     fetchJson(`${base}/countries.json`).then(parseCountries),
   ]);
-  if (places.status === "rejected") console.warn("[worldtemp] villes indisponibles :", places.reason);
-  if (countries.status === "rejected") console.warn("[worldtemp] pays indisponibles :", countries.reason);
-  if (places.status === "rejected" && countries.status === "rejected") throw new Error("étiquettes indisponibles");
+  if (places.status === "rejected") console.warn("[worldtemp] cities unavailable:", places.reason);
+  if (countries.status === "rejected") console.warn("[worldtemp] countries unavailable:", countries.reason);
+  if (places.status === "rejected" && countries.status === "rejected") throw new Error("labels unavailable");
   const p: Place[] = places.status === "fulfilled" ? places.value : [];
   const c: Country[] = countries.status === "fulfilled" ? countries.value : [];
   return buildLabelSet(p, c);

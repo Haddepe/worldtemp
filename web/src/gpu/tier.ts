@@ -26,12 +26,12 @@ const MOBILE_UA = /Mobi|Android/i;
 export function decideTier(i: TierInputs): TierDecision {
   const forced = new URLSearchParams(i.urlSearch).get("tier");
   if (forced === "high" || forced === "low") {
-    return { tier: forced, reason: `paramètre d'URL tier=${forced}` };
+    return { tier: forced, reason: `URL parameter tier=${forced}` };
   }
 
   if (i.rendererName) {
-    if (HIGH_GPU.test(i.rendererName)) return { tier: "high", reason: `GPU « ${i.rendererName} »` };
-    if (LOW_GPU.test(i.rendererName)) return { tier: "low", reason: `GPU « ${i.rendererName} »` };
+    if (HIGH_GPU.test(i.rendererName)) return { tier: "high", reason: `GPU "${i.rendererName}"` };
+    if (LOW_GPU.test(i.rendererName)) return { tier: "low", reason: `GPU "${i.rendererName}"` };
   }
 
   const cores = i.hardwareConcurrency ?? 0;
@@ -41,7 +41,7 @@ export function decideTier(i: TierInputs): TierDecision {
   if (MOBILE_UA.test(i.userAgent) && i.devicePixelRatio < 2) {
     return { tier: "low", reason: `mobile, devicePixelRatio ${i.devicePixelRatio}` };
   }
-  return { tier: "high", reason: "heuristique par défaut" };
+  return { tier: "high", reason: "default heuristic" };
 }
 
 /** Lit le navigateur puis délègue à `decideTier`. */

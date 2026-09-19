@@ -25,14 +25,6 @@ const FRENCH_WORD = new RegExp(
   "i",
 );
 
-/** Fichiers pas encore convertis : chaque tâche retire les siens ; vide à la fin de T3. */
-const PENDING: string[] = [
-  "data/loader.ts", "data/manifest.ts", "data/pixels.ts", "geo/loader.ts", "geo/wiring.ts", "gpu/tier.ts",
-  "labels/data.ts", "layers/cache.ts", "main.ts", "render/wind.ts", "rivers/data.ts", "tiles/grid.ts",
-  "tiles/index.ts", "tiles/loader.ts", "tiles/manifest.ts", "ui/overlay.ts",
-  "wind/loader.ts", "wind/sim.ts",
-];
-
 function tsFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -49,13 +41,8 @@ function frenchLiterals(source: string): string[] {
 describe("tout ce qui est livré est en anglais (spec site public §3.1)", () => {
   const files = tsFiles(SRC).map((path) => ({ path, rel: relative(SRC, path).replaceAll("\\", "/") }));
 
-  it.each(files.filter((f) => !PENDING.includes(f.rel)))("$rel : aucun littéral français", ({ path }) => {
+  it.each(files)("$rel : aucun littéral français", ({ path }) => {
     expect(frenchLiterals(readFileSync(path, "utf8"))).toEqual([]);
-  });
-
-  it("la liste PENDING ne cite que des fichiers existants", () => {
-    const known = new Set(files.map((f) => f.rel));
-    expect(PENDING.filter((p) => !known.has(p))).toEqual([]);
   });
 
   it("index.html : aucun texte français", () => {

@@ -20,7 +20,7 @@ export interface TileLoaderDeps {
 export const browserTileDeps: TileLoaderDeps = {
   async fetchBitmap(url, signal) {
     const r = await fetch(url, { signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     const blob = await r.blob();
     return createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });
   },

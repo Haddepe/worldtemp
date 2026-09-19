@@ -50,33 +50,33 @@ type Rec = Record<string, unknown>;
 
 function record(value: unknown, field: string): Rec {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new MetadataError(field, "objet attendu");
+    throw new MetadataError(field, "expected an object");
   }
   return value as Rec;
 }
 
 function num(o: Rec, key: string, field: string): number {
   const v = o[key];
-  if (typeof v !== "number" || !Number.isFinite(v)) throw new MetadataError(field, "nombre attendu");
+  if (typeof v !== "number" || !Number.isFinite(v)) throw new MetadataError(field, "expected a number");
   return v;
 }
 
 function posInt(o: Rec, key: string, field: string): number {
   const v = num(o, key, field);
-  if (!Number.isInteger(v) || v <= 0) throw new MetadataError(field, "entier strictement positif attendu");
+  if (!Number.isInteger(v) || v <= 0) throw new MetadataError(field, "expected a strictly positive integer");
   return v;
 }
 
 function str(o: Rec, key: string, field: string): string {
   const v = o[key];
-  if (typeof v !== "string" || v.length === 0) throw new MetadataError(field, "chaîne non vide attendue");
+  if (typeof v !== "string" || v.length === 0) throw new MetadataError(field, "expected a non-empty string");
   return v;
 }
 
 function isoUtc(o: Rec, key: string, field: string): string {
   const v = str(o, key, field);
   if (!ISO_UTC.test(v) || Number.isNaN(Date.parse(v))) {
-    throw new MetadataError(field, "date ISO 8601 UTC attendue (YYYY-MM-DDTHH:MM:SSZ)");
+    throw new MetadataError(field, "expected an ISO 8601 UTC date (YYYY-MM-DDTHH:MM:SSZ)");
   }
   return v;
 }
@@ -84,12 +84,12 @@ function isoUtc(o: Rec, key: string, field: string): string {
 function parseEncoding(raw: unknown, field: string): Encoding {
   const e = record(raw, field);
   const bits = num(e, "bits", `${field}.bits`);
-  if (bits !== 8) throw new MetadataError(`${field}.bits`, `8 attendu, reçu ${bits}`);
+  if (bits !== 8) throw new MetadataError(`${field}.bits`, `expected 8, got ${bits}`);
   const min = num(e, "min", `${field}.min`);
   const max = num(e, "max", `${field}.max`);
-  if (!(min < max)) throw new MetadataError(`${field}.min`, "doit être < max");
+  if (!(min < max)) throw new MetadataError(`${field}.min`, "must be < max");
   const scale = e.scale;
-  if (scale !== "linear" && scale !== "sqrt") throw new MetadataError(`${field}.scale`, "« linear » ou « sqrt » attendu");
+  if (scale !== "linear" && scale !== "sqrt") throw new MetadataError(`${field}.scale`, 'expected "linear" or "sqrt"');
   return { bits, min, max, scale };
 }
 
@@ -113,7 +113,7 @@ function parseEntry(raw: unknown, field: string): LayerEntry {
 export function parseManifest(raw: unknown): Manifest {
   const o = record(raw, "latest.json");
   if (o.schema_version !== 2) {
-    throw new MetadataError("schema_version", `version inconnue (${String(o.schema_version)}), 2 attendue`);
+    throw new MetadataError("schema_version", `unknown version (${String(o.schema_version)}), expected 2`);
   }
   const g = record(o.grid, "grid");
   const grid: Grid = {
@@ -129,6 +129,6 @@ export function parseManifest(raw: unknown): Manifest {
   const rawLayers = record(o.layers, "layers");
   const layers: Record<string, LayerEntry> = {};
   for (const id of Object.keys(rawLayers)) layers[id] = parseEntry(rawLayers[id], `layers.${id}`);
-  if (Object.keys(layers).length === 0) throw new MetadataError("layers", "aucune couche");
+  if (Object.keys(layers).length === 0) throw new MetadataError("layers", "no layer");
   return { schema_version: 2, generated_at: isoUtc(o, "generated_at", "generated_at"), grid, layers };
 }

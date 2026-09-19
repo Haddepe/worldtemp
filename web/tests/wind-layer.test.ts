@@ -63,7 +63,7 @@ describe("createWindLayer — quads instanciés, un par segment de traînée", (
     expect(material.uniforms.uPixelRatio!.value).toBe(1.5);
   });
   it("refuse un tampon de taille inattendue", () => {
-    expect(() => createWindLayer(new Float32Array(5), N, K)).toThrowError(/taille/);
+    expect(() => createWindLayer(new Float32Array(5), N, K)).toThrowError(/unexpected/);
   });
   it("le vertex shader embarque le fragment partagé d'élargissement", () => {
     expect(material.vertexShader).toContain("vec4 screenQuad(");

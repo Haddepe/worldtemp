@@ -44,7 +44,7 @@ export function isStale(entry: LayerEntry, nowMs: number, staleAfterMs: number):
 export function bitmapToTexture(bitmap: ImageBitmap, grid: Pick<Grid, "width" | "height">): THREE.Texture {
   if (bitmap.width !== grid.width || bitmap.height !== grid.height) {
     if (typeof bitmap.close === "function") bitmap.close();
-    throw new TextureError(`texture ${bitmap.width}×${bitmap.height}, grille ${grid.width}×${grid.height} attendue`);
+    throw new TextureError(`texture ${bitmap.width}×${bitmap.height}, expected grid ${grid.width}×${grid.height}`);
   }
   return asDataTexture(new THREE.Texture(bitmap));
 }
@@ -78,12 +78,12 @@ export function softenedTexture(
 export const browserDeps: LoaderDeps = {
   async fetchJson(url) {
     const r = await fetch(url, { cache: "no-cache" });
-    if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     return r.json();
   },
   async fetchBitmap(url) {
     const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     const blob = await r.blob();
     return createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });
   },
@@ -149,7 +149,7 @@ export class LayerLoader {
       try {
         pixels = this.deps.bitmapPixels(bitmap);
       } catch (e) {
-        console.warn(`[worldtemp] lecture des pixels de la couche ${this.id} impossible :`, e);
+        console.warn(`[worldtemp] cannot read pixels of layer ${this.id}:`, e);
       }
       if (this.soften > 0 && pixels) {
         // sans pixels lisibles, on garde la texture brute : rendu moins doux, jamais absent
