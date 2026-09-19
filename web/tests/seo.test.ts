@@ -41,6 +41,7 @@ describe("référencement — <head> (spec site public §4)", () => {
     }
     expect(metaContent(html, "twitter:card")).toBe("summary_large_image");
     expect(metaContent(html, "twitter:image")).toBe(`${SITE}/og.jpg`);
+    expect(metaContent(html, "twitter:image:alt")).toBe(metaContent(html, "og:image:alt"));
   });
 
   it("icônes et manifeste", () => {
@@ -57,7 +58,10 @@ describe("référencement — <head> (spec site public §4)", () => {
     expect(ld["@type"]).toBe("WebApplication");
     expect(ld.name).toBe("GlobeLayers");
     expect(ld.url).toBe(`${SITE}/`);
+    expect(ld.description).toBe(metaContent(html, "description"));
     expect(ld.applicationCategory).toBe("WeatherApplication");
+    expect(ld.operatingSystem).toBe("Any");
+    expect(ld.browserRequirements).toBe("Requires WebGL");
     expect(ld.inLanguage).toBe("en");
     expect(ld.isAccessibleForFree).toBe(true);
     expect(ld.offers.price).toBe("0");
