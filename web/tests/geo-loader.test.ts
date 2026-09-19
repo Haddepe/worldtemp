@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadLabelSet, loadRivers, once } from "../src/geo/loader";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { GEO_VERSION, loadLabelSet, loadRivers, once } from "../src/geo/loader";
 import { encodeRivers } from "./rivers-fixture";
 
 const PLACES = { version: 1, places: [[2.35, 48.86, "Paris", 11000000, 1]] };
@@ -19,15 +21,15 @@ describe("once — un seul chargement par session (spec repères §6)", () => {
 
 describe("loadLabelSet", () => {
   it("charge villes et pays", async () => {
-    const fetchJson = vi.fn(async (url: string) => (url.endsWith("places.json") ? PLACES : COUNTRIES));
+    const fetchJson = vi.fn(async (url: string) => (url.includes("places.json") ? PLACES : COUNTRIES));
     const set = await loadLabelSet("/geo", fetchJson);
     expect(set.items.map((i) => i.name)).toEqual(["France", "Paris"]);
-    expect(fetchJson.mock.calls.map((c) => c[0]).sort()).toEqual(["/geo/countries.json", "/geo/places.json"]);
+    expect(fetchJson.mock.calls.map((c) => c[0]).sort()).toEqual([`/geo/countries.json?v=${GEO_VERSION}`, `/geo/places.json?v=${GEO_VERSION}`]);
   });
   it("un seul fichier en échec : l'autre s'affiche quand même", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const set = await loadLabelSet("/geo", async (url) => {
-      if (url.endsWith("countries.json")) throw new Error("404");
+      if (url.includes("countries.json")) throw new Error("404");
       return PLACES;
     });
     expect(set.items.map((i) => i.name)).toEqual(["Paris"]);
@@ -46,9 +48,23 @@ describe("loadRivers", () => {
     const fetchBuffer = vi.fn(async () => encodeRivers([[1, [[0, 0], [100, 0]]]]));
     const seg = await loadRivers("/geo", fetchBuffer);
     expect(seg.count).toBe(1);
-    expect(fetchBuffer).toHaveBeenCalledWith("/geo/rivers.bin");
+    expect(fetchBuffer).toHaveBeenCalledWith(`/geo/rivers.bin?v=${GEO_VERSION}`);
   });
   it("binaire invalide : rejet", async () => {
     await expect(loadRivers("/geo", async () => new ArrayBuffer(3))).rejects.toThrowError();
+  });
+});
+
+describe("GEO_VERSION — invalide le cache navigateur d'un jour des fichiers geo/", () => {
+  it("vaut l'empreinte FNV-1a des trois fichiers commités : à relever après chaque `tools/build_geo.py`", () => {
+    // Sans cela, un visiteur déjà venu garde l'ancienne copie pendant 24 h (noms restés en
+    // français après le passage du site à l'anglais, 2026-09-19).
+    let h = 0x811c9dc5;
+    for (const name of ["places.json", "countries.json", "rivers.bin"]) {
+      for (const byte of readFileSync(join(__dirname, "..", "public", "geo", name))) {
+        h = Math.imul(h ^ byte, 0x01000193) >>> 0;
+      }
+    }
+    expect(GEO_VERSION).toBe(h.toString(16).padStart(8, "0"));
   });
 });
