@@ -502,8 +502,10 @@ que par un test : ce sont eux qui se reproduisent.)*
   de mémoire (1,1 Go libre sur 7,9) pendant l'attente ; l'utilisateur avait déjà testé. Port
   libre, pas de node orphelin cette fois.
 - **T12** : merge local `--no-ff` `c4ed59e` dans `master`, tests et build relancés sur le résultat,
-  push (spec `fae97ec` et plan `d545af6` partent avec), déploiement par CI, espace de travail
-  `.superpowers/sdd/2026-09-18-labels-rivers/` supprimé, branche supprimée en local.
+  push (spec `fae97ec` et plan `d545af6` partent avec), prod vérifiée (bundle `index-DZpEjsvi.js` identique au build local ; `/geo/places.json`,
+  `/geo/countries.json`, `/geo/rivers.bin` en 200), branche supprimée en local (jamais poussée).
+  Espace de travail `.superpowers/sdd/2026-09-18-labels-rivers/` **conservé** (648 Ko, git-ignoré)
+  comme ceux des lots précédents : il porte le rapport de validation cité plus bas.
 - **Tests :** 326 vitest (37 fichiers), `tsc` propre ; 204 passed / 10 skipped pytest local.
 - **Build :** `index-*.js` 160,65 Ko gzip.
 - **Prochaine action :** aucun lot en cours. Pistes : dettes §8 (n° 38–42), brainstorming du
