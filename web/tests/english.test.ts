@@ -29,7 +29,7 @@ const FRENCH_WORD = new RegExp(
 const PENDING: string[] = [
   "data/loader.ts", "data/manifest.ts", "data/pixels.ts", "geo/loader.ts", "geo/wiring.ts", "gpu/tier.ts",
   "labels/data.ts", "layers/cache.ts", "main.ts", "render/wind.ts", "rivers/data.ts", "tiles/grid.ts",
-  "tiles/index.ts", "tiles/loader.ts", "tiles/manifest.ts", "ui/layers-menu.ts", "ui/overlay.ts",
+  "tiles/index.ts", "tiles/loader.ts", "tiles/manifest.ts", "ui/overlay.ts",
   "wind/loader.ts", "wind/sim.ts",
 ];
 
@@ -56,5 +56,12 @@ describe("tout ce qui est livré est en anglais (spec site public §3.1)", () =>
   it("la liste PENDING ne cite que des fichiers existants", () => {
     const known = new Set(files.map((f) => f.rel));
     expect(PENDING.filter((p) => !known.has(p))).toEqual([]);
+  });
+
+  it("index.html : aucun texte français", () => {
+    const html = readFileSync(join(WEB, "index.html"), "utf8");
+    expect(html).toContain('<html lang="en">');
+    expect(html.match(FRENCH_LETTER)).toBeNull();
+    expect(html.match(FRENCH_WORD)).toBeNull();
   });
 });

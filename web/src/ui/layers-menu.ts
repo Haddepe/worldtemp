@@ -1,4 +1,5 @@
 /** Menu radio des couches (spec couches §12) : DOM seulement, l'ordre et la disponibilité viennent de layers/select.ts. */
+import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
 
 export interface LayersMenu {
@@ -11,7 +12,7 @@ const NONE = "none";
 
 export function createLayersMenu(container: HTMLElement, onChange: (id: string | null) => void): LayersMenu {
   container.setAttribute("role", "radiogroup");
-  container.setAttribute("aria-label", "Couche");
+  container.setAttribute("aria-label", STRINGS.layersMenuLabel);
   const buttons = new Map<string, HTMLButtonElement>();
   let active: string | null = null;
 
@@ -63,7 +64,7 @@ export function createLayersMenu(container: HTMLElement, onChange: (id: string |
     setLayers(defs) {
       container.replaceChildren();
       buttons.clear();
-      const none = button(NONE, "Aucune");
+      const none = button(NONE, STRINGS.layers.none);
       buttons.set(NONE, none);
       container.appendChild(none);
       for (const d of defs) {
@@ -82,7 +83,7 @@ export function createLayersMenu(container: HTMLElement, onChange: (id: string |
       const b = buttons.get(id);
       if (!b) return;
       b.disabled = disabled;
-      b.title = disabled ? "Indisponible" : "";
+      b.title = disabled ? STRINGS.unavailable : "";
     },
   };
 }

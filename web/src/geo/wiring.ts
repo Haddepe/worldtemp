@@ -6,6 +6,7 @@
  */
 import type * as THREE from "three";
 import type { Tier } from "../gpu/tier";
+import { STRINGS } from "../i18n";
 import { LabelsController } from "../labels/controller";
 import type { LabelSet } from "../labels/data";
 import { createLabelsLayer } from "../labels/layer";
@@ -67,7 +68,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
     labelsOn = on;
     deps.replaceSearch(withFlag(deps.search(), "labels", on));
     void applyLabels();
-  }, "Étiquettes indisponibles");
+  }, STRINGS.toggles.labelsUnavailable);
   labelsToggle.setOn(labelsOn);
 
   let rivers: RiversLayer | null = null;
@@ -107,7 +108,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
     riversOn = on;
     deps.replaceSearch(withFlag(deps.search(), "rivers", on));
     void applyRivers();
-  }, "Fleuves indisponibles");
+  }, STRINGS.toggles.riversUnavailable);
   riversToggle.setOn(riversOn);
 
   return {

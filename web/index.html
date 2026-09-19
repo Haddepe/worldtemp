@@ -1,27 +1,27 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="description" content="Globe 3D de la météo mondiale : température, nuages, pluie, pression, humidité, qualité de l'air (NOAA GFS et GEFS-Aerosols)." />
-    <title>GlobeLayers — météo mondiale en 3D</title>
+    <meta name="description" content="Interactive 3D weather globe: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data updated hourly." />
+    <title>GlobeLayers — Live 3D Weather Globe</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <canvas id="globe" aria-label="Globe 3D météo"></canvas>
+    <canvas id="globe" aria-label="3D weather globe"></canvas>
     <div id="labels" aria-hidden="true"></div>
     <div id="overlay">
       <header id="banner" class="panel">
-        <span id="banner-text">Chargement…</span>
-        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Replier ou déployer les panneaux">▾</button>
+        <span id="banner-text">Loading…</span>
+        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Collapse or expand panels">▾</button>
       </header>
       <div id="status" class="panel" role="status" hidden></div>
-      <aside id="legend" class="panel" aria-label="Légende de la couche"></aside>
+      <aside id="legend" class="panel" aria-label="Layer legend"></aside>
       <aside id="controls" class="panel">
         <div id="layers-menu"></div>
-        <button id="wind-toggle" type="button" role="switch" aria-checked="false" disabled>Vent</button>
-        <button id="labels-toggle" type="button" role="switch" aria-checked="false">Étiquettes</button>
-        <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Fleuves</button>
+        <button id="wind-toggle" type="button" role="switch" aria-checked="false" disabled>Wind</button>
+        <button id="labels-toggle" type="button" role="switch" aria-checked="false">Labels</button>
+        <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Rivers</button>
       </aside>
       <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · NOAA GFS · GEFS-Aerosols</p>
       <div id="ad-slot" hidden></div>
