@@ -506,7 +506,7 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 
 | Lot | Contenu | Pourquoi / coût | Statut |
 |---|---|---|---|
-| **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — spec écrite (`3766919`), plan à suivre |
+| **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — spec (`3766919`, `b00bc25`) et plan `docs/superpowers/plans/2026-09-19-public-site.md` (`d4f9f5b`, 10 tâches) écrits ; exécution à suivre sur `feat/public-site` |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | 🟡 à faire |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | 🟡 à faire |
 
@@ -549,7 +549,11 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
   utilisateur : tout le site passe en anglais** (une seule langue, autres langues plus tard,
   vérification finale exigée). Spec `docs/superpowers/specs/2026-09-19-public-site-design.md`.
   `globelayers.com` n'est déclaré ni dans Google Search Console ni dans Bing Webmaster (vérifié).
-- **Prochaine action :** relecture de la spec par l'utilisateur → plan (`writing-plans`) → exécution.
+- **Spec validée par l'utilisateur, plan écrit** (`d4f9f5b`, 10 tâches : T1 `STRINGS` + formats +
+  garde-fou `english.test.ts`, T2 interface, T3 messages développeur, T4 noms `name_en`, T5 `<head>`
+  et fichiers statiques, T6 panneau About, T7 beacon, T8 revue de cohérence, T9 validation
+  navigateur + `og.jpg` + icône, T10 jeton, merge, moteurs de recherche, HISTORY).
+- **Prochaine action :** choix du mode d'exécution par l'utilisateur, puis T1 sur `feat/public-site`.
 
 ### 2026-09-19 (2) — Dettes n° 42 puis n° 41 traitées, validées dans le navigateur, mergées (`116991f`) et déployées
 
