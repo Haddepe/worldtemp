@@ -496,7 +496,53 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 41 | **Reliquats du lot C** (revue finale 2026-09-18, détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-18-labels-rivers/progress.md`) : étiquettes coupées au bord droit de l'écran ou passant sous le bandeau de statut (`projectToScreen` sans marge) ; variante sombre indexée sur `source === null` (couche aux pixels illisibles → texte sombre sur couche colorée) ; 36 lignes de rang 8 jamais affichables dans `countries.json` ; `fit_budget` sans plafond d'itérations ; double projection dans `LabelsController.refresh()` ; `deps.size()` lu 2–3 fois par vue ; rattrapage non annulé à l'extinction (inoffensif) ; écouteur `onViewChange` des fleuves actif même éteint ; commentaire du `catch` externe de `scene.ts` périmé depuis l'isolation des écouteurs de vue ; `labels/data.ts` n'écarte pas un `cap` hors {0,1} ; octet réservé de `rivers.bin` non vérifié | Cosmétique ou robustesse marginale ; aucun critère d'acceptation touché | ✅ résolu 2026-09-19 (`3c59f4d`, `681525b`) : cadre + obstacles dans `selectLabels`, `layerShown`, `MAX_COUNTRY_RANK`, `fit_budget` borné, une projection et une lecture de taille par vue, écouteur des fleuves inactif éteint, parseurs durcis, commentaire corrigé. **Laissé tel quel, assumé** : rattrapage non annulé à l'extinction (le callback revérifie `enabled`/`set`, aucun effet) |
 | 42 | **`main.ts` atteint 495 lignes** : le bloc des repères géographiques (chargement, deux interrupteurs, contrôleur, fleuves) y est autonome ; la revue finale recommande de l'extraire en `geo/wiring.ts` (`setupGeo({ ui, scene, canvas, tier })`), dans la lignée de la recommandation du lot B1 (machine à états de `main.ts`) | Chaque nouveau lot ajoute des points de réentrance dans un fichier sans test (I1 du lot C, TDZ du lot vent) | ✅ résolu 2026-09-19 (`7f9f2f7`) pour le bloc geo : `geo/wiring.ts`, 11 tests, `main.ts` 411 lignes. La machine à états des couches et du vent (recommandation B1) reste dans `main.ts` : non extraite |
 
+### Chantiers à venir (feuille de route, relevée le 2026-09-19)
+
+La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
+chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
+Ordre recommandé le 2026-09-19 : D → E → F → finitions.
+
+**Lots identifiés**
+
+| Lot | Contenu | Pourquoi / coût | Statut |
+|---|---|---|---|
+| **D — « site public »** | Référencement, partage, mesure d'audience (détail : lignes R1–R2 ci-dessous) | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — brainstorming |
+| **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | 🟡 à faire |
+| **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | 🟡 à faire |
+
+**Hors plan d'origine, manquant sur un site public**
+
+| # | Manque | Détail (état au 2026-09-19) | Lot |
+|---|---|---|---|
+| R1 | **Référencement** | `<head>` = `title` + `description` seulement : ni Open Graph ni image de partage, ni favicon, ni `robots.txt`, ni `sitemap.xml`, ni `canonical`, ni données structurées ; site en français seulement | D |
+| R2 | **Mesure d'audience** | Aucun script d'analytics dans le code | D |
+| R3 | **Dimension temporelle** | Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances | E |
+| R4 | **Recherche et localisation** | Ni recherche de ville ni « ma position » | F |
+| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS) | — |
+| R6 | **PWA et hors-ligne** | Rien | — |
+
+**Prévu par `docs/PLAN.md`, pas fait**
+
+| # | Reste | État | Avis |
+|---|---|---|---|
+| P1 | Relief 3D géométrique (displacement map, phase 4) | Remplacé par un hillshade dans les tuiles (spec 3, choix assumé) | **Déconseillé** *(analyse 2026-09-19, estimation non mesurée)* : coût par image faible (une lecture de texture par sommet, patchs 32×32 / 16×16), mais canaux des tuiles `map` tous pris → nouveau jeu de tuiles (R2 déjà à 4,5 Go / 10, mémoire GPU `low` 96 Mo) ; maillage à densifier ; vent (1,002), fleuves (1,001), picking, étiquettes et horizon supposent une sphère lisse ; jupes 0,005 insuffisantes ; bénéfice visible seulement au limbe (caméra toujours à l'aplomb). Alternatives presque gratuites : P3, ou accentuer le hillshade par un uniform |
+| P2 | Rotation automatique quand l'utilisateur est inactif (phase 6) | Rien dans le code | Finition, après D–F |
+| P3 | Halo d'atmosphère sur le pourtour (phase 6) | Rien dans le code | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
+| P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
+
+**Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
+
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (3) — Feuille de route relevée en §8, lot D (« site public ») choisi
+
+- Spec 4 terminée, plus aucun lot planifié : inventaire de ce qui reste (plan d'origine + manques
+  d'un site public) consigné en **§8 « Chantiers à venir »** — lots D, E, F, lignes R1–R6 et P1–P4.
+  C'est la référence pour les chantiers suivants.
+- Relief 3D géométrique (P1) analysé à la demande de l'utilisateur : peu de coût par image, mais
+  gros chantier pour un effet visible seulement au limbe → déconseillé, hillshade conservé.
+- **Choix utilisateur : lot D** (référencement, partage, mesure d'audience) ; E et F gardés en §8.
+- **Prochaine action :** brainstorming du lot D → spec `docs/superpowers/specs/` → plan → exécution.
 
 ### 2026-09-19 (2) — Dettes n° 42 puis n° 41 traitées, validées dans le navigateur, mergées (`116991f`) et déployées
 
@@ -1201,7 +1247,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
+**Dernière mise à jour :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
+**Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 traitées sur `refactor/geo-wiring`, non mergé** — `geo/wiring.ts` testable en Node, étiquettes qui évitent panneaux et bords, countries.json 206 lignes ; 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; **validation navigateur en attente** avant merge)
 **Entrée précédente :** 2026-09-19 (**lot C validé sur vrai téléphone, mergé `c4ed59e` et déployé** — étiquettes villes/pays avec valeur de couche + fleuves en prod ; 326 vitest + 204 pytest, bundle 160,65 Ko gzip ; aucun lot en cours)
 **Entrée précédente :** 2026-09-18 (**lot C implémenté et revu sur `feat/labels-rivers`, non mergé** — étiquettes villes/pays avec valeur de couche + fleuves ; T1–T11 faites, revue finale « With fixes » corrigée (`77d1e8f`), 326 vitest + 19 pytest, bundle 160,65 Ko gzip ; **en attente de la validation utilisateur sur vrai téléphone**, puis T12 merge/déploiement)
