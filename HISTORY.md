@@ -140,6 +140,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
   public/
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache ; lot D : 1 jour pour og.jpg, favicon, icône, manifeste, robots, sitemap
     robots.txt, sitemap.xml    # lot D : tout autorisé + lien du sitemap ; une seule URL (https://globelayers.com/)
+    BingSiteAuth.xml           # lot D : preuve de propriété pour Bing Webmaster (code de compte, public par nature) ; ne pas supprimer, Bing le relit
     favicon.svg, apple-touch-icon.png, site.webmanifest  # lot D : globe à méridiens (SVG), icône 180 px générée depuis le SVG, manifeste minimal (`display: browser`, pas de service worker)
     og.jpg                     # lot D : image Open Graph 1200 × 630 (139 Ko), capture réelle du build local (température + vent, Atlantique/Europe), à refaire à la main si le look change
     geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (206 pays, 6 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko)
