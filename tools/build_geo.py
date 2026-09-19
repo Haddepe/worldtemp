@@ -53,12 +53,13 @@ MAJOR_CAPITAL_POP = 100_000
 
 
 def props(feature: dict) -> dict:
-    """Propriétés à clés minuscules : Natural Earth mélange NAME_FR et scalerank selon les fichiers."""
+    """Propriétés à clés minuscules : Natural Earth mélange NAME_EN et scalerank selon les fichiers."""
     return {k.lower(): v for k, v in (feature.get("properties") or {}).items()}
 
 
 def _name(p: dict) -> str:
-    return (p.get("name_fr") or p.get("name") or "").strip()
+    """Nom anglais (site en anglais, spec site public §3.4) ; repli sur le nom local."""
+    return (p.get("name_en") or p.get("name") or "").strip()
 
 
 def build_places(features: list[dict]) -> list[list]:
