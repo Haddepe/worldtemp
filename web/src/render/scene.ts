@@ -117,7 +117,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
         renderer.render(scene, camera);
       }
     } catch (e) {
-      // Un listener de vue qui lève (ex. sélection de tuiles) ne doit jamais arrêter la boucle de rendu.
+      // Filet de sécurité : les écouteurs de vue et de frame sont déjà isolés un par un ; reste
+      // ce qui lève autour d'eux (contrôles, rendu), qui ne doit jamais arrêter la boucle.
       console.error(e);
     } finally {
       requestAnimationFrame(loop);

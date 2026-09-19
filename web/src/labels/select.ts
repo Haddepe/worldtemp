@@ -83,15 +83,20 @@ export interface SelectInput {
   cap: number;
   /** Une valeur de couche s'affiche sous le nom des villes. */
   hasValue: boolean;
+  /** Cadre (px CSS) dont la boîte estimée ne doit pas dépasser : sinon le texte est coupé au bord. Absent = pas de contrôle. */
+  bounds?: Box;
+  /** Zones déjà occupées (panneaux de l'interface, posés au-dessus des étiquettes). */
+  obstacles?: readonly Box[];
   /** Ids déjà affichés : placés d'abord (pas de clignotement en rotation). À vider par l'appelant à chaque changement de palier. */
   shown: ReadonlySet<number>;
 }
 
 export function selectLabels(input: SelectInput): Placed[] {
-  const { set, d, camDir, cap, hasValue, shown } = input;
+  const { set, d, camDir, cap, hasValue, shown, bounds } = input;
   const horizon = 1 / d; // point à rayon 1 (spec tuiles §5)
   const placed: Placed[] = [];
-  const boxes: Box[] = [];
+  // Les obstacles ouvrent la liste des boîtes occupées : même test que l'anti-chevauchement.
+  const boxes: Box[] = input.obstacles ? [...input.obstacles] : [];
   const at = { x: 0, y: 0 };
   // Rayon du limbe (bord du disque projeté), en unités où le rayon de la sphère vaut 1 : la
   // tangente depuis la caméra fait un triangle rectangle d'hypoténuse d, donc de rayon
@@ -107,6 +112,7 @@ export function selectLabels(input: SelectInput): Placed[] {
     if (!eligible(item, d)) return;
     if (!input.project(item.id, at)) return;
     const box = labelBox(item, at.x, at.y, hasValue);
+    if (bounds && (box.x0 < bounds.x0 || box.y0 < bounds.y0 || box.x1 > bounds.x1 || box.y1 > bounds.y1)) return;
     for (const b of boxes) {
       if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) return;
     }

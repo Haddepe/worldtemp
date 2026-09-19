@@ -19,6 +19,8 @@ function rig(d = 1.3) {
   const darkCalls: boolean[] = [];
   let t = 0;
   let size = { width: 800, height: 800 };
+  let sizeCalls = 0;
+  let obstacles: { x0: number; y0: number; x1: number; y1: number }[] = [];
   const deferred: { cb: () => void; ms: number }[] = [];
   const ctl = new LabelsController({
     layer: {
@@ -26,7 +28,8 @@ function rig(d = 1.3) {
       clear: () => void frames.push([]),
       setDark: (dark) => void darkCalls.push(dark),
     },
-    camera, size: () => size, tier: "high",
+    camera, size: () => { sizeCalls++; return size; }, tier: "high",
+    obstacles: () => obstacles,
     now: () => t, defer: (cb, ms) => void deferred.push({ cb, ms }),
   });
   return {
@@ -35,6 +38,8 @@ function rig(d = 1.3) {
     last: () => frames[frames.length - 1]!,
     /** Taille CSS du canvas modifiable (F2) : simule une rotation d'écran sans bouger la caméra. */
     setSize: (width: number, height: number) => { size = { width, height }; },
+    sizeCalls: () => sizeCalls,
+    setObstacles: (boxes: typeof obstacles) => { obstacles = boxes; },
   };
 }
 
@@ -195,6 +200,79 @@ describe("LabelsController (spec repères §4)", () => {
     r.ctl.setValueSource(temp(255));
     r.ctl.setEnabled(true);
     expect(r.darkCalls).toEqual([false]);
+  });
+  it("setDark : style carte, couche affichée mais pixels illisibles (d = 1,1) — pas sombre (dette n° 41)", () => {
+    const r = rig(1.1);
+    r.ctl.setData(SET);
+    r.ctl.setValueSource(null, true);
+    r.ctl.setEnabled(true);
+    expect(r.darkCalls).toEqual([false]);
+    expect(r.last().find((v) => v.name === "Paris")!.value).toBeNull();
+  });
+  it("setDark : la couche retirée, le style carte redevient sombre", () => {
+    const r = rig(1.1);
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    r.ctl.setValueSource(temp(255));
+    r.ctl.setValueSource(null);
+    expect(r.darkCalls).toEqual([true, false, true]);
+  });
+  it("obstacles : une étiquette qui passerait sous un panneau est écartée, puis revient (dette n° 41)", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    const paris = r.last().find((v) => v.name === "Paris")!;
+    r.setObstacles([{ x0: paris.x - 20, y0: paris.y - 20, x1: paris.x + 20, y1: paris.y + 20 }]);
+    r.ctl.setValueSource(temp(255)); // force une sélection
+    expect(r.last().map((v) => v.name)).toEqual(["Lyon"]);
+    r.setObstacles([]);
+    r.ctl.setValueSource(null);
+    expect(r.last().map((v) => v.name).sort()).toEqual(["Lyon", "Paris"]);
+  });
+  it("relayout : re-sélectionne sans mouvement de caméra (panneaux repliés ou déployés) ; sans effet éteint", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.relayout();
+    expect(r.frames.length).toBe(0);
+    r.ctl.setEnabled(true);
+    const paris = r.last().find((v) => v.name === "Paris")!;
+    r.setObstacles([{ x0: paris.x - 20, y0: paris.y - 20, x1: paris.x + 20, y1: paris.y + 20 }]);
+    r.ctl.onView(); // caméra immobile : rien ne bouge
+    expect(r.last().map((v) => v.name)).toContain("Paris");
+    r.ctl.relayout();
+    expect(r.last().map((v) => v.name)).toEqual(["Lyon"]);
+  });
+  it("cadre : une étiquette dont le texte sortirait de l'écran est écartée (dette n° 41)", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    // La caméra glisse vers l'ouest : Paris dérive vers le bord droit. À chaque sélection, soit
+    // « Paris » tient en entier dans les 800 px, soit l'étiquette est absente — jamais coupée.
+    const PARIS_BOX_RIGHT = 8 + 5 * 6.5 + 4; // DOT + « Paris » × CHAR_W + PAD (labels/select.ts)
+    let dropped = false;
+    for (let lon = 2; lon > -12; lon -= 0.25) {
+      r.look(lon, 47, 1.3);
+      r.advance(SELECT_INTERVAL_MS);
+      r.ctl.onView();
+      const paris = r.last().find((v) => v.name === "Paris");
+      if (paris) expect(paris.x + PARIS_BOX_RIGHT).toBeLessThanOrEqual(800);
+      else dropped = true;
+    }
+    expect(dropped).toBe(true);
+  });
+  it("une vue = une seule lecture de la taille CSS, sélection comprise (dette n° 41)", () => {
+    const r = rig();
+    r.ctl.setData(SET);
+    r.ctl.setEnabled(true);
+    r.advance(SELECT_INTERVAL_MS);
+    r.look(3, 47, 1.3);
+    const before = r.sizeCalls();
+    r.ctl.onView(); // re-sélection + peinture
+    expect(r.sizeCalls() - before).toBe(1);
+    r.look(4, 47, 1.3);
+    const mid = r.sizeCalls();
+    r.ctl.onView(); // peinture seule (moins de 100 ms)
+    expect(r.sizeCalls() - mid).toBe(1);
   });
   it("immobile après une sélection : onView() ne repeint pas (M1)", () => {
     const r = rig();

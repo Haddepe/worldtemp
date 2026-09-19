@@ -48,6 +48,11 @@ describe("parseRivers — spec repères §5", () => {
   ])("refuse : %s", (_label, buf) => {
     expect(() => parseRivers(buf)).toThrowError(RiversError);
   });
+  it("octet réservé non nul : refusé (format inconnu plutôt que mal lu)", () => {
+    const buf = new Uint8Array(encodeRivers([[1, [[0, 0], [100, 0]]]]));
+    buf[11] = 1; // en-tête de 10 octets, puis u8 rang, u8 réservé
+    expect(() => parseRivers(buf.buffer)).toThrowError(RiversError);
+  });
   it("octets en trop après la dernière ligne : refusé", () => {
     const ok = new Uint8Array(encodeRivers([[1, [[0, 0], [100, 0]]]]));
     const padded = new Uint8Array(ok.length + 2);
