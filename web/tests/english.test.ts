@@ -67,8 +67,8 @@ describe("tout ce qui est livré est en anglais (spec site public §3.1)", () =>
 
   const shaders = readdirSync(SHADERS).filter((name) => name.endsWith(".glsl"));
 
-  it("les neuf shaders sont bien contrôlés (un dossier vide ferait passer it.each à vide)", () => {
-    expect(shaders).toHaveLength(9);
+  it("les onze shaders sont bien contrôlés (un dossier vide ferait passer it.each à vide)", () => {
+    expect(shaders).toHaveLength(11);
   });
 
   it.each(shaders)("%s : rien de français ne survit au retrait des commentaires", (name) => {

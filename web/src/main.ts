@@ -10,6 +10,7 @@ import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
 import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
+import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
 import { createStarsLayer } from "./render/stars";
@@ -92,6 +93,8 @@ async function boot(): Promise<void> {
   ui.setLegendVisible(false); // aucune couche au démarrage : la légende n'a rien à montrer
   sceneHandle.scene.add(globe.group);
   sceneHandle.scene.add(createStarsLayer(decision.tier).object); // ciel étoilé, dessiné avant tout le reste
+  const halo = createHaloLayer(); // halo d'atmosphère sur le pourtour, éteint de près
+  sceneHandle.scene.add(halo.object);
 
   const windProfile = WIND_PROFILE[decision.tier];
   const windSim = new WindSim(windProfile.particles, windProfile.trail, windProfile.stride);
@@ -153,6 +156,7 @@ async function boot(): Promise<void> {
 
   sceneHandle.onViewChange((view) => {
     globe.update(view);
+    halo.setView(view.cameraPosition.length());
     tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
   });
 

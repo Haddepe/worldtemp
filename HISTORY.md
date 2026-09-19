@@ -207,6 +207,8 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       rivers.ts                  # lot C : RiversLayer, quads instanciés statiques ; instanceCount = préfixe des rangs admis au zoom (RIVER_TIERS interpolés), dernier rang en fondu ; renderOrder 1 (vent 2)
       stars.ts                   # ciel étoilé procédural : `buildStarfield(count, seed)` déterministe (mulberry32, directions uniformes, luminosité en loi de puissance, ~1/5 d'étoiles teintées), `createStarsLayer(tier)` = `THREE.Points` 6 000 / 3 000, mélange additif dans la passe OPAQUE, renderOrder −1, sans profondeur ni frustum culling, `uPixelRatio` relu à chaque rendu
       shaders/stars.vert.glsl, shaders/stars.frag.glsl  # étoiles à l'infini : seule la rotation de la caméra s'applique (`mat3(viewMatrix)`), z de découpe à 0 ; point rond à bord doux
+      halo.ts                    # halo d'atmosphère : coque de rayon 1,12 vue par sa face arrière (masquée par la profondeur du globe sauf l'anneau du limbe), mélange additif en passe transparente, `haloOpacity(d)` = fondu entre d = 1,6 et 1,15 (objet masqué de près), `setView(d)` appelé par `onViewChange`
+      shaders/halo.vert.glsl, shaders/halo.frag.glsl  # lueur exponentielle en fonction du paramètre d'impact du rayon de vue (distance au centre), indépendante du maillage ; fondu au bord de la coque
       shaders/screen-quad.glsl   # lot C : fragment GLSL partagé vent/fleuves — élargissement d'un segment en quad dans l'espace écran (préfixé par concaténation des ?raw)
       shaders/rivers.vert.glsl   # lot C : horizon exact au rayon R, fondu du rang (uMaxRank flottant)
       shaders/rivers.frag.glsl   # lot C : bleu-cyan clair (satellite) / bleu soutenu (carte), bords anti-crénelés
@@ -251,6 +253,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     geo-loader.test.ts            # lot C : once, échec partiel des étiquettes, binaire invalide
     geo-wiring.test.ts            # dette n° 42 : wireGeo — URL, chargement paresseux, bascule pendant le téléchargement, réentrance I1, échecs, écouteur de vue éteint
     stars.test.ts                 # ciel étoilé : déterminisme, vecteurs unité, 8 octants, bornes et loi de luminosité, passe opaque avant le globe, pixel ratio
+    halo.test.ts                  # halo : fondu monotone éteint avant l'entrée de la caméra dans la coque, face arrière, passe transparente après le globe, setView masque l'objet de près
     english.test.ts               # lot D : garde-fou « rien de français n'est livré » — littéraux de tout src/ (commentaires exclus), index.html, 4 fichiers texte de public/, 7 shaders après retrait des commentaires ; lettres accentuées + liste de mots en mots entiers
     seo.test.ts                   # lot D : balises du <head>, JSON-LD, robots, sitemap = canonical, manifeste, _headers, texte About dans le HTML initial, en-têtes de og.jpg (1200 × 630, ≤ 150 Ko) et de l'icône (180 × 180)
     about.test.ts, beacon.test.ts, glsl-strip.test.ts  # lot D : dialog sur faux éléments ; jeton vide/valide/hostile et injection ; retrait des commentaires + test de câblage `?raw`
@@ -402,6 +405,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Pas de `@types/node`** : `web/tests/node-shims.d.ts` *(2026-09-19, lot D)* | La spec du lot interdit toute nouvelle dépendance ; les tests qui lisent des fichiers n'utilisent que cinq signatures. Remplaçable par `@types/node` en une ligne. |
 | **Phrase About sur la fraîcheur : « forecast valid for the current hour, taken from the latest available model run »**, pas « 4 to 6 hours after each model run » *(2026-09-19, revue finale)* | Le globe montre la prévision valide à l'heure courante (décision du 2026-08-30 ci-dessus) : « 4 à 6 h » laissait croire à des données vieilles de 4 à 6 h. |
 | **Ciel étoilé procédural** (points générés par le code), pas une photo de la Voie lactée ; **pas de scintillement** *(2026-09-19, choix utilisateur)* | Aucun téléchargement ni mémoire GPU de plus (+1 Ko de bundle), net à toute résolution, fond sobre qui ne concurrence pas les couleurs des couches. Un scintillement forcerait un rendu continu, contraire au rendu à la demande (batterie sur mobile). Étoiles **à l'infini dans le shader** (rotation de la caméra seule) : `camera.far` = d + 2, une sphère d'étoiles réelle serait rognée, et il ne faut aucune parallaxe au zoom. |
+| **Halo d'atmosphère calculé par pixel à partir du paramètre d'impact du rayon de vue**, sur une coque vue par sa face arrière, plutôt qu'un fresnel sur les normales du maillage ; **éteint de près** *(2026-09-19, feuille de route P3)* | La lueur ne dépend ni du maillage ni de l'échelle de la coque, et décroît comme une atmosphère vue par la tranche. De près le limbe sort de l'écran et la caméra entrerait dans la coque (rayon 1,12 > d) : elle voilerait la carte. Statique : le rendu reste à la demande. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -567,7 +571,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 |---|---|---|---|
 | P1 | Relief 3D géométrique (displacement map, phase 4) | Remplacé par un hillshade dans les tuiles (spec 3, choix assumé) | **Déconseillé** *(analyse 2026-09-19, estimation non mesurée)* : coût par image faible (une lecture de texture par sommet, patchs 32×32 / 16×16), mais canaux des tuiles `map` tous pris → nouveau jeu de tuiles (R2 déjà à 4,5 Go / 10, mémoire GPU `low` 96 Mo) ; maillage à densifier ; vent (1,002), fleuves (1,001), picking, étiquettes et horizon supposent une sphère lisse ; jupes 0,005 insuffisantes ; bénéfice visible seulement au limbe (caméra toujours à l'aplomb). Alternatives presque gratuites : P3, ou accentuer le hillshade par un uniform |
 | P2 | Rotation automatique quand l'utilisateur est inactif (phase 6) | Rien dans le code | Finition, après D–F |
-| P3 | Halo d'atmosphère sur le pourtour (phase 6) | Rien dans le code | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
+| P3 | ~~Halo d'atmosphère sur le pourtour (phase 6)~~ ✅ livré 2026-09-19 (`render/halo.ts`), avec un ciel étoilé procédural (`render/stars.ts`) | ~~Rien dans le code~~ | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
 | P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
 
 **Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
