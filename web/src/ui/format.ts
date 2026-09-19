@@ -1,27 +1,23 @@
 import { encode, type Encoding } from "../data/encoding";
 import type { LayerEntry } from "../data/manifest";
 import type { LayerDef } from "../layers/registry";
+import { STRINGS } from "../i18n";
 
 function hhmm(isoUtc: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(
+  return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(
     new Date(isoUtc),
   );
 }
 
 export function formatAgo(isoUtc: string, nowMs: number): string {
   const minutes = Math.max(0, Math.floor((nowMs - Date.parse(isoUtc)) / 60_000));
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `il y a ${h} h ${String(m).padStart(2, "0")}`;
+  if (minutes < 1) return STRINGS.banner.justNow;
+  if (minutes < 60) return STRINGS.banner.minutesAgo(minutes);
+  return STRINGS.banner.hoursAgo(Math.floor(minutes / 60), minutes % 60);
 }
 
 /** Libellés des modèles du manifeste (champ `model`) ; repli sur l'id. */
-export const SOURCE_LABELS: Record<string, string> = {
-  gfs_0p25: "NOAA GFS 0,25°",
-  gefs_chem_0p25: "NOAA GEFS-Aerosols 0,25°",
-};
+export const SOURCE_LABELS: Record<string, string> = STRINGS.sources;
 
 export function sourceLabel(model: string): string {
   return SOURCE_LABELS[model] ?? model;
@@ -36,13 +32,13 @@ export function formatBanner(
   const run = hhmm(entry.run, "UTC");
   const validUtc = hhmm(entry.valid_time_utc, "UTC");
   const validLocal = hhmm(entry.valid_time_utc, timeZone);
-  const local = validLocal === validUtc ? "" : ` (${validLocal} locale)`;
-  return `${sourceLabel(entry.model)} · run ${run} UTC · valide ${validUtc} UTC${local} · ${formatAgo(entry.generated_at, nowMs)}`;
+  const local = validLocal === validUtc ? "" : ` (${validLocal} ${STRINGS.banner.local})`;
+  return `${sourceLabel(entry.model)} · run ${run} UTC · ${STRINGS.banner.valid} ${validUtc} UTC${local} · ${formatAgo(entry.generated_at, nowMs)}`;
 }
 
-/** Libellé court d'une graduation : entier si entier, sinon une décimale avec virgule. */
+/** Libellé court d'une graduation : entier si entier, sinon une décimale. */
 function tickLabel(v: number): string {
-  return (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace("-", "−").replace(".", ",");
+  return (Number.isInteger(v) ? String(v) : v.toFixed(1)).replace("-", "−");
 }
 
 /** Graduations de la légende : valeurs du registre, positions encode(v)/255 (spec couches §11). */
@@ -56,8 +52,6 @@ export function formatReading(def: LayerDef, v: number): string {
   return def.format(v);
 }
 
-const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"] as const;
-
 /** Direction météo (d'où vient le vent), degrés dans [0, 360[ : (270 − atan2(v, u)) mod 360. */
 export function windDirection(u: number, v: number): number {
   const d = 270 - (Math.atan2(v, u) * 180) / Math.PI;
@@ -66,12 +60,12 @@ export function windDirection(u: number, v: number): number {
 
 /** Point de rose le plus proche (16 points, 22,5° chacun, N centré sur 0°). */
 export function compassPoint(deg: number): string {
-  return COMPASS[Math.round(deg / 22.5) % 16]!;
+  return STRINGS.wind.compass[Math.round(deg / 22.5) % 16]!;
 }
 
-/** Ligne vent du tooltip (spec vent §10) : « Vent 23 km/h NO », « Vent calme » sous 1 km/h. */
+/** Ligne vent du tooltip (spec vent §10) : « Wind 23 km/h NW », « Calm » sous 1 km/h. */
 export function formatWind(u: number, v: number): string {
   const kmh = Math.round(3.6 * Math.hypot(u, v));
-  if (kmh < 1) return "Vent calme";
-  return `Vent ${kmh} km/h ${compassPoint(windDirection(u, v))}`;
+  if (kmh < 1) return STRINGS.wind.calm;
+  return `${STRINGS.wind.label} ${kmh} km/h ${compassPoint(windDirection(u, v))}`;
 }

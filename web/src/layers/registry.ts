@@ -3,6 +3,8 @@
  * ce registre dit comment l'afficher : libellé, unité, format, palette RGBA en
  * valeur physique, graduations, seuil du tooltip, isolignes.
  */
+import { STRINGS } from "../i18n";
+
 export type Rgba = [number, number, number, number];
 
 export interface Stop {
@@ -33,22 +35,22 @@ export interface LayerDef {
 function fixed(v: number, decimals: number): string {
   let s = v.toFixed(decimals);
   if (/^-0(\.0+)?$/.test(s)) s = s.slice(1);
-  return s.replace("-", "−").replace(".", ",");
+  return s.replace("-", "−");
 }
 
-/** « 23,4 °C » (spec navigation §6) : une décimale, virgule, signe « − » U+2212, jamais « −0,0 ». */
+/** « 23.4 °C » (spec navigation §6, spec site public §3.3) : une décimale, point, signe « − » U+2212, jamais « −0.0 ». */
 export function formatTemperature(celsius: number): string {
   return `${fixed(celsius, 1)} °C`;
 }
 
-const percent = (v: number) => `${fixed(v, 0)} %`;
+const percent = (v: number) => `${fixed(v, 0)}%`;
 const ugm3 = (v: number) => `${fixed(v, 0)} µg/m³`;
 
 const s = (v: number, r: number, g: number, b: number, a = 255): Stop => ({ v, rgba: [r, g, b, a] });
 
 export const LAYERS: readonly LayerDef[] = [
   {
-    id: "temp", label: "Température", unit: "°C", format: formatTemperature,
+    id: "temp", label: STRINGS.layers.temp, unit: "°C", format: formatTemperature,
     stops: [
       s(-90, 30, 0, 50), s(-45, 10, 20, 110), s(-30, 20, 60, 200), s(-15, 40, 190, 230), s(0, 40, 170, 70),
       s(10, 240, 230, 40), s(20, 250, 150, 20), s(30, 220, 30, 20), s(45, 120, 0, 10), s(60, 90, 0, 70),
@@ -56,12 +58,12 @@ export const LAYERS: readonly LayerDef[] = [
     ticks: [-40, -30, -20, -10, 0, 10, 20, 30, 40], tooltipMin: null, isoStep: null,
   },
   {
-    id: "clouds", label: "Nuages", unit: "%", format: percent,
+    id: "clouds", label: STRINGS.layers.clouds, unit: "%", format: percent,
     stops: [s(0, 255, 255, 255, 0), s(100, 255, 255, 255, 230)],
     ticks: [0, 25, 50, 75, 100], tooltipMin: null, isoStep: null, soften: 1.2,
   },
   {
-    id: "rain", label: "Pluie", unit: "mm/h", format: (v) => `${fixed(v, 1)} mm/h`,
+    id: "rain", label: STRINGS.layers.rain, unit: "mm/h", format: (v) => `${fixed(v, 1)} mm/h`,
     stops: [
       s(0, 60, 120, 255, 0), s(0.1, 60, 120, 255, 0), s(0.5, 60, 120, 255, 200), s(2, 40, 220, 240, 220),
       s(8, 250, 230, 40, 230), s(25, 230, 40, 30, 240), s(50, 200, 0, 200, 255),
@@ -69,17 +71,17 @@ export const LAYERS: readonly LayerDef[] = [
     ticks: [0.5, 2, 8, 25, 50], tooltipMin: 0.1, isoStep: null,
   },
   {
-    id: "pressure", label: "Pression", unit: "hPa", format: (v) => `${fixed(v, 0)} hPa`,
+    id: "pressure", label: STRINGS.layers.pressure, unit: "hPa", format: (v) => `${fixed(v, 0)} hPa`,
     stops: [s(940, 20, 40, 160), s(980, 60, 130, 220), s(1013, 240, 240, 240), s(1035, 250, 170, 60), s(1060, 200, 60, 20)],
     ticks: [940, 960, 980, 1000, 1020, 1040, 1060], tooltipMin: null, isoStep: 4,
   },
   {
-    id: "humidity", label: "Humidité", unit: "%", format: percent,
+    id: "humidity", label: STRINGS.layers.humidity, unit: "%", format: percent,
     stops: [s(0, 170, 110, 40), s(50, 235, 235, 225), s(100, 30, 140, 170)],
     ticks: [0, 25, 50, 75, 100], tooltipMin: null, isoStep: null,
   },
   {
-    id: "pm25", label: "PM2.5", unit: "µg/m³", format: ugm3,
+    id: "pm25", label: STRINGS.layers.pm25, unit: "µg/m³", format: ugm3,
     stops: [
       s(0, 80, 200, 120, 0), s(5, 80, 200, 120, 0), s(12, 80, 200, 120, 220), s(35, 250, 220, 40, 230),
       s(55, 250, 140, 30, 235), s(150, 220, 40, 40, 240), s(250, 140, 40, 160, 250), s(500, 110, 20, 50, 255),
@@ -87,7 +89,7 @@ export const LAYERS: readonly LayerDef[] = [
     ticks: [12, 35, 55, 150, 250], tooltipMin: 5, isoStep: null,
   },
   {
-    id: "dust", label: "Poussière", unit: "µg/m³", format: ugm3,
+    id: "dust", label: STRINGS.layers.dust, unit: "µg/m³", format: ugm3,
     stops: [
       s(0, 230, 200, 140, 0), s(20, 230, 200, 140, 0), s(60, 230, 200, 140, 200), s(200, 170, 110, 50, 230),
       s(800, 100, 60, 30, 245), s(2000, 20, 10, 5, 255),

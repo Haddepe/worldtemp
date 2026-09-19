@@ -12,8 +12,8 @@ function data(id: string, byte: number, min: number, max: number): TooltipData {
 
 describe("labelValue — valeur sous le nom d'une ville (spec repères §4)", () => {
   it("formate avec le format de la couche", () => {
-    expect(labelValue(data("temp", 255, -50, 50), 2.35, 48.86)).toBe("50,0 °C");
-    expect(labelValue(data("clouds", 0, 0, 100), 2.35, 48.86)).toBe("0 %");
+    expect(labelValue(data("temp", 255, -50, 50), 2.35, 48.86)).toBe("50.0 °C");
+    expect(labelValue(data("clouds", 0, 0, 100), 2.35, 48.86)).toBe("0%");
   });
   it("nom seul : aucune couche", () => {
     expect(labelValue(null, 2.35, 48.86)).toBeNull();

@@ -28,17 +28,17 @@ describe("registre des couches — spec couches §10", () => {
     expect(layerDef("clouds")!.soften).toBe(1.2);
   });
   it("formats", () => {
-    expect(layerDef("temp")!.format(23.44)).toBe("23,4 °C");
-    expect(layerDef("temp")!.format(-0.04)).toBe("0,0 °C");
-    expect(layerDef("clouds")!.format(42.6)).toBe("43 %");
-    expect(layerDef("rain")!.format(0.44)).toBe("0,4 mm/h");
+    expect(layerDef("temp")!.format(23.44)).toBe("23.4 °C");
+    expect(layerDef("temp")!.format(-0.04)).toBe("0.0 °C");
+    expect(layerDef("clouds")!.format(42.6)).toBe("43%");
+    expect(layerDef("rain")!.format(0.44)).toBe("0.4 mm/h");
     expect(layerDef("pressure")!.format(1013.25)).toBe("1013 hPa");
-    expect(layerDef("humidity")!.format(99.5)).toBe("100 %");
+    expect(layerDef("humidity")!.format(99.5)).toBe("100%");
     expect(layerDef("pm25")!.format(17.6)).toBe("18 µg/m³");
     expect(layerDef("dust")!.format(0)).toBe("0 µg/m³");
   });
   it("formatTemperature conserve la spec navigation §6", () => {
-    expect(formatTemperature(-12.34)).toBe("−12,3 °C");
+    expect(formatTemperature(-12.34)).toBe("−12.3 °C");
   });
   it("layerDef inconnu → undefined", () => expect(layerDef("wind")).toBeUndefined());
 });

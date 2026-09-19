@@ -63,7 +63,7 @@ describe("labels/layer (C1)", () => {
     const { container, divs, spans } = installFakeDom();
     const layer = createLabelsLayer(container);
 
-    layer.render([{ id: 1, kind: "city", name: "Paris", value: "23,4 °C", x: 0, y: 0 }]);
+    layer.render([{ id: 1, kind: "city", name: "Paris", value: "23.4 °C", x: 0, y: 0 }]);
     layer.render([]); // retire Paris : le div part en fondu puis rejoint la réserve
     vi.advanceTimersByTime(250); // FADE_MS (150) + marge (50) : l'entrée est bien repassée au pool
 
@@ -71,16 +71,16 @@ describe("labels/layer (C1)", () => {
 
     expect(divs.length).toBe(1); // réutilisé : un seul div créé pour les deux étiquettes
     expect(spans[0]!.textContent).toBe("France"); // span nom, réutilisé
-    expect(spans[1]!.textContent).toBe(""); // span valeur, réutilisé : ne garde pas « 23,4 °C »
+    expect(spans[1]!.textContent).toBe(""); // span valeur, réutilisé : ne garde pas « 23.4 °C »
   });
 
   it("une valeur qui change entre deux render du même id est bien réécrite", () => {
     const { container, spans } = installFakeDom();
     const layer = createLabelsLayer(container);
 
-    layer.render([{ id: 1, kind: "city", name: "Paris", value: "10,0 °C", x: 0, y: 0 }]);
-    expect(spans[1]!.textContent).toBe("10,0 °C");
-    layer.render([{ id: 1, kind: "city", name: "Paris", value: "12,0 °C", x: 0, y: 0 }]);
-    expect(spans[1]!.textContent).toBe("12,0 °C");
+    layer.render([{ id: 1, kind: "city", name: "Paris", value: "10.0 °C", x: 0, y: 0 }]);
+    expect(spans[1]!.textContent).toBe("10.0 °C");
+    layer.render([{ id: 1, kind: "city", name: "Paris", value: "12.0 °C", x: 0, y: 0 }]);
+    expect(spans[1]!.textContent).toBe("12.0 °C");
   });
 });
