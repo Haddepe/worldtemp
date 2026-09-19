@@ -211,3 +211,24 @@ html, body {
   #wind-toggle { margin-top: 0; }
   #attribution { grid-row: 5; }
 }
+
+/* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */
+#about-open {
+  background: none; border: 1px solid currentColor; border-radius: 50%;
+  width: 1.4rem; height: 1.4rem; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
+}
+#about {
+  padding: 0; border: none; border-radius: 0.75rem; color: inherit;
+  background: var(--panel-bg); backdrop-filter: blur(10px);
+  width: min(36rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem);
+}
+#about::backdrop { background: rgba(0, 0, 0, 0.55); }
+#about .about-body { position: relative; padding: 1.25rem 1.5rem 1.5rem; overflow-y: auto; max-height: calc(100vh - 2rem); }
+#about h1 { font-size: 1.3rem; margin: 0 0 0.5rem; }
+#about h2 { font-size: 0.95rem; margin: 1.1rem 0 0.35rem; color: var(--panel-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+#about p, #about li { font-size: 0.9rem; line-height: 1.45; }
+#about ul { margin: 0; padding-left: 1.1rem; }
+#about-close {
+  position: absolute; top: 0.6rem; right: 0.75rem; background: none; border: none;
+  color: inherit; font-size: 1.5rem; line-height: 1; cursor: pointer;
+}

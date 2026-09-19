@@ -16,9 +16,10 @@ import { createWindLayer } from "./render/wind";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
+import { createAbout } from "./ui/about";
 import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
-import { createOverlay } from "./ui/overlay";
+import { byId, createOverlay } from "./ui/overlay";
 import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
 import { createToggle } from "./ui/toggle";
 import { WindController } from "./wind/controller";
@@ -40,6 +41,7 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
 
 async function boot(): Promise<void> {
   const ui = createOverlay();
+  createAbout(byId<HTMLDialogElement>("about"), byId<HTMLButtonElement>("about-open"), byId<HTMLButtonElement>("about-close"));
   const canvas = document.getElementById("globe") as HTMLCanvasElement | null;
   if (!canvas) throw new Error("canvas #globe not found");
 
