@@ -8,7 +8,7 @@ export const LUT_SIZE = 256;
 export function colorAt(stops: readonly Stop[], v: number): Rgba {
   const first = stops[0];
   const last = stops[stops.length - 1];
-  if (!first || !last) throw new Error("palette vide");
+  if (!first || !last) throw new Error("empty palette");
   if (v <= first.v) return [...first.rgba];
   if (v >= last.v) return [...last.rgba];
   for (let i = 1; i < stops.length; i++) {

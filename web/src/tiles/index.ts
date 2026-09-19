@@ -3,7 +3,7 @@ import { tilesPerLevel } from "./grid";
 
 export class IndexError extends Error {
   constructor(message: string) {
-    super(`index.bin : ${message}`);
+    super(`index.bin: ${message}`);
     this.name = "IndexError";
   }
 }

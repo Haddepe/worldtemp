@@ -14,7 +14,7 @@ export interface TilesManifest {
 
 export class ManifestError extends Error {
   constructor(message: string) {
-    super(`manifest.json : ${message}`);
+    super(`manifest.json: ${message}`);
     this.name = "ManifestError";
   }
 }
@@ -39,14 +39,14 @@ function str(o: Rec, field: string, what: string): string {
 }
 
 export function parseManifest(value: unknown): TilesManifest {
-  const m = rec(value, "racine");
+  const m = rec(value, "root");
   if (m.schema_version !== 1) throw new ManifestError("expected schema_version 1");
   const sets = rec(m.sets, "sets");
   const sat = rec(sets.sat, "sets.sat");
   const map = rec(sets.map, "sets.map");
   return {
     schemaVersion: 1,
-    tileSize: uint(m, "tile_size", "racine"),
+    tileSize: uint(m, "tile_size", "root"),
     sat: { ext: str(sat, "ext", "sets.sat"), maxLevel: uint(sat, "max_level", "sets.sat") },
     map: { ext: str(map, "ext", "sets.map"), maxLevel: uint(map, "max_level", "sets.map"), index: str(map, "index", "sets.map") },
   };

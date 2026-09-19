@@ -38,7 +38,7 @@ export interface Manifest {
 export class MetadataError extends Error {
   readonly field: string;
   constructor(field: string, message: string) {
-    super(`${field} : ${message}`);
+    super(`${field}: ${message}`);
     this.name = "MetadataError";
     this.field = field;
   }
