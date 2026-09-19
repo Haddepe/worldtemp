@@ -10,16 +10,16 @@ const PM = M.layers.pm25!;
 const NOW = Date.parse("2026-09-12T14:24:40Z"); // 12 min après generated_at de temp
 
 describe("formatAgo", () => {
-  it("minutes", () => expect(formatAgo(TEMP.generated_at, NOW)).toBe("il y a 12 min"));
-  it("à l'instant sous 1 min", () => expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 30_000)).toBe("à l'instant"));
+  it("minutes", () => expect(formatAgo(TEMP.generated_at, NOW)).toBe("12 min ago"));
+  it("à l'instant sous 1 min", () => expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 30_000)).toBe("just now"));
   it("heures et minutes au-delà de 60 min", () =>
-    expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 95 * 60_000)).toBe("il y a 1 h 35"));
+    expect(formatAgo(TEMP.generated_at, Date.parse(TEMP.generated_at) + 95 * 60_000)).toBe("1 h 35 min ago"));
 });
 
 describe("sourceLabel", () => {
   it("modèles connus et repli sur l'id", () => {
-    expect(sourceLabel("gfs_0p25")).toBe("NOAA GFS 0,25°");
-    expect(sourceLabel("gefs_chem_0p25")).toBe("NOAA GEFS-Aerosols 0,25°");
+    expect(sourceLabel("gfs_0p25")).toBe("NOAA GFS 0.25°");
+    expect(sourceLabel("gefs_chem_0p25")).toBe("NOAA GEFS-Aerosols 0.25°");
     expect(sourceLabel("icon_eu")).toBe("icon_eu");
   });
 });
@@ -27,12 +27,12 @@ describe("sourceLabel", () => {
 describe("formatBanner — spec couches §11", () => {
   it("GFS : run, validité UTC et locale, fraîcheur", () => {
     expect(formatBanner(TEMP, NOW, "Europe/Paris")).toBe(
-      "NOAA GFS 0,25° · run 06:00 UTC · valide 14:00 UTC (16:00 locale) · il y a 12 min",
+      "NOAA GFS 0.25° · run 06:00 UTC · valid 14:00 UTC (16:00 local) · 12 min ago",
     );
   });
   it("GEFS-chem : libellé de sa source, sa propre échéance", () => {
     expect(formatBanner(PM, NOW, "UTC")).toBe(
-      "NOAA GEFS-Aerosols 0,25° · run 06:00 UTC · valide 12:00 UTC · il y a 2 h 12",
+      "NOAA GEFS-Aerosols 0.25° · run 06:00 UTC · valid 12:00 UTC · 2 h 12 min ago",
     );
   });
 });
@@ -47,7 +47,7 @@ describe("legendTicks", () => {
   });
   it("pluie : positions en racine, libellés courts", () => {
     const ticks = legendTicks(layerDef("rain")!, M.layers.rain!.encoding);
-    expect(ticks.map((t) => t.label)).toEqual(["0,5", "2", "8", "25", "50"]);
+    expect(ticks.map((t) => t.label)).toEqual(["0.5", "2", "8", "25", "50"]);
     expect(ticks[0]!.pct).toBeCloseTo((26 / 255) * 100, 6); // encode(0,5) = round(25,5) = 26
     expect(ticks[4]!.pct).toBeCloseTo(100, 6);
   });
@@ -55,24 +55,24 @@ describe("legendTicks", () => {
 
 describe("formatReading", () => {
   it("valeur formatée par la couche ; « — » sous tooltipMin", () => {
-    expect(formatReading(layerDef("temp")!, 23.44)).toBe("23,4 °C");
+    expect(formatReading(layerDef("temp")!, 23.44)).toBe("23.4 °C");
     expect(formatReading(layerDef("rain")!, 0.05)).toBe("—");
-    expect(formatReading(layerDef("rain")!, 0.1)).toBe("0,1 mm/h");
+    expect(formatReading(layerDef("rain")!, 0.1)).toBe("0.1 mm/h");
     expect(formatReading(layerDef("pm25")!, 4.9)).toBe("—");
   });
 });
 
 describe("formatWind — spec vent §10", () => {
   it("vitesse en km/h entier, direction d'où vient le vent", () => {
-    expect(formatWind(0, 10)).toBe("Vent 36 km/h S");    // souffle vers le nord : vient du sud
-    expect(formatWind(-10, 0)).toBe("Vent 36 km/h E");
-    expect(formatWind(10, 0)).toBe("Vent 36 km/h O");
-    expect(formatWind(0, -10)).toBe("Vent 36 km/h N");
-    expect(formatWind(5, 5)).toBe("Vent 25 km/h SO");    // 7,07 m/s = 25,46 km/h
+    expect(formatWind(0, 10)).toBe("Wind 36 km/h S");    // souffle vers le nord : vient du sud
+    expect(formatWind(-10, 0)).toBe("Wind 36 km/h E");
+    expect(formatWind(10, 0)).toBe("Wind 36 km/h W");
+    expect(formatWind(0, -10)).toBe("Wind 36 km/h N");
+    expect(formatWind(5, 5)).toBe("Wind 25 km/h SW");    // 7,07 m/s = 25,46 km/h
   });
   it("vent calme sous 1 km/h", () => {
-    expect(formatWind(0.1, 0)).toBe("Vent calme");
-    expect(formatWind(0, 0)).toBe("Vent calme");
+    expect(formatWind(0.1, 0)).toBe("Calm");
+    expect(formatWind(0, 0)).toBe("Calm");
   });
   it("windDirection est dans [0, 360[ et compassPoint arrondit au plus proche", () => {
     expect(windDirection(0, 10)).toBeCloseTo(180, 9);
@@ -80,7 +80,7 @@ describe("formatWind — spec vent §10", () => {
     expect(compassPoint(11.25)).toBe("NNE");
     expect(compassPoint(11.24)).toBe("N");
     expect(compassPoint(348.75)).toBe("N");
-    expect(compassPoint(348.74)).toBe("NNO");
-    expect(compassPoint(225)).toBe("SO");
+    expect(compassPoint(348.74)).toBe("NNW");
+    expect(compassPoint(225)).toBe("SW");
   });
 });

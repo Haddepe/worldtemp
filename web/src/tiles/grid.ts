@@ -63,7 +63,7 @@ export function subRect(leaf: TileId, ancestor: TileId): { offsetX: number; offs
   const localX = leaf.x - ancestor.x * n;
   const rowFromNorth = leaf.y - ancestor.y * n;
   if (k < 0 || localX < 0 || localX >= n || rowFromNorth < 0 || rowFromNorth >= n) {
-    throw new Error(`${tileKey(ancestor)} n'est pas un ancêtre de ${tileKey(leaf)}`);
+    throw new Error(`${tileKey(ancestor)} is not an ancestor of ${tileKey(leaf)}`);
   }
   return { offsetX: localX / n, offsetY: 1 - (rowFromNorth + 1) / n, scale: 1 / n };
 }

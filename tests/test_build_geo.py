@@ -14,17 +14,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import build_geo as bg  # noqa: E402
 
 
-def place(name, pop, lon, lat, cla="Populated place", name_fr=None, upper=True):
+def place(name, pop, lon, lat, cla="Populated place", name_en=None, upper=True):
     p = {"NAME": name, "POP_MAX": pop, "FEATURECLA": cla}
-    if name_fr is not None:
-        p["NAME_FR"] = name_fr
+    if name_en is not None:
+        p["NAME_EN"] = name_en
     if not upper:
         p = {k.lower(): v for k, v in p.items()}
     return {"properties": p, "geometry": {"type": "Point", "coordinates": [lon, lat]}}
 
 
 def test_props_ignore_la_casse_des_cles():
-    assert bg.props({"properties": {"NAME_FR": "Paris", "pop_max": 3}}) == {"name_fr": "Paris", "pop_max": 3}
+    assert bg.props({"properties": {"NAME_EN": "Paris", "pop_max": 3}}) == {"name_en": "Paris", "pop_max": 3}
 
 
 def test_build_places_trie_capitales_puis_population_puis_nom():
@@ -32,7 +32,7 @@ def test_build_places_trie_capitales_puis_population_puis_nom():
         place("Lyon", 1_700_000, 4.8351, 45.7678),
         place("Paris", 11_000_000, 2.3522, 48.8566, cla="Admin-0 capital"),
         place("Shanghai", 24_000_000, 121.4737, 31.2304),
-        place("Bern", 400_000, 7.4474, 46.948, cla="Admin-0 capital", name_fr="Berne"),
+        place("Bern", 400_000, 7.4474, 46.948, cla="Admin-0 capital", name_en="Berne"),
         place("Aaa", 1_700_000, 0, 0),
         place("Monaco", 36_000, 7.4246, 43.7314, cla="Admin-0 capital"),
     ]
@@ -62,14 +62,14 @@ def test_build_places_ecarte_sans_nom_et_population_nulle_hors_capitale():
     assert [p[2] for p in bg.build_places(feats)] == ["Minuscules", "Capitale vide"]
 
 
-def test_build_places_name_fr_vide_replie_sur_name():
-    assert bg.build_places([place("London", 9_000_000, -0.13, 51.51, name_fr="")])[0][2] == "London"
+def test_build_places_name_en_vide_replie_sur_name():
+    assert bg.build_places([place("London", 9_000_000, -0.13, 51.51, name_en="")])[0][2] == "London"
 
 
-def country(name, rank, lon, lat, pop_est=None, name_fr=None):
+def country(name, rank, lon, lat, pop_est=None, name_en=None):
     p = {"NAME": name, "LABEL_X": lon, "LABEL_Y": lat, "LABELRANK": rank}
-    if name_fr is not None:
-        p["NAME_FR"] = name_fr
+    if name_en is not None:
+        p["NAME_EN"] = name_en
     if pop_est is not None:
         p["POP_EST"] = pop_est
     return {"properties": p}
@@ -77,15 +77,15 @@ def country(name, rank, lon, lat, pop_est=None, name_fr=None):
 
 def test_build_countries_point_d_etiquette_rang_et_tri():
     feats = [
-        country("Germany", 2, 9.678, 50.961, pop_est=8e7, name_fr="Allemagne"),
-        country("France", 2, 2.552, 46.696, pop_est=6.7e7, name_fr="France"),
-        country("Russia", 1, 44.69, 58.25, pop_est=1.4e8, name_fr="Russie"),
+        country("Germany", 2, 9.678, 50.961, pop_est=8e7, name_en="Germany"),
+        country("France", 2, 2.552, 46.696, pop_est=6.7e7, name_en="France"),
+        country("Russia", 1, 44.69, 58.25, pop_est=1.4e8, name_en="Russia"),
         {"properties": {"NAME": "Sans point", "LABELRANK": 3}},
     ]
     assert bg.build_countries(feats) == [
-        [44.69, 58.25, "Russie", 1],
-        [9.68, 50.96, "Allemagne", 2],
+        [44.69, 58.25, "Russia", 1],
         [2.55, 46.7, "France", 2],
+        [9.68, 50.96, "Germany", 2],
     ]
 
 
@@ -99,29 +99,35 @@ def test_country_rank_majore_le_rang_des_micro_etats():
 def test_build_countries_ecarte_les_rangs_jamais_affichables():
     """Au-delà de MAX_COUNTRY_RANK, aucun palier du front n'affiche le pays : ligne morte (dette n° 41)."""
     feats = [
-        country("Monaco", 6, 7.42, 43.73, pop_est=38_964, name_fr="Monaco"),
-        country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_fr="Croatie"),
-        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_fr="Malte"),
+        country("Monaco", 6, 7.42, 43.73, pop_est=38_964, name_en="Monaco"),
+        country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_en="Croatia"),
+        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_en="Malta"),
     ]
-    assert [(r[2], r[3]) for r in bg.build_countries(feats)] == [("Croatie", 6), ("Malte", 7)]
+    assert [(r[2], r[3]) for r in bg.build_countries(feats)] == [("Croatia", 6), ("Malta", 7)]
 
 
 def test_build_countries_ne_majore_pas_un_vrai_pays_de_rang_6():
-    feats = [country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_fr="Croatie")]
+    feats = [country("Croatia", 6, 16.0, 45.1, pop_est=4_067_500, name_en="Croatia")]
     assert bg.build_countries(feats)[0][3] == 6
 
 
 def test_build_countries_pop_est_absente_ne_penalise_pas():
-    feats = [country("Kosovo", 6, 20.9, 42.6, name_fr="Kosovo")]
+    feats = [country("Kosovo", 6, 20.9, 42.6, name_en="Kosovo")]
     assert bg.build_countries(feats)[0][3] == 6
 
 
 def test_build_countries_tri_tient_compte_du_rang_majore():
     feats = [
-        country("Luxembourg", 6, 6.13, 49.75, pop_est=619_896, name_fr="Luxembourg"),
-        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_fr="Malte"),
+        country("Luxembourg", 6, 6.13, 49.75, pop_est=619_896, name_en="Luxembourg"),
+        country("Malta", 5, 14.4, 35.9, pop_est=150_000, name_en="Malta"),
     ]
-    assert [r[2] for r in bg.build_countries(feats)] == ["Luxembourg", "Malte"]
+    assert [r[2] for r in bg.build_countries(feats)] == ["Luxembourg", "Malta"]
+
+
+def test_name_prefere_name_en_puis_name():
+    assert bg._name({"name_en": "Munich", "name": "München", "name_fr": "Munich (fr)"}) == "Munich"
+    assert bg._name({"name_en": "", "name": "München"}) == "München"
+    assert bg._name({"name_fr": "Allemagne"}) == ""
 
 
 def test_simplify_retire_les_points_alignes_et_garde_les_coudes():
@@ -218,12 +224,13 @@ def test_fichiers_commites_countries():
     rows = json.loads(raw)["countries"]
     assert 150 <= len(rows) <= 260
     assert rows == sorted(rows, key=lambda r: (r[3], r[2]))
-    assert {"France", "Japon", "Brésil"} <= {r[2] for r in rows}
+    assert {"France", "Japan", "Brazil", "Germany"} <= {r[2] for r in rows}
     by_name = {r[2]: r[3] for r in rows}
-    for micro in ("Monaco", "Andorre", "Cité du Vatican"):
+    assert not {"Japon", "Brésil", "Allemagne"} & set(by_name)
+    for micro in ("Monaco", "Andorra", "Vatican"):
         assert micro not in by_name  # rang majoré au-delà de MAX_COUNTRY_RANK : jamais affichable, non écrit
     assert max(by_name.values()) <= bg.MAX_COUNTRY_RANK
-    for real in ("Croatie", "Luxembourg"):
+    for real in ("Croatia", "Luxembourg"):
         assert by_name[real] == 6
 
 

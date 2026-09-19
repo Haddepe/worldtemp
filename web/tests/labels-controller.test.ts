@@ -97,7 +97,7 @@ describe("LabelsController (spec repères §4)", () => {
     r.ctl.setData(SET);
     r.ctl.setEnabled(true);
     r.ctl.setValueSource(temp(255));
-    expect(r.last().find((v) => v.name === "Paris")!.value).toBe("50,0 °C");
+    expect(r.last().find((v) => v.name === "Paris")!.value).toBe("50.0 °C");
     r.ctl.setValueSource(null);
     expect(r.last().find((v) => v.name === "Paris")!.value).toBeNull();
   });

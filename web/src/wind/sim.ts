@@ -143,7 +143,7 @@ export class WindSim {
   private phase = 0;
 
   constructor(readonly count: number, readonly trail: number, readonly stride = 1) {
-    if (!(count >= 1) || !(trail >= 2) || !(stride >= 1)) throw new Error("count ≥ 1, trail ≥ 2 et stride ≥ 1 attendus");
+    if (!(count >= 1) || !(trail >= 2) || !(stride >= 1)) throw new Error("expected count ≥ 1, trail ≥ 2 and stride ≥ 1");
     this.positions = new Float32Array(trail * count * 3);
     this.lon = new Float32Array(count);
     this.lat = new Float32Array(count);

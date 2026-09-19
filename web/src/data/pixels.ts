@@ -34,7 +34,7 @@ export function bitmapPixels(bitmap: ImageBitmap): Uint8ClampedArray | null {
     c.restore();
     return c.getImageData(0, 0, width, height).data;
   } catch (e) {
-    console.warn("[worldtemp] lecture des pixels de la heatmap impossible :", e);
+    console.warn("[worldtemp] cannot read heatmap pixels:", e);
     return null;
   }
 }

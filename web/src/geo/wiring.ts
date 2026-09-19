@@ -6,6 +6,7 @@
  */
 import type * as THREE from "three";
 import type { Tier } from "../gpu/tier";
+import { STRINGS } from "../i18n";
 import { LabelsController } from "../labels/controller";
 import type { LabelSet } from "../labels/data";
 import { createLabelsLayer } from "../labels/layer";
@@ -56,7 +57,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
         deps.labels.setData(await labelSet());
         labelsLoaded = true;
       } catch (e) {
-        console.warn("[worldtemp] étiquettes indisponibles :", e);
+        console.warn("[worldtemp] labels unavailable:", e);
         labelsToggle.setDisabled(true);
         return;
       }
@@ -67,7 +68,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
     labelsOn = on;
     deps.replaceSearch(withFlag(deps.search(), "labels", on));
     void applyLabels();
-  }, "Étiquettes indisponibles");
+  }, STRINGS.toggles.labelsUnavailable);
   labelsToggle.setOn(labelsOn);
 
   let rivers: RiversLayer | null = null;
@@ -91,7 +92,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
       try {
         rivers = await buildRivers();
       } catch (e) {
-        console.warn("[worldtemp] fleuves indisponibles :", e);
+        console.warn("[worldtemp] rivers unavailable:", e);
         riversToggle.setDisabled(true);
         return;
       }
@@ -107,7 +108,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
     riversOn = on;
     deps.replaceSearch(withFlag(deps.search(), "rivers", on));
     void applyRivers();
-  }, "Fleuves indisponibles");
+  }, STRINGS.toggles.riversUnavailable);
   riversToggle.setOn(riversOn);
 
   return {
@@ -128,7 +129,7 @@ export interface GeoHandle {
 
 async function fetchGeo(url: string): Promise<Response> {
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
   return r;
 }
 

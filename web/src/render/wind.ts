@@ -23,7 +23,7 @@ export interface WindLayer {
 }
 
 export function createWindLayer(positions: Float32Array, count: number, trail: number): WindLayer {
-  if (positions.length !== count * trail * 3) throw new Error("tampon de positions de taille inattendue");
+  if (positions.length !== count * trail * 3) throw new Error("unexpected position buffer size");
   const geometry = new THREE.InstancedBufferGeometry();
   // Coin du quad : x = 0 (début) ou 1 (fin) le long du segment, y = −1 / +1 en travers.
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0]), 3));

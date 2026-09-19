@@ -21,7 +21,7 @@ describe("TileIndex.parse (même agencement que tiler/encode.py)", () => {
   it("rejette magic, version et troncature", () => {
     expect(() => TileIndex.parse(bytes(0, 0, 0, 0, 1, 0, 0))).toThrow(IndexError);
     expect(() => TileIndex.parse(bytes(W, T, I, X, 2, 0, 0))).toThrow(IndexError);
-    expect(() => TileIndex.parse(bytes(W, T, I, X, 1, 1, 0))).toThrow(/tronqué/);
+    expect(() => TileIndex.parse(bytes(W, T, I, X, 1, 1, 0))).toThrow(/truncated/);
   });
 
   it("taille attendue au niveau 8", () => {

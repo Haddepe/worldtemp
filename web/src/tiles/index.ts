@@ -3,7 +3,7 @@ import { tilesPerLevel } from "./grid";
 
 export class IndexError extends Error {
   constructor(message: string) {
-    super(`index.bin : ${message}`);
+    super(`index.bin: ${message}`);
     this.name = "IndexError";
   }
 }
@@ -18,15 +18,15 @@ export class TileIndex {
 
   static parse(buf: ArrayBuffer): TileIndex {
     const b = new Uint8Array(buf);
-    if (b.length < 6 || MAGIC.some((c, i) => b[i] !== c)) throw new IndexError("en-tête invalide");
-    if (b[4] !== 1) throw new IndexError(`version ${b[4]} inconnue`);
+    if (b.length < 6 || MAGIC.some((c, i) => b[i] !== c)) throw new IndexError("invalid header");
+    if (b[4] !== 1) throw new IndexError(`unknown version ${b[4]}`);
     const maxLevel = b[5] as number;
     const levels: Uint8Array[] = [];
     let offset = 6;
     for (let z = 0; z <= maxLevel; z++) {
       const [cols, rows] = tilesPerLevel(z);
       const n = Math.ceil((cols * rows) / 8);
-      if (offset + n > b.length) throw new IndexError(`niveau ${z} tronqué`);
+      if (offset + n > b.length) throw new IndexError(`truncated level ${z}`);
       levels.push(b.subarray(offset, offset + n));
       offset += n;
     }

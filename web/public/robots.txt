@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://globelayers.com/sitemap.xml

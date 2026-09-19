@@ -1,4 +1,5 @@
 import type { Encoding } from "../data/encoding";
+import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
 import { legendGradientCss } from "../render/colormap";
 import { legendTicks } from "./format";
@@ -25,7 +26,7 @@ export interface Overlay {
 
 export function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
-  if (!el) throw new Error(`élément #${id} introuvable`);
+  if (!el) throw new Error(`element #${id} not found`);
   return el as T;
 }
 
@@ -77,12 +78,12 @@ export function createOverlay(): Overlay {
       const ticks = legendTicks(def, enc)
         .map((t) => `<span class="tick" style="left:${t.pct.toFixed(2)}%">${t.label}</span>`)
         .join("");
-      const iso = def.isoStep !== null ? ` · isolignes ${def.isoStep} ${def.unit}` : "";
+      const iso = def.isoStep !== null ? ` · ${STRINGS.legend.isolines} ${def.isoStep} ${def.unit}` : "";
       legend.innerHTML =
         `<div class="title">${def.label} · ${def.unit}${iso}</div>` +
         `<div class="bar" style="background:${legendGradientCss(def, enc)}"></div>` +
         `<div class="ticks">${ticks}</div>` +
-        `<div class="extremes"><span>min ${def.format(stats.min)}</span><span>max ${def.format(stats.max)}</span></div>`;
+        `<div class="extremes"><span>${STRINGS.legend.min} ${def.format(stats.min)}</span><span>${STRINGS.legend.max} ${def.format(stats.max)}</span></div>`;
     },
     setLegendVisible(on) {
       legend.hidden = !on;
@@ -92,7 +93,7 @@ export function createOverlay(): Overlay {
       if (options?.reload) {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = "Recharger";
+        button.textContent = STRINGS.fatal.reload;
         button.addEventListener("click", () => location.reload());
         fatal.appendChild(button);
       }

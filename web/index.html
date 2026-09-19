@@ -1,31 +1,93 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="description" content="Globe 3D de la météo mondiale : température, nuages, pluie, pression, humidité, qualité de l'air (NOAA GFS et GEFS-Aerosols)." />
-    <title>GlobeLayers — météo mondiale en 3D</title>
+    <title>GlobeLayers — Live 3D Weather Globe</title>
+    <meta name="description" content="Interactive 3D weather globe: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data updated hourly." />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="canonical" href="https://globelayers.com/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GlobeLayers" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://globelayers.com/" />
+    <meta property="og:title" content="GlobeLayers — Live 3D Weather Globe" />
+    <meta property="og:description" content="Explore today's weather on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta property="og:image" content="https://globelayers.com/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="GlobeLayers — Live 3D Weather Globe" />
+    <meta name="twitter:description" content="Explore today's weather on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta name="twitter:image" content="https://globelayers.com/og.jpg" />
+    <meta name="twitter:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "GlobeLayers",
+        "url": "https://globelayers.com/",
+        "description": "Interactive 3D weather globe: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data updated hourly.",
+        "applicationCategory": "WeatherApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires WebGL",
+        "inLanguage": "en",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "image": "https://globelayers.com/og.jpg"
+      }
+    </script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <canvas id="globe" aria-label="Globe 3D météo"></canvas>
+    <canvas id="globe" aria-label="3D weather globe"></canvas>
     <div id="labels" aria-hidden="true"></div>
     <div id="overlay">
       <header id="banner" class="panel">
-        <span id="banner-text">Chargement…</span>
-        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Replier ou déployer les panneaux">▾</button>
+        <span id="banner-text">Loading…</span>
+        <button id="about-open" type="button" aria-label="About GlobeLayers" aria-haspopup="dialog">?</button>
+        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Collapse or expand panels">▾</button>
       </header>
       <div id="status" class="panel" role="status" hidden></div>
-      <aside id="legend" class="panel" aria-label="Légende de la couche"></aside>
+      <aside id="legend" class="panel" aria-label="Layer legend"></aside>
       <aside id="controls" class="panel">
         <div id="layers-menu"></div>
-        <button id="wind-toggle" type="button" role="switch" aria-checked="false" disabled>Vent</button>
-        <button id="labels-toggle" type="button" role="switch" aria-checked="false">Étiquettes</button>
-        <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Fleuves</button>
+        <button id="wind-toggle" type="button" role="switch" aria-checked="false" disabled>Wind</button>
+        <button id="labels-toggle" type="button" role="switch" aria-checked="false">Labels</button>
+        <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Rivers</button>
       </aside>
       <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · NOAA GFS · GEFS-Aerosols</p>
       <div id="ad-slot" hidden></div>
     </div>
+    <dialog id="about" aria-labelledby="about-title">
+      <div class="about-body">
+        <button id="about-close" type="button" aria-label="Close">×</button>
+        <h1 id="about-title">GlobeLayers</h1>
+        <p>GlobeLayers is a live 3D weather globe. Spin it, zoom in, and read today's weather anywhere on Earth, straight from open forecast data.</p>
+        <h2>Layers</h2>
+        <ul>
+          <li><strong>Temperature</strong> — air temperature 2 m above ground, in °C.</li>
+          <li><strong>Wind</strong> — animated streamlines of the 10 m wind; speed and direction on hover.</li>
+          <li><strong>Clouds</strong> — total cloud cover, in %.</li>
+          <li><strong>Rain</strong> — precipitation rate, in mm/h.</li>
+          <li><strong>Pressure</strong> — mean sea-level pressure with isobars, in hPa.</li>
+          <li><strong>Humidity</strong> — relative humidity 2 m above ground, in %.</li>
+          <li><strong>PM2.5</strong> and <strong>Dust</strong> — fine particles and desert dust near the surface, in µg/m³.</li>
+          <li><strong>Labels</strong> and <strong>Rivers</strong> — cities with the value of the active layer, countries, and major rivers.</li>
+        </ul>
+        <h2>Data &amp; freshness</h2>
+        <p>Weather layers come from the NOAA GFS model at 0.25° resolution and are refreshed every hour; air quality comes from NOAA GEFS-Aerosols, refreshed every 3 hours. The globe shows the forecast valid for the current hour, taken from the latest available model run; the banner always shows the run and valid time.</p>
+        <h2>Sources &amp; credits</h2>
+        <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth.</p>
+        <h2>Privacy</h2>
+        <p>GlobeLayers uses cookie-free audience measurement by Cloudflare Web Analytics. No personal data is collected and there are no advertising trackers.</p>
+      </div>
+    </dialog>
     <div id="tooltip" class="panel" role="status" aria-live="off" hidden></div>
     <div id="marker" aria-hidden="true" hidden></div>
     <div id="fatal" role="alert" hidden></div>

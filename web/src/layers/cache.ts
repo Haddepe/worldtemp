@@ -6,7 +6,7 @@ export class LayerCache<T extends { dispose(): void }> {
     private readonly capacity: number,
     private readonly factory: (id: string) => T,
   ) {
-    if (!(capacity >= 1)) throw new Error("capacité ≥ 1 attendue");
+    if (!(capacity >= 1)) throw new Error("expected capacity ≥ 1");
   }
 
   has(id: string): boolean {

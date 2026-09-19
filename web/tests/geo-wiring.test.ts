@@ -111,7 +111,7 @@ describe("wireGeo — étiquettes (spec repères §6, §7)", () => {
     wireGeo(h.deps).start();
     await flush();
     expect(h.labelsButton.raw.disabled).toBe(true);
-    expect(h.labelsButton.raw.title).toBe("Étiquettes indisponibles");
+    expect(h.labelsButton.raw.title).toBe("Labels unavailable");
     expect(h.labels.setEnabled).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -199,7 +199,7 @@ describe("wireGeo — fleuves (spec repères §6, §7)", () => {
     geo.start();
     await flush();
     expect(h.riversButton.raw.disabled).toBe(true);
-    expect(h.riversButton.raw.title).toBe("Fleuves indisponibles");
+    expect(h.riversButton.raw.title).toBe("Rivers unavailable");
     expect(h.deps.scene.add).not.toHaveBeenCalled();
     expect(geo.rivers()).toBeNull();
     warn.mockRestore();

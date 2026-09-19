@@ -47,7 +47,8 @@ corriger.
 | Pipeline de données | Python (**3.12 sur Actions**, venv local **3.14**) | `eccodes` (bindings Python, décodage GRIB direct par clés — plus de `xarray`/`cfgrib` dans le code, §5), `numpy`, `Pillow`, `requests`, `boto3` (client S3 pour R2, §5) |
 | Dépendances pipeline | `pipeline/requirements.txt` (numpy, Pillow, requests, boto3 — installe sur **Windows**) vs `pipeline/requirements-grib.txt` (`cfgrib`, `eccodeslib`, `xarray` — **Actions seulement**, pas de roue Windows) | `eccodes` seul est appelé (`pipeline/grib_adapter.py::_message_keys` sur `import eccodes`) depuis la spec couches (2026-09-12) ; `cfgrib`/`xarray` ne sont plus référencés dans `pipeline/`/`tests/` mais restent listés dans `requirements-grib.txt` pour fournir `eccodeslib` — élagage possible, dette n° 30 (§8) |
 | Sources de données | NOMADS / **GFS 0,25°** (NOAA, 5 couches, horaire) ; NOMADS / **GEFS-Aerosols 0,25°** (NOAA, `pm25`/`dust`, 4 cycles/jour, pas 3 h) | GFS : script de filtrage `filter_gfs_0p25_1hr.pl`, run+échéance à l'heure courante (§5) ; GEFS-chem : `filter_gefs_chem_0p25.pl`, retenu contre CAMS/GEOS-CF (§5, spec couches 2026-09-12) |
-| Repères géographiques *(lot C, mergé 2026-09-19)* | **Natural Earth v5.1.2** (domaine public) : `populated_places` 10 m, `admin_0_countries` 50 m, `rivers_lake_centerlines` 10 m | transformés **à la main** par `tools/build_geo.py` (stdlib seule, cache git-ignoré `tools/.geo-cache/`) en trois fichiers statiques commités sous `web/public/geo/` ; ni R2, ni CI, ni pipeline horaire |
+| Repères géographiques *(lot C, mergé 2026-09-19)* | **Natural Earth v5.1.2** (domaine public) : `populated_places` 10 m, `admin_0_countries` 50 m, `rivers_lake_centerlines` 10 m | transformés **à la main** par `tools/build_geo.py` (stdlib seule, cache git-ignoré `tools/.geo-cache/` ; noms **anglais** `name_en` depuis le lot D) en trois fichiers statiques commités sous `web/public/geo/` ; ni R2, ni CI, ni pipeline horaire |
+| Langue et référencement *(lot D, 2026-09-19)* | **Site en anglais seul** : chaînes d'interface dans `web/src/i18n/en.ts`, noms Natural Earth `name_en` ; **Cloudflare Web Analytics** (sans cookie, beacon injecté au build de production, jeton public dans `web/src/build/beacon.ts`) ; Google Search Console + Bing Webmaster | aucun service payant, aucune dépendance npm ajoutée (pas de `@types/node` : `web/tests/node-shims.d.ts`) ; balises, `robots.txt`, `sitemap.xml`, manifeste, `og.jpg` écrits à la main et commités |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
 | Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
@@ -130,19 +131,28 @@ HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
 .gitignore                    # `web/public/dev-data/` ignoré (spec vent T11a : données dry-run CI pour la validation navigateur)
 web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
-  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique ; lot D : `lang="en"`, `<head>` complet (Open Graph, Twitter, JSON-LD WebApplication, canonical, icônes), bouton `#about-open` dans le bandeau, `<dialog id="about">` avec le texte anglais indexable
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
-  tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler
-  vite.config.ts                # config Vitest (fichiers de tests sous web/tests/) ; server.strictPort (spec 3)
+  tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler ; `allowImportingTsExtensions` (lot D : vite.config.ts importe `./src/build/*.ts` avec l'extension, exigée par le futur chargeur de config de Vite)
+  vite.config.ts                # config Vitest (fichiers de tests sous web/tests/) ; server.strictPort (spec 3) ; lot D : plugins `worldtemp:glsl-strip` (`enforce: "pre"`, tous modes : dev, test, build) et `worldtemp:cloudflare-beacon` (`apply: "build"`)
   wrangler.jsonc                # Worker Static Assets ; routes: globelayers.com (custom_domain), workers_dev: true (§8)
   public/
-    _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
+    _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache ; lot D : 1 jour pour og.jpg, favicon, icône, manifeste, robots, sitemap
+    robots.txt, sitemap.xml    # lot D : tout autorisé + lien du sitemap ; une seule URL (https://globelayers.com/)
+    favicon.svg, apple-touch-icon.png, site.webmanifest  # lot D : globe à méridiens (SVG), icône 180 px générée depuis le SVG, manifeste minimal (`display: browser`, pas de service worker)
+    og.jpg                     # lot D : image Open Graph 1200 × 630 (139 Ko), capture réelle du build local (température + vent, Atlantique/Europe), à refaire à la main si le look change
     geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (206 pays, 6 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko)
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
     main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind` ; repères géographiques délégués à `geo/wiring.ts` (`setupGeo`, dette n° 42 : 495 → 411 lignes)
     config.ts                  # DATA_BASE_URL (data.globelayers.com/layers, spec couches) /TILES_BASE_URL, REFRESH_MS, STALE_AFTER_MS
+    i18n/                       # lot D : langue du site (anglais seul aujourd'hui)
+      en.ts                       # `STRINGS` : toutes les chaînes d'interface (couches, interrupteurs, statuts, erreurs fatales, bandeau, vent + rose 16 points, légende, sources) ; les messages console/exception restent en ligne dans leur module
+      index.ts                    # `export { STRINGS } from "./en"` — ajouter une langue = un fichier + ce choix
+    build/                      # lot D : modules de build, importés par vite.config.ts seulement (jamais dans le bundle)
+      beacon.ts                   # `CF_BEACON_TOKEN`, `beaconTag(token)` (jeton validé 32 hex, sinon lève), `injectBeacon(html, tag)` (lève si `</body>` absent)
+      glsl.ts                     # `stripGlslComments` : retire `//…` et `/*…*/` des shaders importés en `?raw`, nombre de lignes conservé (les commentaires français restent dans les sources, rien n'en part dans le bundle)
     style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9)
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
@@ -200,7 +210,8 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     ui/
       layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
       toggle.ts                   # lot C : createToggle générique (role="switch"), remplace l'ancien interrupteur propre au vent ; désactivé = aria-checked false + titre d'indisponibilité, titre d'origine rendu à la réactivation
-      format.ts                  # formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry ; NOUVEAU `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10)
+      about.ts                    # lot D : createAbout(dialog, open, close) — `<dialog>` natif en modal, fermeture par bouton, fond et Échap ; le texte vit dans index.html
+      format.ts                  # lot D : formats anglais via STRINGS (`en-GB` 24 h, point décimal, `2 h 14 min ago`, `Wind 23 km/h NW`) ; formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry ; NOUVEAU `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10)
       overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId ; `layersMenu`/`windToggle` remplacent l'ancien `controls` unique (spec vent §9) ; `panelRects()` (rectangles des panneaux visibles, évités par les étiquettes) et `onLayoutChange(cb)` (repli/dépli)
       tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode ; NOUVEAU setWind(field) ajoute une 2ᵉ ligne « Vent … » (spec vent §10)
   tests/
@@ -236,6 +247,10 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     geo-params.test.ts            # lot C : parseFlag / withFlag
     geo-loader.test.ts            # lot C : once, échec partiel des étiquettes, binaire invalide
     geo-wiring.test.ts            # dette n° 42 : wireGeo — URL, chargement paresseux, bascule pendant le téléchargement, réentrance I1, échecs, écouteur de vue éteint
+    english.test.ts               # lot D : garde-fou « rien de français n'est livré » — littéraux de tout src/ (commentaires exclus), index.html, 4 fichiers texte de public/, 7 shaders après retrait des commentaires ; lettres accentuées + liste de mots en mots entiers
+    seo.test.ts                   # lot D : balises du <head>, JSON-LD, robots, sitemap = canonical, manifeste, _headers, texte About dans le HTML initial, en-têtes de og.jpg (1200 × 630, ≤ 150 Ko) et de l'icône (180 × 180)
+    about.test.ts, beacon.test.ts, glsl-strip.test.ts  # lot D : dialog sur faux éléments ; jeton vide/valide/hostile et injection ; retrait des commentaires + test de câblage `?raw`
+    node-shims.d.ts               # lot D : déclarations minimales node:fs / node:path / __dirname (pas de @types/node)
     labels-data.test.ts           # lot C : parseurs (7 refus), LabelSet
     labels-select.test.ts         # lot C : paliers, horizon sans projection, marge de limbe, chevauchement, plafond, stabilité
     labels-text.test.ts           # lot C : valeur, nom seul (aucune couche, sous tooltipMin)
@@ -376,6 +391,12 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Câblage geo extrait en `wireGeo` à dépendances injectées** + `setupGeo` pour l'assemblage réel, plutôt qu'un simple déplacement de code *(2026-09-19, dette n° 42)* | Le défaut de `main.ts` n'était pas sa longueur mais l'absence de test : I1 (lot C) et le TDZ (lot vent) étaient des bugs de réentrance invisibles à Vitest. Boutons, scène, réseau et URL injectés → la bascule pendant un téléchargement se teste en Node. |
 | **Les étiquettes évitent les panneaux de l'interface et le bord de l'écran par la boîte estimée**, dans `selectLabels` (`bounds`, `obstacles`), pas par une marge fixe dans `projectToScreen` *(2026-09-19, dette n° 41)* | Les panneaux changent de taille et de place (mobile, légende, repli) : leurs rectangles réels ouvrent la liste des boîtes occupées, même test que l'anti-chevauchement. Re-sélection forcée au repli/dépli (`relayout`). |
 | **Variante sombre des étiquettes indexée sur « une couche est affichée »** (`layerShown`), plus sur la présence de pixels lisibles ; **pays de rang > 7 non écrits** dans `countries.json` (`MAX_COUNTRY_RANK`, miroir de `COUNTRY_TIERS`) *(2026-09-19, dette n° 41)* | Une couche sans pixels CPU colore quand même le globe : texte sombre illisible. 36 lignes qu'aucun palier n'affiche : poids mort ; à relever en même temps que les paliers. |
+| **Site en anglais seul, partout** ; pas de sélecteur ni de détection de langue ; unités métriques conservées *(2026-09-19, décision utilisateur, lot D)* | « Le site doit rester global et ouvert au monde entier » ; d'autres langues = chantier futur (§8 R7). Tout ce qui est livré au navigateur est en anglais, **y compris** les messages de console et d'exception : c'est ce qui permet un garde-fou automatique strict. Restent en français : commentaires, tests, commits, HISTORY, specs, plans. |
+| **Chaînes d'interface centralisées dans `i18n/en.ts` (`STRINGS`), messages développeur en ligne** ; ni moteur d'interpolation ni changement de langue à l'exécution *(2026-09-19, lot D)* | Ajouter une langue plus tard = un fichier de même forme et un choix dans `i18n/index.ts`, sans toucher aux appelants. Les phrases à variable sont des fonctions. Les messages de console ne seront jamais localisés : les centraliser serait du bruit. |
+| **Commentaires GLSL retirés à la transformation, en tout mode**, plutôt que traduits *(2026-09-19, lot D, revue finale)* | Les shaders sont importés en `?raw` : leurs commentaires français partaient dans le bundle (74 lettres accentuées). Les retirer garde la convention du dépôt et allège le bundle (−2,08 Ko gzip). **Tous modes et non « au build »** : un retrait seulement au build serait du code de rendu qu'aucun test n'exerce. Nombre de lignes conservé → numéros de ligne des erreurs GLSL justes. |
+| **Cloudflare Web Analytics** (sans cookie) plutôt que PostHog ou GA4 ; **image Open Graph = capture réelle statique** ; **texte indexable dans un panneau About de la page unique** ; tout statique, écrit à la main *(2026-09-19, décisions utilisateur, lot D)* | Pas de bandeau de consentement à construire ; le vrai produit en image, zéro infrastructure ; une seule URL. Pas d'événements d'usage : accepté (§8 R8). |
+| **Pas de `@types/node`** : `web/tests/node-shims.d.ts` *(2026-09-19, lot D)* | La spec du lot interdit toute nouvelle dépendance ; les tests qui lisent des fichiers n'utilisent que cinq signatures. Remplaçable par `@types/node` en une ligne. |
+| **Phrase About sur la fraîcheur : « forecast valid for the current hour, taken from the latest available model run »**, pas « 4 to 6 hours after each model run » *(2026-09-19, revue finale)* | Le globe montre la prévision valide à l'heure courante (décision du 2026-08-30 ci-dessus) : « 4 à 6 h » laissait croire à des données vieilles de 4 à 6 h. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -429,6 +450,11 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | Validation du lot C sur `vite preview --port 4173` : plus de frontières ni de détail satellite | Le CORS du bucket R2 n'autorise que `localhost:5173` et la prod : sur tout autre port (ou par l'IP du PC pour un téléphone) les tuiles sont refusées et le site se rabat sur Blue Marble 4K. Pas une régression : **valider sur le port 5173**. Pour servir à la fois `localhost` et l'IP LAN, builder avec `VITE_DATA_BASE_URL=/dev-data/layers` **depuis PowerShell** (Git Bash réécrit un chemin absolu) puis `vite preview --port 5173 --strictPort --host`. |
 | 2026-09-18 | Revue finale du lot C (C1) : un `div` d'étiquette recyclé gardait la valeur de l'étiquette précédente — « France » affichant « 23,4 °C », une ville sèche affichant la pluie d'une autre | La validation navigateur ne l'avait pas vu : faite en température, où chaque ville réécrit sa valeur. Remise à zéro du `span` à la réutilisation + test sur faux DOM minimal (`labels-layer.test.ts`). **Toujours valider les étiquettes sur une couche à `tooltipMin` (pluie) avec des pays visibles.** |
 | 2026-09-18 | Revue finale du lot C (I1) : `applyRivers` réentrant — un clic pendant le démarrage créait deux maillages, le premier impossible à masquer | La garde était testée avant l'`await` et la variable assignée après ; `once()` ne dédupliquait que le téléchargement. Création + `scene.add` + écouteur regroupés dans un `once`. Même famille que le TDZ du lot vent : **relire chaque `await` de `main.ts` comme un point de réentrance.** |
+| 2026-09-19 | Lot D, contrôle « tout est en anglais » : le garde-fou et le contrôle du bundle réutilisaient **la même liste de mots** — `palette vide` et le préfixe `racine` (sans accent, hors liste) sont passés, et le contrôleur a écrit « 0 mot français dans le bundle ». Trouvé par la revue finale, qui a lu tous les littéraux un par un. | Liste élargie aux mots-outils français (`avec`, `pour`, `dans`, `les`, `des`, `le`, `la`, `de`…) : presque toute phrase française en contient un. **Un contrôle qui partage l'angle mort de ce qu'il contrôle ne prouve rien** : vérifier par une autre voie (lecture exhaustive, lettres accentuées du bundle). |
+| 2026-09-19 | Lot D : les shaders importés en `?raw` embarquaient leurs **commentaires français** dans le bundle ; le garde-fou ne lisait que les `.ts`. | `stripGlslComments` + plugin Vite en tout mode, garde-fou étendu aux shaders nettoyés et à `public/`. |
+| 2026-09-19 | Lot D, validation à 500 px : le bouton de repli touchait le bord droit. Cause antérieure au lot : `#legend { width: calc(100vw − 1.5rem) }` sans `border-box` → légende de 500 px, grille élargie de 11 px ; le bouton About a seulement rendu le débordement visible. | `box-sizing: border-box` sur la légende mobile ; cibles tactiles du bandeau portées à 1,75 rem (Lighthouse `target-size`). |
+| 2026-09-19 | Plan du lot D : `vite.config.ts` importait `./src/build/beacon` sans extension → avertissement Vite à chaque build et test, rupture annoncée avec le futur chargeur de config. | Import en `.ts` + `allowImportingTsExtensions` (`noEmit` déjà vrai). Les plans avec code complet sont transcrits défauts compris : la revue l'a attrapé. |
+| 2026-09-19 | Sous Git Bash : `grep -c $''` a compté toutes les lignes (fausse alerte CRLF) et `grep` sur des lettres accentuées coupe les caractères multi-octets ; un heredoc `<<'EOF'` a aussi mangé des barres obliques inverses d'une regex Python. | Contrôles d'octets et de caractères en Python (`encoding="utf-8"`), `git ls-files --eol` pour les fins de ligne ; scripts à regex écrits par l'outil d'écriture de fichier, pas par heredoc. |
 | 2026-09-18 | Plan du lot C : trois défauts de **mon plan** trouvés par les revues, pas par les tests du plan — `rAF` différé posant `.on` après un retrait de la même frame (étiquette orpheline), rattrapage périmé re-sélectionnant 4 ms après une sélection naturelle, test d'angle par `acos(dot)` en Float32 mal conditionné à 0,2° | Le code complet dans un plan n'est pas une preuve : les implémenteurs le transcrivent fidèlement, défauts compris. Les revues de tâche et la consigne « ne force pas un test au vert, signale » ont fait leur travail. Mesurer un petit angle par la corde `2·asin(|s−e|/2R)`, jamais par `acos`. |
 
 ## 7. Historique par plan (chronologie)
@@ -495,6 +521,8 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 40 | **Critère 8 initial de la spec vent (tick ≤ 4 ms) non atteignable sur la machine de référence** avec un champ réel à `N = 12 000` (tick seul mesuré 10,9–13,2 ms, §6) ; critère révisé le 2026-09-13 vers un budget de frame (§5) | Si un tick ≤ 4 ms redevenait nécessaire (davantage de particules, machine plus modeste), l'échantillonnage bilinéaire CPU par particule resterait le poste dominant même après `sampleUV` fusionné | 🟡 ouvert — pistes non retenues faute de nécessité actuelle : champ `Float32` pré-décodé (évite le décodage linéaire par lecture), simulation déportée en Web Worker |
 | 41 | **Reliquats du lot C** (revue finale 2026-09-18, détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-18-labels-rivers/progress.md`) : étiquettes coupées au bord droit de l'écran ou passant sous le bandeau de statut (`projectToScreen` sans marge) ; variante sombre indexée sur `source === null` (couche aux pixels illisibles → texte sombre sur couche colorée) ; 36 lignes de rang 8 jamais affichables dans `countries.json` ; `fit_budget` sans plafond d'itérations ; double projection dans `LabelsController.refresh()` ; `deps.size()` lu 2–3 fois par vue ; rattrapage non annulé à l'extinction (inoffensif) ; écouteur `onViewChange` des fleuves actif même éteint ; commentaire du `catch` externe de `scene.ts` périmé depuis l'isolation des écouteurs de vue ; `labels/data.ts` n'écarte pas un `cap` hors {0,1} ; octet réservé de `rivers.bin` non vérifié | Cosmétique ou robustesse marginale ; aucun critère d'acceptation touché | ✅ résolu 2026-09-19 (`3c59f4d`, `681525b`) : cadre + obstacles dans `selectLabels`, `layerShown`, `MAX_COUNTRY_RANK`, `fit_budget` borné, une projection et une lecture de taille par vue, écouteur des fleuves inactif éteint, parseurs durcis, commentaire corrigé. **Laissé tel quel, assumé** : rattrapage non annulé à l'extinction (le callback revérifie `enabled`/`set`, aucun effet) |
 | 42 | **`main.ts` atteint 495 lignes** : le bloc des repères géographiques (chargement, deux interrupteurs, contrôleur, fleuves) y est autonome ; la revue finale recommande de l'extraire en `geo/wiring.ts` (`setupGeo({ ui, scene, canvas, tier })`), dans la lignée de la recommandation du lot B1 (machine à états de `main.ts`) | Chaque nouveau lot ajoute des points de réentrance dans un fichier sans test (I1 du lot C, TDZ du lot vent) | ✅ résolu 2026-09-19 (`7f9f2f7`) pour le bloc geo : `geo/wiring.ts`, 11 tests, `main.ts` 411 lignes. La machine à états des couches et du vent (recommandation B1) reste dans `main.ts` : non extraite |
+| 43 | **Bouton About inaccessible sur les deux écrans fatals** (WebGL absent, contexte perdu) : `#about-open` vit dans `#overlay`, que `showFatal()` masque (lot D, revue de T6, constat parqué) | Un visiteur sans WebGL ne peut lire ni la présentation ni les crédits ; `#attribution` est masqué de la même façon. Sortir le bouton de `#overlay` rouvre la mise en page du bandeau | 🟡 ouvert |
+| 44 | **Mineurs différés du lot D** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-19-public-site/progress.md`) : le découpage du garde-fou `english.test.ts` serait trompé par un littéral regex contenant un guillemet (aucun dans `src/`) ; `web/src/style.css` sous aucun garde-fou de langue (accents en commentaires seulement, retirés par la minification ; `sans-serif` ferait un faux positif sur `sans`) ; `metaContent` (`seo.test.ts`) suppose l'ordre `name`/`property` puis `content` ; plugin `transformIndexHtml` du beacon sans test automatisé ; `String.replace` de `injectBeacon` interpréterait un `$&` (balise fixe, jeton hexadécimal validé : sans effet) ; `stripGlslComments` couperait une directive `#define` contenant un bloc `/* */` multi-ligne (aucun bloc dans les 7 shaders) ; libellé `Tamazunchale ♤` (coquille de Natural Earth `name_en`, visible seulement très zoomé sur le Mexique) ; pas de repère `<main>` (Lighthouse accessibilité 94) ; pas de `llms.txt` ; la spec §5 du lot dit « huit couches + vent » pour sept | Polish et robustesse marginale ; aucun critère d'acceptation touché | 🟡 ouvert |
 
 ### Chantiers à venir (feuille de route, relevée le 2026-09-19)
 
@@ -514,8 +542,8 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 
 | # | Manque | Détail (état au 2026-09-19) | Lot |
 |---|---|---|---|
-| R1 | **Référencement** | `<head>` = `title` + `description` seulement : ni Open Graph ni image de partage, ni favicon, ni `robots.txt`, ni `sitemap.xml`, ni `canonical`, ni données structurées ; site en français seulement | D |
-| R2 | **Mesure d'audience** | Aucun script d'analytics dans le code | D |
+| R1 | ~~**Référencement**~~ ✅ lot D (Lighthouse SEO 100 en local ; déclaration aux moteurs : voir §9) | ~~`<head>` = `title` + `description` seulement : ni Open Graph ni image de partage, ni favicon, ni `robots.txt`, ni `sitemap.xml`, ni `canonical`, ni données structurées ; site en français seulement~~ | D |
+| R2 | ~~**Mesure d'audience**~~ ✅ lot D : beacon Cloudflare Web Analytics au build de production (actif dès que `CF_BEACON_TOKEN` est renseigné, voir §9) | ~~Aucun script d'analytics dans le code~~ | D |
 | R3 | **Dimension temporelle** | Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances | E |
 | R4 | **Recherche et localisation** | Ni recherche de ville ni « ma position » | F |
 | R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS) | — |
@@ -532,9 +560,43 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 | P3 | Halo d'atmosphère sur le pourtour (phase 6) | Rien dans le code | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
 | P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
 
-**Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
+**Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (4) — Lot D (« site public ») : implémenté, revu et validé dans le navigateur sur `feat/public-site`, NON MERGÉ — attend le jeton d'audience et l'accord de merge
+
+Brainstorming → spec `docs/superpowers/specs/2026-09-19-public-site-design.md` → plan 10 tâches
+(`d4f9f5b`) → exécution **subagent-driven** (base `22712dd`, HEAD `fe5e399` + ce commit). Décisions
+en §5, défauts en §6, dettes n° 43–44 et feuille de route en §8.
+
+- **T1–T7** (implémenteur + relecteur par tâche) : `i18n/en.ts` + formats anglais + garde-fou
+  (T1), interface (T2), ~60 messages développeur (T3), noms `name_en` — `places.json` 250 Ko,
+  `countries.json` 6 Ko, `rivers.bin` identique à l'octet (T4), `<head>` + fichiers statiques (T5),
+  panneau About (T6), beacon (T7). Tours de correction : T1 ×1 (titre de test traduit à tort),
+  T7 ×1 (import sans extension, défaut du plan).
+- **T8 + revue finale** (fable) « With fixes » : deux littéraux français livrés et les
+  commentaires GLSL des shaders `?raw`, invisibles pour un garde-fou trop étroit (§6) ; vague
+  unique `4896203..0301bc0` (littéraux, `" : "`, `stripGlslComments` en tout mode, garde-fou
+  élargi aux mots-outils / shaders / `public/`, `injectBeacon`, JSON-LD, phrase de fraîcheur,
+  `twitter:image:alt`) ; re-revue (opus) 7/7, retrait des commentaires comparé à un automate de
+  référence sur 60 000 entrées.
+- **T9, validation navigateur** (Brave, `vite build` + `vite preview`) : les 7 shaders rendent sans
+  erreur GLSL ; tout en anglais sur chaque couche (bandeau, menu, légendes, tooltip, étiquettes
+  Europe et Asie, attributs) ; panneau About (fond, ×, Échap, retour du focus, 500 px) ;
+  **Lighthouse SEO 100**, Best Practices 100, Accessibilité 94 ; `og.jpg` (139 Ko) et icône Apple
+  capturés et commités ; deux correctifs CSS (légende mobile `border-box`, cibles tactiles
+  1,75 rem). Rapport : `.superpowers/sdd/2026-09-19-public-site/validation-report.md`.
+- **Tests :** 441 vitest (43 fichiers), `tsc` propre ; 207 passed / 10 skipped pytest local.
+- **Build :** `index-*.js` **159,82 Ko gzip** (−2,08 Ko : commentaires GLSL retirés) ; `index.html`
+  2 217 octets gzip.
+- **Prochaine action :** (1) jeton Cloudflare Web Analytics (l'utilisateur crée le site
+  `globelayers.com` dans Analytics & Logs → Web Analytics, ou autorise l'API) → `CF_BEACON_TOKEN` ;
+  (2) accord de merge — **merger = déployer** ; (3) merge `--no-ff`, §7 avec le sha, push, prod
+  (`lang="en"`, 6 fichiers statiques en 200, `countries.json` avec Germany, beacon, aucun cookie) ;
+  (4) Google Search Console (propriété de domaine, TXT DNS) et Bing Webmaster, sitemap, **accord
+  de l'utilisateur à chaque action** ; Google signalera `WebApplication` « inéligible » aux
+  résultats enrichis (pas de notes) : attendu, ne rien inventer.
 
 ### 2026-09-19 (3) — Feuille de route relevée en §8, lot D (« site public ») choisi
 
@@ -1258,7 +1320,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
+**Dernière mise à jour :** 2026-09-19 (**lot D « site public » implémenté, revu et validé dans le navigateur sur `feat/public-site`, non mergé** — site en anglais, SEO (Lighthouse 100), About, beacon, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; **attend le jeton d'audience et l'accord de merge**)
+**Entrée précédente :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 traitées sur `refactor/geo-wiring`, non mergé** — `geo/wiring.ts` testable en Node, étiquettes qui évitent panneaux et bords, countries.json 206 lignes ; 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; **validation navigateur en attente** avant merge)
 **Entrée précédente :** 2026-09-19 (**lot C validé sur vrai téléphone, mergé `c4ed59e` et déployé** — étiquettes villes/pays avec valeur de couche + fleuves en prod ; 326 vitest + 204 pytest, bundle 160,65 Ko gzip ; aucun lot en cours)
