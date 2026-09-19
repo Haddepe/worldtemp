@@ -23,22 +23,28 @@
 
 ## 1. Résumé du projet
 
-Site web affichant un **globe 3D interactif** (type Google Earth) portant deux
-couches :
+Site web public, **https://globelayers.com**, en **anglais** : un **globe 3D interactif** de la
+météo mondiale, vu depuis l'espace (ciel étoilé, halo d'atmosphère). *(Résumé remis à jour le
+2026-09-19 ; le plan d'origine, `docs/PLAN.md`, prévoyait un relief en displacement map et une
+seule heatmap de température — voir §8 « Chantiers à venir » pour ce qui en reste.)*
 
-- le **relief terrestre** en 3D — displacement map + normal map, exagération
-  verticale réglable ;
-- une **heatmap des températures actuelles** du monde entier, issue du modèle
-  météo **GFS (NOAA)**, grille 0,25°, régénérée toutes les heures par un pipeline
-  automatisé.
+- **sept couches météo** au choix (température, nuages, pluie, pression avec isobares, humidité,
+  PM2.5, poussière) plus le **vent animé** en surimpression, issues des modèles **GFS** et
+  **GEFS-Aerosols** (NOAA), grille 0,25°, régénérées chaque heure par un pipeline automatisé
+  (GitHub Actions → Cloudflare R2) ; le globe montre la prévision valide à l'heure courante ;
+- un **fond de carte en tuiles** (satellite de loin, carte avec relief ombré et frontières de
+  près), des **étiquettes** de villes et de pays portant la valeur de la couche active, les
+  **fleuves**, un tooltip au survol ou au toucher ;
+- un **panneau About** indexable, le référencement (Open Graph, JSON-LD, sitemap) et une mesure
+  d'audience sans cookie.
 
 Contrainte transverse : **navigation fluide y compris sur mobile modeste**, via
 deux niveaux de subdivision de sphère choisis selon le GPU détecté.
 
 Les données GFS sont du **domaine public** (NOAA), donc compatibles avec une
-monétisation par publicité. Leur latence est de ~4-6 h sur le temps réel : c'est
-une propriété du modèle, acceptée et affichée à l'utilisateur, pas un défaut à
-corriger.
+monétisation par publicité. Un run GFS n'est disponible que plusieurs heures après son heure
+de référence : c'est une propriété du modèle, compensée en affichant la prévision valide à
+l'heure courante ; le bandeau montre toujours le run et l'heure de validité.
 
 ## 2. Stack technique
 
@@ -107,7 +113,7 @@ tools/
   build_geo.py                 # lot C : Natural Earth → web/public/geo/ (villes triées par priorité, pays avec rang majoré pour les micro-États et écartés au-delà de `MAX_COUNTRY_RANK` = 7 (jamais affichables), fleuves simplifiés Douglas-Peucker + format binaire WTRV) ; `fit_budget` borné à 40 itérations ; lancé à la main, déterministe
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
-  test_build_geo.py            # lot C : 21 tests pytest — logique pure de build_geo (tri, arrondi, repli NAME_FR, DP, WTRV) et validité des trois fichiers commités (schéma, ordre, budgets)
+  test_build_geo.py            # lot C : 22 tests pytest (dont `_name` : `name_en` puis `name`, lot D) — logique pure de build_geo (tri, arrondi, repli NAME_FR, DP, WTRV) et validité des trois fichiers commités (schéma, ordre, budgets)
   fixtures/gfs_tmp2m.grib2     # fixture GRIB legacy (~514 Ko, test_grib_adapter.py), exception au .gitignore
   fixtures/gfs_layers.grib2    # NOUVEAU (spec couches) : fixture réelle filtrée, 5 variables GFS (≈ 5,7 Mo), exception au .gitignore
   fixtures/gefs_chem.grib2     # NOUVEAU : fixture réelle filtrée, PMTF + PMTC surface GEFS-Aerosols (≈ 3,1 Mo), exception au .gitignore
@@ -146,7 +152,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (206 pays, 6 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko)
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind` ; repères géographiques délégués à `geo/wiring.ts` (`setupGeo`, dette n° 42 : 495 → 411 lignes)
+    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind` ; repères géographiques délégués à `geo/wiring.ts` (`setupGeo`, dette n° 42 : 495 → 411 lignes) ; `createAbout` (panneau About, lot D) ; `createStarsLayer` et `createHaloLayer` ajoutés à la scène, `halo.setView` dans `onViewChange`
     config.ts                  # DATA_BASE_URL (data.globelayers.com/layers, spec couches) /TILES_BASE_URL, REFRESH_MS, STALE_AFTER_MS
     i18n/                       # lot D : langue du site (anglais seul aujourd'hui)
       en.ts                       # `STRINGS` : toutes les chaînes d'interface (couches, interrupteurs, statuts, erreurs fatales, bandeau, vent + rose 16 points, légende, sources) ; les messages console/exception restent en ligne dans leur module
@@ -154,7 +160,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     build/                      # lot D : modules de build, importés par vite.config.ts seulement (jamais dans le bundle)
       beacon.ts                   # `CF_BEACON_TOKEN`, `beaconTag(token)` (jeton validé 32 hex, sinon lève), `injectBeacon(html, tag)` (lève si `</body>` absent)
       glsl.ts                     # `stripGlslComments` : retire `//…` et `/*…*/` des shaders importés en `?raw`, nombre de lignes conservé (les commentaires français restent dans les sources, rien n'en part dans le bundle)
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9)
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9) ; lot D : panneau About (`<dialog>`, `::backdrop`), boutons du bandeau à 1,75 rem (cible tactile 24 px), légende mobile en `border-box` (elle débordait de 11 px)
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
@@ -578,6 +584,30 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 **Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (8) — Arrêt de session : tout est mergé, poussé et vérifié en prod
+
+Journée du 2026-09-19, dans l'ordre (détail dans les entrées (1) à (7) ci-dessous) : lot C validé
+sur téléphone et mergé (`c4ed59e`) ; dettes n° 42 et n° 41 (`116991f`) ; feuille de route relevée
+en §8 ; **lot D « site public »** — site en anglais, référencement, panneau About, mesure
+d'audience (`1295853`) — puis correctif du cache d'un jour des fichiers `geo/` (`e359ebd`),
+Bing Webmaster et Google Search Console vérifiés, sitemap envoyé, page indexée par Google le
+jour même, H1 renforcé (`68823c1`) ; **ciel étoilé** (`668cf7a`) et **halo d'atmosphère**
+(`dd7f8f0`). Relecture de fin de session : §1 (résumé) remis à l'état réel du site, décompte des
+tests de `build_geo` et descriptions de `main.ts` / `style.css` corrigés.
+
+- **État du dépôt à l'arrêt :** `master` = `origin/master`, arbre propre, aucune branche de
+  travail, aucun serveur local, port 5173 libre. Prod = bundle `index-CxBB5N27.js`.
+- **Tests :** 461 vitest (45 fichiers), `tsc` propre ; 207 passed / 10 skipped pytest local.
+- **Build :** `index-*.js` 161,71 Ko gzip ; `index.html` ≈ 2,2 Ko gzip.
+- **À surveiller sans rien coder :** indexation et premières requêtes (Search Console, Bing),
+  visites dans Cloudflare Web Analytics ; le message « inéligible aux résultats enrichis » de
+  Google est attendu ; le référencement dépend maintenant des liens entrants.
+- **Prochaine action :** au choix de l'utilisateur (§8 « Chantiers à venir ») — lot E (curseur
+  temporel des prévisions, le plus utile et le plus lourd), lot F (recherche de ville et « ma
+  position », peu coûteux), P2 (rotation automatique), P4 (publicité) ; dettes ouvertes n° 30,
+  33, 34, 35, 38, 39, 40, 43, 44. Toute validation dans le navigateur demande l'accord de
+  l'utilisateur (mémoire de la machine : 1 à 2 Go libres).
 
 ### 2026-09-19 (7) — Halo d'atmosphère (merge `dd7f8f0`) : le globe vu depuis l'espace est complet
 
@@ -1392,7 +1422,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**halo d'atmosphère mergé `dd7f8f0` et déployé** — avec le ciel étoilé, le globe est vu depuis l'espace ; 461 vitest, bundle 161,71 Ko gzip ; aucun chantier en cours)
+**Dernière mise à jour :** 2026-09-19 (**arrêt de session — tout est mergé, poussé et vérifié en prod** : lot C, dettes n° 42/41, lot D « site public » en anglais, ciel étoilé, halo ; §1 remis à l'état réel du site ; 461 vitest + 207 pytest, bundle 161,71 Ko gzip ; prochain chantier au choix : lot E ou F)
+**Entrée précédente :** 2026-09-19 (**halo d'atmosphère mergé `dd7f8f0` et déployé** — avec le ciel étoilé, le globe est vu depuis l'espace ; 461 vitest, bundle 161,71 Ko gzip ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**ciel étoilé procédural derrière le globe, mergé `668cf7a` et déployé** — 452 vitest, bundle 160,88 Ko gzip ; page indexée par Google ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**H1 du panneau About renforcé (`68823c1`) ; lot D entièrement clos** — Google Search Console vérifiée (TXT DNS via Cloudflare) et Bing Webmaster vérifié, sitemap envoyé aux deux ; prochain chantier : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**Bing Webmaster : site vérifié (`BingSiteAuth.xml`), sitemap envoyé ; Google Search Console : propriété de domaine ajoutée, vérification DNS TXT en attente de l'utilisateur**)
