@@ -474,6 +474,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | fix/rain-no-soften — flou retiré de la pluie (verdict utilisateur final) | ✅ mergée, déployée par CI | `5c9b060` | 248 passed vitest (27 fichiers) |
 | 2026-09-19 | feat/labels-rivers — lot C : étiquettes villes/pays avec valeur de couche, fleuves (spec `2026-09-18-labels-rivers-design.md` `fae97ec`, plan `2026-09-18-labels-rivers.md` `d545af6`, 12 tâches, subagent-driven le 2026-09-18 ; validée sur vrai téléphone par l'utilisateur le 2026-09-19) | ✅ mergée, déployée par CI | `c4ed59e` | 326 passed vitest (37 fichiers) ; 204 passed / 10 skipped pytest local (Windows) ; bundle 160,65 Ko gzip |
 | 2026-09-19 | refactor/geo-wiring — dettes n° 42 (câblage geo extrait de `main.ts`, testable en Node) et n° 41 (étiquettes hors cadre ou sous un panneau, variante sombre, reliquats du lot C) ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `116991f` | 348 passed vitest (38 fichiers) ; 206 passed / 10 skipped pytest local (Windows) ; bundle 161,62 Ko gzip |
+| 2026-09-19 | feat/public-site — lot D « site public » : site entièrement en anglais (`i18n/en.ts`, noms `name_en`), référencement (Open Graph, JSON-LD, robots, sitemap, favicon, manifeste, `og.jpg`), panneau About, beacon Cloudflare Web Analytics, commentaires GLSL retirés à la transformation (spec `2026-09-19-public-site-design.md`, plan `2026-09-19-public-site.md` 10 tâches, subagent-driven) | ✅ mergée, déployée par CI | `1295853` | 441 passed vitest (43 fichiers) ; 207 passed / 10 skipped pytest local (Windows) ; bundle 159,82 Ko gzip ; Lighthouse SEO 100 |
 
 ## 8. Dette technique connue
 
@@ -528,13 +529,13 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
 chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
-Ordre recommandé le 2026-09-19 : D → E → F → finitions.
+Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 
 **Lots identifiés**
 
 | Lot | Contenu | Pourquoi / coût | Statut |
 |---|---|---|---|
-| **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | 🟢 **en cours** (choix utilisateur 2026-09-19) — spec (`3766919`, `b00bc25`) et plan `docs/superpowers/plans/2026-09-19-public-site.md` (`d4f9f5b`, 10 tâches) écrits ; exécution à suivre sur `feat/public-site` |
+| **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | ✅ **livré 2026-09-19** (merge `1295853`) ; reste hors code : déclaration à Google Search Console et Bing Webmaster (§9) |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | 🟡 à faire |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | 🟡 à faire |
 
@@ -564,7 +565,7 @@ Ordre recommandé le 2026-09-19 : D → E → F → finitions.
 
 ## 9. État actuel & prochaine action
 
-### 2026-09-19 (4) — Lot D (« site public ») : implémenté, revu et validé dans le navigateur sur `feat/public-site`, NON MERGÉ — attend le jeton d'audience et l'accord de merge
+### 2026-09-19 (4) — Lot D (« site public ») : implémenté, revu, validé dans le navigateur, mergé (`1295853`) et déployé
 
 Brainstorming → spec `docs/superpowers/specs/2026-09-19-public-site-design.md` → plan 10 tâches
 (`d4f9f5b`) → exécution **subagent-driven** (base `22712dd`, HEAD `fe5e399` + ce commit). Décisions
@@ -590,13 +591,17 @@ en §5, défauts en §6, dettes n° 43–44 et feuille de route en §8.
 - **Tests :** 441 vitest (43 fichiers), `tsc` propre ; 207 passed / 10 skipped pytest local.
 - **Build :** `index-*.js` **159,82 Ko gzip** (−2,08 Ko : commentaires GLSL retirés) ; `index.html`
   2 217 octets gzip.
-- **Prochaine action :** (1) jeton Cloudflare Web Analytics (l'utilisateur crée le site
-  `globelayers.com` dans Analytics & Logs → Web Analytics, ou autorise l'API) → `CF_BEACON_TOKEN` ;
-  (2) accord de merge — **merger = déployer** ; (3) merge `--no-ff`, §7 avec le sha, push, prod
-  (`lang="en"`, 6 fichiers statiques en 200, `countries.json` avec Germany, beacon, aucun cookie) ;
-  (4) Google Search Console (propriété de domaine, TXT DNS) et Bing Webmaster, sitemap, **accord
-  de l'utilisateur à chaque action** ; Google signalera `WebApplication` « inéligible » aux
-  résultats enrichis (pas de notes) : attendu, ne rien inventer.
+- **Jeton d'audience :** `globelayers.com` existait déjà dans Cloudflare Web Analytics en
+  « Automatic setup », mais le HTML de prod ne portait aucun beacon (Cloudflare n'injecte pas
+  dans les réponses d'un Worker Static Assets) → l'utilisateur est passé en « JS Snippet
+  installation » et a fourni le jeton, posé dans `CF_BEACON_TOKEN` (`web/src/build/beacon.ts`).
+  **Ne pas ajouter le site une seconde fois** (double comptage).
+- **Merge et déploiement :** accord de l'utilisateur, merge local `--no-ff` `1295853`, tests et
+  build relancés sur le résultat, push, déploiement par CI.
+- **Prochaine action :** vérifier la prod (voir l'entrée suivante si elle existe), puis Google
+  Search Console (propriété de domaine, TXT DNS) et Bing Webmaster, sitemap — **accord de
+  l'utilisateur à chaque action** ; Google signalera `WebApplication` « inéligible » aux
+  résultats enrichis (pas de notes) : attendu, ne rien inventer. Ensuite : lot E ou F (§8).
 
 ### 2026-09-19 (3) — Feuille de route relevée en §8, lot D (« site public ») choisi
 
@@ -1320,7 +1325,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**lot D « site public » implémenté, revu et validé dans le navigateur sur `feat/public-site`, non mergé** — site en anglais, SEO (Lighthouse 100), About, beacon, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; **attend le jeton d'audience et l'accord de merge**)
+**Dernière mise à jour :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
+**Entrée précédente :** 2026-09-19 (**lot D « site public » implémenté, revu et validé dans le navigateur sur `feat/public-site`, non mergé** — site en anglais, SEO (Lighthouse 100), About, beacon, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; **attend le jeton d'audience et l'accord de merge**)
 **Entrée précédente :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 traitées sur `refactor/geo-wiring`, non mergé** — `geo/wiring.ts` testable en Node, étiquettes qui évitent panneaux et bords, countries.json 206 lignes ; 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; **validation navigateur en attente** avant merge)
