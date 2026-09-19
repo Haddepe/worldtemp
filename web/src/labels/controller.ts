@@ -10,7 +10,7 @@ import { mapStyleFor } from "../tiles/lod";
 import type { TooltipData } from "../ui/tooltip";
 import type { LabelSet } from "./data";
 import type { LabelView, LabelsLayer } from "./layer";
-import { labelCap, selectLabels, tierIndex, type Placed } from "./select";
+import { labelCap, selectLabels, tierIndex, type Box, type Placed } from "./select";
 import { labelValue } from "./text";
 
 export const SELECT_INTERVAL_MS = 100;
@@ -21,15 +21,21 @@ export interface LabelsControllerDeps {
   /** Taille CSS du canvas. */
   size(): { width: number; height: number };
   tier: Tier;
+  /** Panneaux de l'interface posés au-dessus des étiquettes (px CSS, repère du canvas) ; relus à chaque sélection. */
+  obstacles?: () => readonly Box[];
   now?: () => number;
   defer?: (cb: () => void, ms: number) => unknown;
 }
+
+interface Size { width: number; height: number }
 
 const p = new THREE.Vector3();
 
 export class LabelsController {
   private set: LabelSet | null = null;
   private source: TooltipData | null = null;
+  /** Une couche colore le globe, que ses pixels soient lisibles (`source`) ou non. */
+  private layerShown = false;
   private enabled = false;
   private placed: Placed[] = [];
   private readonly values = new Map<number, string | null>();
@@ -60,9 +66,17 @@ export class LabelsController {
     if (this.enabled) this.refresh();
   }
 
-  setValueSource(data: TooltipData | null): void {
+  /** `layerShown` : une couche est affichée même si ses valeurs sont illisibles (`data` nul) —
+   * le fond est alors coloré et la variante sombre ne s'applique pas. */
+  setValueSource(data: TooltipData | null, layerShown = data !== null): void {
     this.source = data;
+    this.layerShown = layerShown;
     this.values.clear();
+    if (this.enabled) this.refresh();
+  }
+
+  /** Les obstacles ont bougé sans que la caméra bouge (panneaux repliés ou déployés). */
+  relayout(): void {
     if (this.enabled) this.refresh();
   }
 
@@ -78,31 +92,30 @@ export class LabelsController {
 
   /** Vrai si la caméra a bougé ou si la taille CSS a changé depuis la dernière sélection (F2 :
    * une rotation d'écran ne bouge pas la caméra mais change le plafond). */
-  private changedSinceLastSelect(): boolean {
-    const { width, height } = this.deps.size();
+  private changedSinceLastSelect({ width, height }: Size): boolean {
     return !this.lastPos.equals(this.deps.camera.position) || width !== this.lastSize.width || height !== this.lastSize.height;
   }
 
   /** Vrai si la caméra ou la taille CSS ont changé depuis le dernier `paint()` (M1). */
-  private changedSinceLastPaint(): boolean {
-    const { width, height } = this.deps.size();
+  private changedSinceLastPaint({ width, height }: Size): boolean {
     return !this.lastPaintPos.equals(this.deps.camera.position) || width !== this.lastPaintSize.width || height !== this.lastPaintSize.height;
   }
 
   /** Avant chaque rendu WebGL (`SceneHandle.onViewChange`). */
   onView(): void {
     if (!this.enabled || !this.set) return;
-    const changed = this.changedSinceLastSelect();
+    const size = this.deps.size(); // une seule lecture par vue : `clientWidth` peut forcer une mise en page
+    const changed = this.changedSinceLastSelect(size);
     if (changed && this.now() - this.lastSelect >= SELECT_INTERVAL_MS) {
-      this.refresh();
+      this.refresh(size);
       return;
     }
     if (changed) this.scheduleCatchUp();
     // M1 : pose et taille identiques à celles du dernier paint() (pas de la dernière sélection)
     // → rien à repeindre. Entre deux sélections, la caméra qui bouge continue de repeindre à
     // chaque vue puisque changedSinceLastPaint() reste vraie tant qu'elle n'a pas été rattrapée.
-    if (!this.changedSinceLastPaint()) return;
-    this.paint();
+    if (!this.changedSinceLastPaint(size)) return;
+    this.paint(size, false);
   }
 
   /** La caméra (ou la taille) peut s'arrêter de changer entre deux sélections, et plus aucune
@@ -112,7 +125,7 @@ export class LabelsController {
     this.pending = true;
     this.defer(() => {
       this.pending = false;
-      if (!this.enabled || !this.set || !this.changedSinceLastSelect()) return;
+      if (!this.enabled || !this.set || !this.changedSinceLastSelect(this.deps.size())) return;
       // Une sélection naturelle a pu avoir lieu depuis l'armement de ce rattrapage (caméra en
       // mouvement continu) : ne jamais re-sélectionner à moins de SELECT_INTERVAL_MS de la
       // dernière sélection ; sinon on se réarme pour le temps restant.
@@ -125,11 +138,11 @@ export class LabelsController {
     }, ms);
   }
 
-  private refresh(): void {
+  private refresh(size: Size = this.deps.size()): void {
     const set = this.set;
     if (!set) return;
     const { camera } = this.deps;
-    const { width, height } = this.deps.size();
+    const { width, height } = size;
     const d = camera.position.length();
     const tier = tierIndex(d);
     // Changement de palier : on repart de l'ordre de priorité strict (spec §3).
@@ -144,34 +157,41 @@ export class LabelsController {
         return s.visible;
       },
       cap: labelCap(this.deps.tier, width), hasValue: this.source !== null, shown,
+      bounds: { x0: 0, y0: 0, x1: width, y1: height }, obstacles: this.deps.obstacles?.(),
     });
     this.lastSelect = this.now();
     this.lastPos.copy(camera.position);
     this.lastSize = { width, height };
-    this.paint();
+    this.paint(size, true);
   }
 
-  /** Reprojette les étiquettes placées ; celles qui passent l'horizon ou le bord disparaissent d'ici la prochaine sélection. */
-  private paint(): void {
+  /** Reprojette les étiquettes placées ; celles qui passent l'horizon ou le bord disparaissent d'ici
+   * la prochaine sélection. `fresh` : la sélection vient de les projeter, ses positions servent telles quelles. */
+  private paint(size: Size, fresh: boolean): void {
     const set = this.set;
     if (!set) return;
     const { camera } = this.deps;
-    const { width, height } = this.deps.size();
+    const { width, height } = size;
     // Style carte (fond clair) sans couche lisible : le blanc à halo sombre devient illisible,
     // il faut la variante sombre (F5). Avec une couche, le fond est sa couleur : le blanc reste
     // le bon choix quelle que soit la distance.
-    this.deps.layer.setDark(mapStyleFor(camera.position.length()) >= 0.5 && this.source === null);
+    this.deps.layer.setDark(mapStyleFor(camera.position.length()) >= 0.5 && !this.layerShown);
     const views: LabelView[] = [];
     for (const pl of this.placed) {
-      const s = projectToScreen(p.fromArray(set.unit, pl.id * 3), camera, width, height);
-      if (!s.visible) continue;
+      let { x, y } = pl;
+      if (!fresh) {
+        const s = projectToScreen(p.fromArray(set.unit, pl.id * 3), camera, width, height);
+        if (!s.visible) continue;
+        x = s.x;
+        y = s.y;
+      }
       const item = set.items[pl.id]!;
       let value: string | null = null;
       if (item.kind === "city") {
         if (!this.values.has(item.id)) this.values.set(item.id, labelValue(this.source, item.lon, item.lat));
         value = this.values.get(item.id) ?? null;
       }
-      views.push({ id: item.id, kind: item.kind, name: item.name, value, x: s.x, y: s.y });
+      views.push({ id: item.id, kind: item.kind, name: item.name, value, x, y });
     }
     this.deps.layer.render(views);
     this.lastPaintPos.copy(camera.position);

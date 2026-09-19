@@ -79,6 +79,16 @@ describe("selectLabels", () => {
     expect(selectLabels(inp).map((p) => set.items[p.id]!.name)).toEqual(["Centre"]);
     expect(seen).toEqual(["Centre"]);
   });
+  it("cadre : une étiquette dont la boîte dépasse du cadre est écartée (dette n° 41)", () => {
+    const set = buildLabelSet([city("Dedans", 1e7, false, FRONT, 0), city("Coupée à droite", 1e7, false, FRONT, 1), city("Coupée en haut", 1e7, false, FRONT, 2)], []);
+    const inp = input(set, { Dedans: [100, 100], "Coupée à droite": [760, 300], "Coupée en haut": [300, 5] }, { bounds: { x0: 0, y0: 0, x1: 800, y1: 600 } });
+    expect(selectLabels(inp).map((p) => set.items[p.id]!.name)).toEqual(["Dedans"]);
+  });
+  it("obstacles : une étiquette qui passerait sous un panneau est écartée (dette n° 41)", () => {
+    const set = buildLabelSet([city("Libre", 1e7, false, FRONT, 0), city("Sous le bandeau", 1e7, false, FRONT, 1)], []);
+    const inp = input(set, { Libre: [100, 300], "Sous le bandeau": [380, 30] }, { obstacles: [{ x0: 300, y0: 8, x1: 500, y1: 44 }] });
+    expect(selectLabels(inp).map((p) => set.items[p.id]!.name)).toEqual(["Libre"]);
+  });
   it("anti-chevauchement : le premier dans l'ordre de priorité gagne", () => {
     const set = buildLabelSet([city("Paris", 1e7, true, FRONT, 0), city("Versailles", 9e4, false, FRONT, 0.1), city("Lyon", 2e6, false, FRONT, 1)], []);
     const out = selectLabels(input(set, { Paris: [100, 100], Versailles: [110, 104], Lyon: [100, 300] }, { d: 1.1 }));

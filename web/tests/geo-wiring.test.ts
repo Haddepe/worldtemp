@@ -171,7 +171,7 @@ describe("wireGeo — fleuves (spec repères §6, §7)", () => {
     expect(h.riversLayer.object.visible).toBe(false);
   });
 
-  it("extinction : maillage masqué, rendu demandé ; la vue continue de caler le maillage", async () => {
+  it("extinction : maillage masqué, rendu demandé ; la vue ne cale plus le maillage tant qu'il est éteint (dette n° 41)", async () => {
     const h = harness();
     wireGeo(h.deps).start();
     await flush();
@@ -181,8 +181,14 @@ describe("wireGeo — fleuves (spec repères §6, §7)", () => {
     expect(h.riversLayer.object.visible).toBe(false);
     expect(h.deps.scene.requestRender).toHaveBeenCalled();
     h.riversLayer.setView.mockClear();
-    h.viewListeners[0]!({ cameraPosition: { length: () => 3 } } as unknown as ViewState);
-    expect(h.riversLayer.setView).toHaveBeenCalledWith(3, expect.any(Number));
+    const view = { cameraPosition: { length: () => 3 } } as unknown as ViewState;
+    h.viewListeners[0]!(view);
+    expect(h.riversLayer.setView).not.toHaveBeenCalled();
+    h.riversButton.click(); // rallumage : recalé tout de suite sur la distance courante, puis à chaque vue
+    await flush();
+    expect(h.riversLayer.setView).toHaveBeenLastCalledWith(2, expect.any(Number));
+    h.viewListeners[0]!(view);
+    expect(h.riversLayer.setView).toHaveBeenLastCalledWith(3, expect.any(Number));
   });
 
   it("échec : interrupteur grisé, rien dans la scène", async () => {

@@ -50,6 +50,8 @@ export function parseRivers(buffer: ArrayBuffer): RiverSegments {
   for (let l = 0; l < lines; l++) {
     if (o + 4 > buffer.byteLength) throw new RiversError("ligne tronquée");
     const rank = view.getUint8(o);
+    // Réservé = 0 en version 1 : autre chose annonce un format qu'on lirait de travers.
+    if (view.getUint8(o + 1) !== 0) throw new RiversError("octet réservé non nul");
     const n = view.getUint16(o + 2, true);
     o += 4;
     if (n < 2) throw new RiversError("ligne de moins de deux points");

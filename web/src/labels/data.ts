@@ -59,7 +59,9 @@ export function parsePlaces(json: unknown): Place[] {
   return rows(json, "places", 5).map((r) => {
     const pop = r[3];
     if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places : population invalide");
-    return { ...lonLatName(r, "places"), pop, capital: r[4] === 1 };
+    const cap = r[4];
+    if (cap !== 0 && cap !== 1) throw new GeoDataError("places : drapeau de capitale hors {0, 1}");
+    return { ...lonLatName(r, "places"), pop, capital: cap === 1 };
   });
 }
 

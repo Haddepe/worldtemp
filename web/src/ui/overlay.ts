@@ -11,6 +11,10 @@ export interface Overlay {
   labelsToggle: HTMLButtonElement;
   riversToggle: HTMLButtonElement;
   labels: HTMLElement;
+  /** Rectangles (px CSS, repère du viewport) des panneaux visibles : les étiquettes les évitent. */
+  panelRects(): { x0: number; y0: number; x1: number; y1: number }[];
+  /** Appelé quand les panneaux sont repliés ou déployés. */
+  onLayoutChange(cb: () => void): void;
   setBanner(text: string): void;
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
@@ -38,9 +42,11 @@ export function createOverlay(): Overlay {
   const overlay = byId<HTMLElement>("overlay");
   const toggle = byId<HTMLButtonElement>("toggle-overlay");
 
+  const layoutListeners: (() => void)[] = [];
   toggle.addEventListener("click", () => {
     const collapsed = overlay.classList.toggle("collapsed");
     toggle.setAttribute("aria-expanded", String(!collapsed));
+    for (const cb of layoutListeners) cb();
   });
 
   return {
@@ -49,6 +55,17 @@ export function createOverlay(): Overlay {
     labelsToggle,
     riversToggle,
     labels,
+    panelRects() {
+      const rects: { x0: number; y0: number; x1: number; y1: number }[] = [];
+      for (const el of overlay.querySelectorAll<HTMLElement>(".panel, #attribution")) {
+        const r = el.getBoundingClientRect(); // masqué (`hidden`, replié) = rectangle vide
+        if (r.width > 0 && r.height > 0) rects.push({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom });
+      }
+      return rects;
+    },
+    onLayoutChange(cb) {
+      layoutListeners.push(cb);
+    },
     setBanner(text) {
       bannerText.textContent = text;
     },

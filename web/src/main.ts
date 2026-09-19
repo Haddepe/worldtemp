@@ -306,7 +306,7 @@ async function boot(): Promise<void> {
     ui.setLegendVisible(true);
     const tooltipData = active.pixels ? { def, pixels: active.pixels, grid: manifest.grid, encoding: enc } : null;
     tooltip.setData(tooltipData);
-    geo.setValueSource(tooltipData);
+    geo.setValueSource(tooltipData, true); // couche affichée, même si ses pixels sont illisibles
     sceneHandle.requestRender();
     refreshBanner();
     console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);

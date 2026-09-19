@@ -80,6 +80,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
     const layer = deps.createRivers(await deps.loadRivers());
     deps.scene.add(layer.object);
     deps.scene.onViewChange((view) => {
+      if (!riversOn) return; // éteint : rien à caler, `applyRivers` recale au rallumage
       const d = view.cameraPosition.length();
       layer.setView(d, mapStyleFor(d));
     });
@@ -120,8 +121,9 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
 
 export interface GeoHandle {
   start(): void;
-  /** Couche dont les étiquettes de ville affichent la valeur (`null` = nom seul). */
-  setValueSource(data: TooltipData | null): void;
+  /** Couche dont les étiquettes de ville affichent la valeur (`null` = nom seul) ; `layerShown` :
+   * une couche colore le globe même si ses valeurs sont illisibles (pas de variante sombre). */
+  setValueSource(data: TooltipData | null, layerShown?: boolean): void;
 }
 
 async function fetchGeo(url: string): Promise<Response> {
@@ -139,7 +141,10 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
     camera: scene.camera,
     size: () => ({ width: canvas.clientWidth, height: canvas.clientHeight }),
     tier,
+    // Le canvas couvre le viewport : les rectangles des panneaux sont déjà dans son repère.
+    obstacles: () => ui.panelRects(),
   });
+  ui.onLayoutChange(() => labels.relayout());
   scene.onViewChange(() => labels.onView());
   const wiring = wireGeo({
     labelsButton: ui.labelsToggle,
@@ -161,5 +166,5 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
   if (import.meta.env.DEV) {
     (window as unknown as { __worldtempGeo: unknown }).__worldtempGeo = { labels, rivers: wiring.rivers };
   }
-  return { start: wiring.start, setValueSource: (data) => labels.setValueSource(data) };
+  return { start: wiring.start, setValueSource: (data, layerShown) => labels.setValueSource(data, layerShown) };
 }

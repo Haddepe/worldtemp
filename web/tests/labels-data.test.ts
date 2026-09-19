@@ -19,6 +19,8 @@ describe("parsePlaces / parseCountries — spec repères §2", () => {
     ["longitude hors bornes", { version: 1, places: [[181, 0, "X", 1, 0]] }],
     ["latitude non finie", { version: 1, places: [[0, Number.NaN, "X", 1, 0]] }],
     ["nom vide", { version: 1, places: [[0, 0, "", 1, 0]] }],
+    ["drapeau de capitale hors {0, 1}", { version: 1, places: [[0, 0, "X", 1, 2]] }],
+    ["drapeau de capitale booléen", { version: 1, places: [[0, 0, "X", 1, true]] }],
   ])("parsePlaces refuse : %s", (_label, json) => {
     expect(() => parsePlaces(json)).toThrowError(GeoDataError);
   });
