@@ -47,6 +47,7 @@ corriger.
 | Pipeline de données | Python (**3.12 sur Actions**, venv local **3.14**) | `eccodes` (bindings Python, décodage GRIB direct par clés — plus de `xarray`/`cfgrib` dans le code, §5), `numpy`, `Pillow`, `requests`, `boto3` (client S3 pour R2, §5) |
 | Dépendances pipeline | `pipeline/requirements.txt` (numpy, Pillow, requests, boto3 — installe sur **Windows**) vs `pipeline/requirements-grib.txt` (`cfgrib`, `eccodeslib`, `xarray` — **Actions seulement**, pas de roue Windows) | `eccodes` seul est appelé (`pipeline/grib_adapter.py::_message_keys` sur `import eccodes`) depuis la spec couches (2026-09-12) ; `cfgrib`/`xarray` ne sont plus référencés dans `pipeline/`/`tests/` mais restent listés dans `requirements-grib.txt` pour fournir `eccodeslib` — élagage possible, dette n° 30 (§8) |
 | Sources de données | NOMADS / **GFS 0,25°** (NOAA, 5 couches, horaire) ; NOMADS / **GEFS-Aerosols 0,25°** (NOAA, `pm25`/`dust`, 4 cycles/jour, pas 3 h) | GFS : script de filtrage `filter_gfs_0p25_1hr.pl`, run+échéance à l'heure courante (§5) ; GEFS-chem : `filter_gefs_chem_0p25.pl`, retenu contre CAMS/GEOS-CF (§5, spec couches 2026-09-12) |
+| Repères géographiques *(lot C, 2026-09-18, branche non mergée)* | **Natural Earth v5.1.2** (domaine public) : `populated_places` 10 m, `admin_0_countries` 50 m, `rivers_lake_centerlines` 10 m | transformés **à la main** par `tools/build_geo.py` (stdlib seule, cache git-ignoré `tools/.geo-cache/`) en trois fichiers statiques commités sous `web/public/geo/` ; ni R2, ni CI, ni pipeline horaire |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
 | Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
@@ -102,8 +103,10 @@ pipeline/
 tools/
   history_check.py             # contrôle mécanique de HISTORY.md contre le dépôt
   prepare_bluemarble.py        # télécharge/redimensionne la texture Blue Marble NASA (source, licence)
+  build_geo.py                 # lot C : Natural Earth → web/public/geo/ (villes triées par priorité, pays avec rang majoré pour les micro-États, fleuves simplifiés Douglas-Peucker + format binaire WTRV) ; lancé à la main, déterministe
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
+  test_build_geo.py            # lot C : 19 tests pytest — logique pure de build_geo (tri, arrondi, repli NAME_FR, DP, WTRV) et validité des trois fichiers commités (schéma, ordre, budgets)
   fixtures/gfs_tmp2m.grib2     # fixture GRIB legacy (~514 Ko, test_grib_adapter.py), exception au .gitignore
   fixtures/gfs_layers.grib2    # NOUVEAU (spec couches) : fixture réelle filtrée, 5 variables GFS (≈ 5,7 Mo), exception au .gitignore
   fixtures/gefs_chem.grib2     # NOUVEAU : fixture réelle filtrée, PMTF + PMTC surface GEFS-Aerosols (≈ 3,1 Mo), exception au .gitignore
@@ -135,6 +138,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
   wrangler.jsonc                # Worker Static Assets ; routes: globelayers.com (custom_domain), workers_dev: true (§8)
   public/
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache
+    geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (242 pays, 7 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko)
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
     main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind`
@@ -167,6 +171,17 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       select.ts                   # pur : parseWindParam (`?wind=1|0`, défaut par tier, reduced-motion), withWindParam
       loader.ts                   # WindLoader : pixels CPU des deux PNG U/V fusionnés en un seul tampon entrelacé `WindField.uv` (jamais de texture GPU, plus de tampons RGBA 8 Mo conservés), remplacement atomique, garde dispose en vol, non réentrant
       controller.ts               # WindController : step cadencé à TICK_MS (30 Hz), dt borné MAX_DT_S et égal au temps réellement consommé par le tick (le reste d'accumulateur est reporté sans être recompté, `a68d44b`), inscrit sur SceneHandle.onFrame seulement quand le vent est actif
+    geo/                        # lot C : chargement et paramètres des repères géographiques
+      loader.ts                   # once (promesse mémorisée, succès comme échec), loadLabelSet (un seul des deux fichiers en échec n'empêche pas l'autre), loadRivers ; accès réseau injectés
+      params.ts                   # pur : parseFlag / withFlag (`?labels=0|1`, `?rivers=0|1`, actifs par défaut)
+    labels/                     # lot C : étiquettes villes/pays en DOM
+      data.ts                     # parseurs stricts de places.json / countries.json (GeoDataError) + LabelSet (pays puis villes, vecteurs unité précalculés)
+      select.ts                   # pur : paliers de zoom (CITY_TIERS, COUNTRY_TIERS), horizon + marge de limbe (LIMB_FRACTION 0,92), anti-chevauchement glouton par boîtes estimées, plafond (LABEL_CAP 60/30, × 2/3 sous 600 px), stabilité des déjà-affichées
+      text.ts                     # labelValue : même lecture que le tooltip (sampleValue sur pixels bruts + format), null sous tooltipMin
+      layer.ts                    # DOM seul : un div par étiquette, réserve réutilisée, fondu 150 ms, variante sombre (setDark)
+      controller.ts               # cadence : re-sélection ≤ toutes les 100 ms (caméra ou taille changée), rattrapage à l'arrêt, valeurs en cache, repeinture seulement si la pose a changé ; ne demande jamais de rendu WebGL
+    rivers/                     # lot C : fleuves
+      data.ts                     # parseur de rivers.bin (WTRV) → segments 3D au rayon 1,001, subdivision > 2° le long du grand cercle, cumul par rang (RiversError)
     render/
       scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande ; `onFrame(cb)` (spec vent) : rendu continu seulement si un abonné est actif, 0 draw call au repos conservé sinon ; boucle `loop()` isolée par callback (`try/catch`, `9458c3d`) : un tick de vent qui lève ne prive plus la frame du rendu
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
@@ -177,9 +192,13 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches)
       shaders/wind.vert.glsl     # élargit chaque segment en quad dans l’espace écran (segment nul → aire nulle), alpha dérivé de gl_InstanceID (k/(K−1) → (k+1)/(K−1))
       shaders/wind.frag.glsl     # blanc (satellite) / gris foncé (carte) selon uMapStyle, liseré de teinte opposée, bords anti-crénelés (smoothstep sur la distance à l’axe)
+      rivers.ts                  # lot C : RiversLayer, quads instanciés statiques ; instanceCount = préfixe des rangs admis au zoom (RIVER_TIERS interpolés), dernier rang en fondu ; renderOrder 1 (vent 2)
+      shaders/screen-quad.glsl   # lot C : fragment GLSL partagé vent/fleuves — élargissement d'un segment en quad dans l'espace écran (préfixé par concaténation des ?raw)
+      shaders/rivers.vert.glsl   # lot C : horizon exact au rayon R, fondu du rang (uMaxRank flottant)
+      shaders/rivers.frag.glsl   # lot C : bleu-cyan clair (satellite) / bleu soutenu (carte), bords anti-crénelés
     ui/
       layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
-      wind-toggle.ts              # NOUVEAU : createWindToggle, interrupteur role="switch", DOM seul (état/URL portés par wind/select.ts)
+      toggle.ts                   # lot C : createToggle générique (role="switch"), remplace l'ancien interrupteur propre au vent ; désactivé = aria-checked false + titre d'indisponibilité, titre d'origine rendu à la réactivation
       format.ts                  # formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry ; NOUVEAU `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10)
       overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId ; `layersMenu`/`windToggle` remplacent l'ancien `controls` unique (spec vent §9)
       tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode ; NOUVEAU setWind(field) ajoute une 2ᵉ ligne « Vent … » (spec vent §10)
@@ -212,6 +231,17 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     wind-loader.test.ts           # NOUVEAU : WindLoader, remplacement atomique, garde dispose en vol (rechargement raté sur la même instance) ; ancien champ conservé sur échec au même `generated_at`, tampon `uv` entrelacé
     wind-layer.test.ts            # WindLayer : instances N·(K−1), aStart/aEnd sur le même tampon décalés de 3N, uniforms N/K, onBeforeRender (viewport, largeur × pixel ratio), garde de taille
     wind-controller.test.ts       # NOUVEAU : WindController, cadence 30 Hz, dt borné MAX_DT_S ; Σ dt ≤ temps écoulé (reste d'accumulateur non recompté, `a68d44b`)
+    toggle.test.ts                # lot C : interrupteur générique sur faux bouton (Vitest sans DOM)
+    geo-params.test.ts            # lot C : parseFlag / withFlag
+    geo-loader.test.ts            # lot C : once, échec partiel des étiquettes, binaire invalide
+    labels-data.test.ts           # lot C : parseurs (7 refus), LabelSet
+    labels-select.test.ts         # lot C : paliers, horizon sans projection, marge de limbe, chevauchement, plafond, stabilité
+    labels-text.test.ts           # lot C : valeur, nom seul (aucune couche, sous tooltipMin)
+    labels-layer.test.ts          # lot C : faux DOM minimal écrit dans le test — un div recyclé ne garde pas la valeur précédente
+    labels-controller.test.ts     # lot C : cadence 100 ms, rattrapage (dont rattrapage périmé), redimensionnement, setDark, pas de repeinture à pose inchangée
+    rivers-fixture.ts             # lot C : encodeRivers, helper partagé, volontairement hors des fichiers de test pour ne pas rejouer ses describe chez l'importeur
+    rivers-data.test.ts           # lot C : WTRV valide/invalide (8 refus), subdivision, cumul par rang, antiméridien (angle mesuré par la corde)
+    rivers-layer.test.ts          # lot C : riverMaxRank, instanceCount par zoom, uniforms, fragment partagé
 ```
 
 ## 4. Architecture & principe directeur
@@ -334,6 +364,13 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Pluie adoucie aussi, σ = 0,8 cellule** plutôt que le 1,2 des nuages *(2026-09-18, demande utilisateur, à juger en prod)* | Même défaut de fronts raides. Un σ de 1,2 ramène une cellule isolée à ~11 % de son octet : en encodage racine, un cœur d'averse d'une ou deux cellules disparaîtrait de la palette. 0,8 en garde ~25 %. |
 | **σ de la pluie ramené de 0,8 à 0,4** *(2026-09-18, verdict utilisateur sur la prod)* | À 0,8 « trop flou, on perd trop d'information » : les bandes spiralées et les cœurs d'un cyclone au sud du Japon, nets sans flou, se fondaient. À 0,4 le noyau garde ~92 % du poids sur la cellule centrale : il casse juste l'arête des marches. La structure fine de la pluie est de l'information, contrairement aux bords des nuages. |
 | **Flou retiré de la pluie : `soften` reste propre aux nuages** *(2026-09-18, verdict utilisateur final)* | À 0,4 « pratiquement aucune différence avec ou sans » ; à 0,8 trop flou. Aucun σ utile entre les deux : le rendu bicubique brut de la pluie convient, sa structure fine est de l'information. Ne pas reproposer de flou sur la pluie. |
+| **Lot C : étiquette de ville = nom + valeur de la couche active**, pays = nom seul ; deux interrupteurs indépendants « Étiquettes » / « Fleuves » actifs par défaut *(2026-09-18, brainstorming)* | Lire la température à Paris sans survoler, façon Windy. La valeur vient de la lecture CPU déjà faite pour le tooltip : coût marginal. Interrupteurs séparés : on peut vouloir les noms sans les fleuves, ou une vue dégagée. |
+| **Étiquettes en éléments HTML positionnés par `projectToScreen`**, plutôt que `CSS2DRenderer` ou du texte GPU *(2026-09-18)* | ≤ 60 étiquettes : le DOM suffit, texte net, accents et halo en CSS, zéro dépendance ; l'anti-chevauchement est une fonction pure testable. `troika` = +100 Ko pour rien. |
+| **Densité des villes par priorité + palier de zoom + anti-chevauchement + plafond**, pas un seuil de population fixe ; **Natural Earth** plutôt que GeoNames *(2026-09-18)* | Un seuil fixe rend l'Europe illisible et la Sibérie vide. La grille GFS fait 25 km : plus de 7 300 villes n'apporte rien. |
+| **Fleuves en lignes vectorielles** (quads instanciés, fragment GLSL partagé avec le vent), pas dans les tuiles carte *(2026-09-18)* | Les trois canaux des tuiles sont pris ; un quatrième imposerait de régénérer la pyramide. Données statiques commitées : versionnées avec le code, hors R2 et hors CI. |
+| **Budget des fleuves relevé de 25 000 à 50 000 segments** (tolérance 0,02°, 45 663 segments) *(2026-09-18, accord utilisateur après validation)* | À 0,045° les méandres étaient anguleux sous d ≈ 1,2. Coût mesuré non mesurable : 56 fps avec vent + fleuves contre 55 sans (UHD 620). |
+| **Micro-États rétrogradés par la population** : pays < 200 000 hab. → rang + 2 (hors palier) ; capitale < 100 000 hab. → garde `cap` = 1 (toujours éligible) mais se classe par population *(2026-09-18, validation navigateur)* | « Cité du Vatican » masquait Rome, puis « Monaco » masquait Marseille. `LABELRANK` 6 mélange micro-États et vrais pays, `TINY` est incohérent : la population est le seul critère fiable. Les petites capitales s'affichent encore là où rien ne leur dispute la place (États insulaires). |
+| **Plafond des écrans étroits aux deux tiers** (40/20) au lieu de la moitié validée en spec ; **marge de limbe** 0,92 ; **variante sombre** des étiquettes en style carte sans couche *(2026-09-18, validation navigateur — le premier point reste à confirmer par l'utilisateur sur téléphone)* | Mobile `low` sous-rempli à 15 étiquettes dont 8 pays ; texte débordant hors du disque à d = 3 ; blanc illisible sur le fond clair du style carte. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -384,6 +421,10 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-13 | Outillage de validation navigateur (Brave via `mcp__brave-devtools__*`) : sans `select_page`/`bringToFront`, Brave bride `requestAnimationFrame` à 1–2 Hz alors que `document.visibilityState` reste « visible » ; `resize_page` plafonne à 500 px de large (dette n° 35 déjà connue) mais `emulate(1000×800, dpr 1)` fonctionne ; `VITE_DATA_BASE_URL=/dev-data/...` passé en variable d'environnement est réécrit en chemin Windows par Git Bash avant d'atteindre Vite, imposant une URL absolue. | Onglet ramené au premier plan avant toute mesure de cadence ; `emulate` préféré à `resize_page` pour un viewport mobile précis ; `VITE_DATA_BASE_URL` toujours passée en URL absolue complète, jamais en chemin relatif, sous Git Bash. Les ratios px/s mesurés 2–3 s après une navigation étaient en outre faussés par le plafond de `dt` pendant le décodage des tuiles — mesurer en régime établi. |
 | 2026-09-18 | Mesure de fps du nouveau rendu du vent : 27–57 fps très instables sur le serveur **dev** Vite (deux onglets animés, machine chaude), alors que la prod tenait 60 | Mesurer sur `vite build` + `vite preview` dans le même état machine : 60 fps stables. Ne jamais conclure sur un fps mesuré en mode dev ; comparer en A/B entrelacé (visible/caché) plutôt qu'en séquence. |
 | 2026-09-18 | `TaskStop` sur un `npx vite` lancé en arrière-plan tue le shell mais **pas** le processus node : les ports 5173/4173 restaient pris, le serveur suivant échouait (`--strictPort`, exit 1) pendant que l'ancien continuait de servir la page | Inoffensif pour la validation (Vite dev relit les sources sur disque — vérifié par `curl /src/layers/registry.ts`), mais à nettoyer : `netstat -ano \| grep :5173` puis `taskkill //PID <pid> //F`. |
+| 2026-09-18 | Validation du lot C sur `vite preview --port 4173` : plus de frontières ni de détail satellite | Le CORS du bucket R2 n'autorise que `localhost:5173` et la prod : sur tout autre port (ou par l'IP du PC pour un téléphone) les tuiles sont refusées et le site se rabat sur Blue Marble 4K. Pas une régression : **valider sur le port 5173**. Pour servir à la fois `localhost` et l'IP LAN, builder avec `VITE_DATA_BASE_URL=/dev-data/layers` **depuis PowerShell** (Git Bash réécrit un chemin absolu) puis `vite preview --port 5173 --strictPort --host`. |
+| 2026-09-18 | Revue finale du lot C (C1) : un `div` d'étiquette recyclé gardait la valeur de l'étiquette précédente — « France » affichant « 23,4 °C », une ville sèche affichant la pluie d'une autre | La validation navigateur ne l'avait pas vu : faite en température, où chaque ville réécrit sa valeur. Remise à zéro du `span` à la réutilisation + test sur faux DOM minimal (`labels-layer.test.ts`). **Toujours valider les étiquettes sur une couche à `tooltipMin` (pluie) avec des pays visibles.** |
+| 2026-09-18 | Revue finale du lot C (I1) : `applyRivers` réentrant — un clic pendant le démarrage créait deux maillages, le premier impossible à masquer | La garde était testée avant l'`await` et la variable assignée après ; `once()` ne dédupliquait que le téléchargement. Création + `scene.add` + écouteur regroupés dans un `once`. Même famille que le TDZ du lot vent : **relire chaque `await` de `main.ts` comme un point de réentrance.** |
+| 2026-09-18 | Plan du lot C : trois défauts de **mon plan** trouvés par les revues, pas par les tests du plan — `rAF` différé posant `.on` après un retrait de la même frame (étiquette orpheline), rattrapage périmé re-sélectionnant 4 ms après une sélection naturelle, test d'angle par `acos(dot)` en Float32 mal conditionné à 0,2° | Le code complet dans un plan n'est pas une preuve : les implémenteurs le transcrivent fidèlement, défauts compris. Les revues de tâche et la consigne « ne force pas un test au vert, signale » ont fait leur travail. Mesurer un petit angle par la corde `2·asin(|s−e|/2R)`, jamais par `acos`. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -400,6 +441,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | feat/rain-soften — `soften` 0,8 sur la pluie (une ligne de registre + test) | ✅ mergée, déployée par CI | `39ca638` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-soften-04 — `soften` pluie 0,8 → 0,4 (verdict utilisateur) | ✅ mergée, déployée par CI | `1c66add` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-no-soften — flou retiré de la pluie (verdict utilisateur final) | ✅ mergée, déployée par CI | `5c9b060` | 248 passed vitest (27 fichiers) |
+| 2026-09-18 | feat/labels-rivers — lot C : étiquettes villes/pays avec valeur de couche, fleuves (spec `2026-09-18-labels-rivers-design.md` `fae97ec`, plan `2026-09-18-labels-rivers.md` `d545af6`, 12 tâches, subagent-driven) | ⏳ **non mergée** — code, revues de tâche, validation navigateur et revue finale faits (HEAD de code `77d1e8f`) ; **en attente de la validation utilisateur sur vrai téléphone** (critère 9), puis T12 | — | 326 passed vitest (37 fichiers) ; 19 pytest `test_build_geo.py` ; bundle 160,65 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -442,11 +484,51 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 35 | **Disposition mobile validée à 500 px, pas 400 px** : le pont `mcp__brave-devtools__*` impose une largeur de fenêtre minimale de 500 px (`resize_page(400, …)` retombe à 500) | Le point de rupture CSS (`@media (max-width: 600px)`, `web/src/style.css:158`) rend le comportement à 400 px identique en théorie (pas de rupture intermédiaire), mais non mesuré directement | 🟡 ouvert — à re-tester avec un outillage sans plancher de largeur si disponible |
 | 36 | **Mineurs différés de l'exécution de la spec couches** (liste courte, détail dans le ledger git-ignoré) : `config.RUN_AVAILABILITY_DELAY`/`MAX_CANDIDATES`/`MAX_FORECAST_HOUR` dupliquent `sources.GFS` ; `pressure` sans `stepType` dans `grib_keys` ; `validate_range` non défensive sur NaN (couverte par `validate_grid` en amont) ; `upload_r2` avec liste vide non testé ; casts `as Rgba` (`colormap.ts`) et `as string` (éviction `LayerCache`) ; `lutFor` ré-indexe l'encodage à chaque appel ; `render()` de `layers-menu.ts` sans aucun bouton activé ; `setLegendVisible(false)` ajouté hors brief ; `setActive(id inconnu)` laisse tout le groupe à `tabIndex -1` ; `cursor: not-allowed` redondant sur un bouton déjà `disabled` | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec couches | 🟡 ouvert |
 | 37 | ~~**Statut « Couche indisponible » (spec §13) invisible quand le repli réussit** : `activate()` pose `layerNotice` puis appelle le repli, dont le chemin nominal remet `layerNotice` à `null` avant tout `refreshBanner()` ; le message n'apparaît que si aucun repli valide n'existe~~ | L'utilisateur voit le bouton se griser et la vue revenir en arrière sans explication ; trouvé par la revue finale (I3), resté ouvert après la vague de correction unique | ✅ résolu 2026-09-12 (avant merge) : `layerNotice` posé après le retour du repli, avant le dernier `refreshBanner()` |
-| 38 | **Mineurs différés de l'exécution de la spec vent** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-13-wind/progress.md`) : nom de test `test_happy_path_publishes_seven_layers_and_manifest_last` inexact (9 couches, T2) ; `compassPoint(deg)` sans garde sur `deg` négatif (index négatif, inatteignable via `formatWind`, T4) ; `isVisible` avec une garde `p.length() \|\| 1` superflue (`p` toujours à 1,002, T5) ; le garde du constructeur de `WindSim` n'est pas testé (T6) ; `render/wind.ts` sans test sur la garde de taille du tampon, `matrixAutoUpdate = false` sans commentaire (T7) ; `wind/loader.ts` avec un helper `close()` dupliqué, sans test « U et V échouent » ni « un seul `generated_at` change » (T8) ; `controller.ts` avec un clamp `dt` redondant avec `sim.step` (idempotent, T9) ; `wind-toggle.ts` avec un `render()` initial redondant avec le HTML, `setDisabled` qui efface `title`, et **`setDisabled(true)` qui grise le bouton sans ramener `aria-checked` à cohérence** — un switch désactivé après un `?wind=1` reste annoncé `aria-checked="true"` aux technologies d'assistance (trouvé en validation navigateur T11b) ; `main.ts` avec trois `!` empilés sur `entryU`/`entryV`/`manifest` (T11a) | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec vent ; ~~le second échec au même `generated_at` qui grisait le switch sans statut affiché (T11a)~~ et ~~la closure `at` de `sampleValue` dans le chemin du tick vent (T6)~~ sont résolus par la revue finale et la vague de correction (§5, `2e77ec7`/`0996837`/`e4b4d6a`) | 🟡 ouvert |
+| 38 | **Mineurs différés de l'exécution de la spec vent** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-13-wind/progress.md`) : nom de test `test_happy_path_publishes_seven_layers_and_manifest_last` inexact (9 couches, T2) ; `compassPoint(deg)` sans garde sur `deg` négatif (index négatif, inatteignable via `formatWind`, T4) ; `isVisible` avec une garde `p.length() \|\| 1` superflue (`p` toujours à 1,002, T5) ; le garde du constructeur de `WindSim` n'est pas testé (T6) ; `render/wind.ts` sans test sur la garde de taille du tampon, `matrixAutoUpdate = false` sans commentaire (T7) ; `wind/loader.ts` avec un helper `close()` dupliqué, sans test « U et V échouent » ni « un seul `generated_at` change » (T8) ; `controller.ts` avec un clamp `dt` redondant avec `sim.step` (idempotent, T9) ; `wind-toggle.ts` avec un `render()` initial redondant avec le HTML, `setDisabled` qui efface `title`, et **`setDisabled(true)` qui grise le bouton sans ramener `aria-checked` à cohérence** — un switch désactivé après un `?wind=1` reste annoncé `aria-checked="true"` aux technologies d'assistance (trouvé en validation navigateur T11b) ; `main.ts` avec trois `!` empilés sur `entryU`/`entryV`/`manifest` (T11a) | Polish et robustesse marginale, aucun impact sur les critères d'acceptation de la spec vent ; ~~le second échec au même `generated_at` qui grisait le switch sans statut affiché (T11a)~~ et ~~la closure `at` de `sampleValue` dans le chemin du tick vent (T6)~~ sont résolus par la revue finale et la vague de correction (§5, `2e77ec7`/`0996837`/`e4b4d6a`) ; ~~`setDisabled(true)` sans `aria-checked` cohérent et `setDisabled` qui efface `title`~~ résolus par `ui/toggle.ts` (lot C, `06ec312`) | 🟡 ouvert |
 | 39 | **Boucle `SceneHandle.onFrame`/`loop()` de `render/scene.ts` sans couverture Vitest** : parké en T9 (ruling, ledger) car `createScene` instancie un `WebGLRenderer`, non instanciable en Node — convention du projet « Vitest logique pure, rendu à l'œil » | Une régression sur l'inscription/désinscription des abonnés `onFrame`, ou sur le déclenchement du rendu continu, ne serait détectée que par la validation navigateur (critère 4 de la spec vent : 0 draw call vent inactif), pas par un test automatisé | 🟡 ouvert |
 | 40 | **Critère 8 initial de la spec vent (tick ≤ 4 ms) non atteignable sur la machine de référence** avec un champ réel à `N = 12 000` (tick seul mesuré 10,9–13,2 ms, §6) ; critère révisé le 2026-09-13 vers un budget de frame (§5) | Si un tick ≤ 4 ms redevenait nécessaire (davantage de particules, machine plus modeste), l'échantillonnage bilinéaire CPU par particule resterait le poste dominant même après `sampleUV` fusionné | 🟡 ouvert — pistes non retenues faute de nécessité actuelle : champ `Float32` pré-décodé (évite le décodage linéaire par lecture), simulation déportée en Web Worker |
+| 41 | **Reliquats du lot C** (revue finale 2026-09-18, détail dans le ledger git-ignoré `.superpowers/sdd/2026-09-18-labels-rivers/progress.md`) : étiquettes coupées au bord droit de l'écran ou passant sous le bandeau de statut (`projectToScreen` sans marge) ; variante sombre indexée sur `source === null` (couche aux pixels illisibles → texte sombre sur couche colorée) ; 36 lignes de rang 8 jamais affichables dans `countries.json` ; `fit_budget` sans plafond d'itérations ; double projection dans `LabelsController.refresh()` ; `deps.size()` lu 2–3 fois par vue ; rattrapage non annulé à l'extinction (inoffensif) ; écouteur `onViewChange` des fleuves actif même éteint ; commentaire du `catch` externe de `scene.ts` périmé depuis l'isolation des écouteurs de vue ; `labels/data.ts` n'écarte pas un `cap` hors {0,1} ; octet réservé de `rivers.bin` non vérifié | Cosmétique ou robustesse marginale ; aucun critère d'acceptation touché | 🟡 ouvert |
+| 42 | **`main.ts` atteint 495 lignes** : le bloc des repères géographiques (chargement, deux interrupteurs, contrôleur, fleuves) y est autonome ; la revue finale recommande de l'extraire en `geo/wiring.ts` (`setupGeo({ ui, scene, canvas, tier })`), dans la lignée de la recommandation du lot B1 (machine à états de `main.ts`) | Chaque nouveau lot ajoute des points de réentrance dans un fichier sans test (I1 du lot C, TDZ du lot vent) | 🟡 ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-18 (2) — Lot C (étiquettes villes/pays avec valeur, fleuves) : implémenté et revu sur feat/labels-rivers, NON MERGÉ — en attente de la validation sur téléphone
+
+Brainstorming (chemin architectural) → spec `docs/superpowers/specs/2026-09-18-labels-rivers-design.md`
+(`fae97ec`) → plan 12 tâches (`d545af6`) → exécution **subagent-driven** sur `feat/labels-rivers`
+(base `d545af6`, HEAD de code `77d1e8f`). Décisions en §5, défauts en §6, dettes n° 41–42 en §8.
+
+- **T1–T10** (implémenteur + relecteur par tâche) : `tools/build_geo.py` et ses données
+  (`web/public/geo/`), `ui/toggle.ts` (remplace `wind-toggle.ts`, dette n° 38 partiellement
+  résolue), `geo/`, `labels/`, `rivers/`, `render/rivers.ts` + fragment GLSL partagé avec le vent
+  (`renderOrder` du vent 1 → 2), câblage `main.ts`. Tours de correction : T6 ×1 (étiquette
+  orpheline), T7 ×1 (cadence du rattrapage), T8 ×1 (helper de test mal conditionné).
+- **T11, validation navigateur** (Brave, UHD 620, `vite build` + `vite preview`) : critères 1–8 ✓,
+  critère 9 ✓ en émulation mobile `low`. Sept constats corrigés (F1–F7) : micro-États, re-sélection
+  au redimensionnement, marge de limbe, plafond étroit × 2/3, variante sombre, **budget des
+  fleuves 50 000** (accord utilisateur), petites capitales sans priorité de tri. Mesures :
+  sélection 0,28–1,28 ms ; 60 fps au repos tout allumé ; vent + 45 663 segments 56 fps contre 55
+  sans. Rapport : `.superpowers/sdd/2026-09-18-labels-rivers/validation-report.md` (git-ignoré).
+- **Revue finale** (fable) : « With fixes » — C1 (valeur d'une autre étiquette sur un div recyclé)
+  et I1 (double maillage des fleuves), plus cinq mineurs ; vague unique `5709d33..77d1e8f`,
+  re-revue (opus) 7/7, re-validation navigateur de C1 (couche pluie, pays visibles) et I1 (clics
+  au démarrage) ✓. Tous les rulings du contrôleur jugés fondés.
+- **État du dépôt à l'arrêt** : branche `feat/labels-rivers` **non poussée, non mergée** ;
+  `master` local en avance de 2 commits sur `origin` (spec et plan, non poussés) ; serveurs
+  locaux arrêtés, ports 5173/4173 libres. Session interrompue par l'utilisateur (« je vérifierai
+  pendant une autre session »).
+
+- **Tests :** 326 vitest (37 fichiers), `tsc` propre ; 19 pytest `tests/test_build_geo.py` (suite
+  pytest complète non relancée après T2 : aucun autre fichier Python touché).
+- **Build :** `index-*.js` 160,65 Ko gzip (+4,57 Ko, budget +8).
+- **Prochaine action :** (1) servir le build pour le téléphone — depuis **PowerShell** :
+  `$env:VITE_DATA_BASE_URL='/dev-data/layers'; npx vite build` dans `web/`, puis
+  `npx vite preview --port 5173 --strictPort --host` → `http://<ip-du-PC>:5173/?tier=low&layer=temp&lon=2&lat=46.5&d=1.35`
+  (sans frontières ni détail satellite sur le téléphone : CORS R2, §6) ; (2) verdict utilisateur
+  (lisibilité, fluidité, plafond de 20 étiquettes, couche pluie, rotation d'écran, variante
+  sombre) ; (3) **T12** : merge `--no-ff` dans master (`git merge -m`, pas `-F -`), HISTORY final
+  (§7 : sha de merge), push, vérifier la prod (`/geo/places.json` en 200, hash du bundle),
+  mémoire ; (4) supprimer l'espace de travail `.superpowers/sdd/2026-09-18-labels-rivers/`.
 
 ### 2026-09-18 — Vent plus lisible (quads 2 px, 5 000 particules, stride 3) et nuages adoucis
 
@@ -1067,7 +1149,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**vent et nuages validés par l'utilisateur en prod** — profils vent 5 000/K9 stride 3 et `soften` nuages 1,2 figés ; prochaine étape lot C)
+**Dernière mise à jour :** 2026-09-18 (**lot C implémenté et revu sur `feat/labels-rivers`, non mergé** — étiquettes villes/pays avec valeur de couche + fleuves ; T1–T11 faites, revue finale « With fixes » corrigée (`77d1e8f`), 326 vitest + 19 pytest, bundle 160,65 Ko gzip ; **en attente de la validation utilisateur sur vrai téléphone**, puis T12 merge/déploiement)
+**Entrée précédente :** 2026-09-18 (**vent et nuages validés par l'utilisateur en prod** — profils vent 5 000/K9 stride 3 et `soften` nuages 1,2 figés ; prochaine étape lot C)
 **Entrée précédente :** 2026-09-18 (**flou retiré de la pluie** — verdict utilisateur final (0,8 trop flou, 0,4 invisible), merge `5c9b060`, `soften` sur les nuages seuls, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie adoucie** — `soften` 0,8 sur la pluie, merge `39ca638`, 248 vitest ; verdict utilisateur attendu sur la prod, puis lot C)

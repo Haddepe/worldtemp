@@ -18,6 +18,7 @@ web/public/data/
 web/public/assets/*.png
 web/public/dev-data/
 pipeline/.cache/
+tools/.geo-cache/
 *.grib2
 *.grb2
 

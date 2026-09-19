@@ -90,6 +90,8 @@ html, body {
 /* texte alternatif vide : les glyphes restent decoratifs, non lus par les technologies d'assistance */
 #wind-toggle::before { content: "◌ " / ""; }
 #wind-toggle[aria-checked="true"]::before { content: "≋ " / ""; }
+#labels-toggle::before, #rivers-toggle::before { content: "○ " / ""; }
+#labels-toggle[aria-checked="true"]::before, #rivers-toggle[aria-checked="true"]::before { content: "● " / ""; }
 #legend .title { font-size: 0.8rem; margin-bottom: 0.3rem; }
 #legend[hidden] { display: none; }
 #attribution {
@@ -98,6 +100,42 @@ html, body {
   text-shadow: 0 0 4px #000;
 }
 #attribution a { color: inherit; pointer-events: auto; }
+
+/* Étiquettes villes/pays (spec repères §4) : décoratives, ne captent jamais le pointeur. */
+#labels { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+.label {
+  position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 150ms linear;
+  font-size: 0.72rem; line-height: 15px; color: #fff; white-space: nowrap; will-change: transform;
+  text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
+}
+.label.on { opacity: 1; }
+.label .name, .label .value { display: block; }
+.label .value { font-weight: 700; }
+.label .value:empty { display: none; }
+.label.city { margin: -7.5px 0 0 8px; }            /* le nom démarre à droite du point, centré verticalement sur lui */
+.label.city::before {
+  content: ""; position: absolute; left: -11px; top: 4.5px; width: 6px; height: 6px;
+  border-radius: 50%; background: #fff; box-shadow: 0 0 2px 1px #000;
+}
+.label.country {
+  font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: #f4f4f4;
+  margin-top: -7.5px;
+}
+.label.country .name { transform: translateX(-50%); } /* centré sur le point d'étiquette */
+@media (prefers-reduced-motion: reduce) { .label { transition: none; } }
+
+/* Variante sombre (F5) : style carte sans couche active, le fond est clair — le blanc à halo
+   sombre devient illisible. `LabelsController.paint()` bascule via `setDark`. */
+#labels.dark .label {
+  color: #1b1f24;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 1px 2px #fff;
+}
+#labels.dark .label.city::before {
+  background: #1b1f24;
+  box-shadow: 0 0 2px 1px #fff;
+}
+#labels.dark .label.country { color: #2a2f36; }
+
 #ad-slot { grid-column: 1 / -1; height: 90px; }
 
 #legend .bar { height: 0.75rem; border-radius: 0.25rem; }

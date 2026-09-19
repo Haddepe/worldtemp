@@ -105,7 +105,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
         camera.updateMatrixWorld(true);
         // hauteur CSS, pas framebuffer : sur écran 2× on reste un niveau plus grossier, choix de budget (spec §5).
         const view = viewStateFrom(camera, canvas.clientHeight);
-        for (const cb of viewListeners) cb(view);
+        // isolation par callback, comme frameListeners : un écouteur de vue qui lève (ex. les
+        // étiquettes) ne doit pas priver cette frame de son renderer.render (M2).
+        for (const cb of viewListeners) {
+          try {
+            cb(view);
+          } catch (e) {
+            console.error(e);
+          }
+        }
         renderer.render(scene, camera);
       }
     } catch (e) {

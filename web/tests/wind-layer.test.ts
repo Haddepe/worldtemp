@@ -16,7 +16,7 @@ describe("createWindLayer — quads instanciés, un par segment de traînée", (
     expect(material.transparent).toBe(true);
     expect(material.depthWrite).toBe(false);
     expect(material.depthTest).toBe(true);
-    expect(layer.object.renderOrder).toBe(1);
+    expect(layer.object.renderOrder).toBe(2); // au-dessus des fleuves (1)
     expect(layer.object.frustumCulled).toBe(false);
     expect(layer.object.visible).toBe(false);
   });
@@ -64,5 +64,9 @@ describe("createWindLayer — quads instanciés, un par segment de traînée", (
   });
   it("refuse un tampon de taille inattendue", () => {
     expect(() => createWindLayer(new Float32Array(5), N, K)).toThrowError(/taille/);
+  });
+  it("le vertex shader embarque le fragment partagé d'élargissement", () => {
+    expect(material.vertexShader).toContain("vec4 screenQuad(");
+    expect(material.vertexShader.indexOf("vec4 screenQuad(")).toBeLessThan(material.vertexShader.indexOf("void main()"));
   });
 });

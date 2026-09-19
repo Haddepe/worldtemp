@@ -1,6 +1,6 @@
 # Spec — Repères géographiques (lot C) : étiquettes villes/pays avec valeur, fleuves
 
-**Date :** 2026-09-18 · **Statut :** validée en brainstorming, à planifier
+**Date :** 2026-09-18 · **Statut :** implémentée, amendée à la validation navigateur (F1–F7)
 **Périmètre :** sous-projet 4, lot C « étiquettes », élargi aux **fleuves** à la demande de
 l'utilisateur. Outil de préparation de données (Natural Earth → `web/public/geo/`), front
 (étiquettes DOM, fleuves en quads instanciés, deux interrupteurs). **Aucun changement** du
@@ -43,15 +43,20 @@ sans GDAL. Sources : GeoJSON du dépôt `nvkelso/natural-earth-vector`, **figés
 | Source | Usage |
 |---|---|
 | `ne_10m_populated_places.geojson` | villes : `NAME_FR` (repli `NAME`), `POP_MAX`, `FEATURECLA` (`Admin-0 capital` → capitale) |
-| `ne_50m_admin_0_countries.geojson` | pays : `LABEL_X`/`LABEL_Y`, `NAME_FR` (repli `NAME`), `LABELRANK` |
+| `ne_50m_admin_0_countries.geojson` | pays : `LABEL_X`/`LABEL_Y`, `NAME_FR` (repli `NAME`), `LABELRANK`, `POP_EST` |
 | `ne_10m_rivers_lake_centerlines.geojson` | fleuves : géométrie, `scalerank` |
+
+`build_countries` majore le `LABELRANK` de **2** pour un pays dont `POP_EST` < `MICRO_STATE_POP`
+(200 000) : Natural Earth mélange micro-États et vrais pays au rang 6 (Monaco, Andorre, Cité du
+Vatican… à côté de la Croatie, du Luxembourg) et l'attribut `TINY` est incohérent ; `POP_EST`
+absente ou nulle ne majore pas (donnée manquante non pénalisée) (F1, brief task-11).
 
 Lancé à la main (`python tools/build_geo.py`), il télécharge dans un cache git-ignoré et
 écrit trois fichiers **commités** :
 
 | Fichier | Forme | Taille visée |
 |---|---|---|
-| `places.json` | `{"version":1,"places":[[lon,lat,"nom",pop,cap],…]}` — coordonnées arrondies à 0,01°, `cap` ∈ {0,1}, **trié par priorité** : capitales d'abord, puis `pop` décroissante, puis nom (déterminisme) | ≤ 300 Ko brut |
+| `places.json` | `{"version":1,"places":[[lon,lat,"nom",pop,cap],…]}` — coordonnées arrondies à 0,01°, `cap` ∈ {0,1}, **trié par priorité** : capitales de ≥ 100 000 habitants (`MAJOR_CAPITAL_POP`) d'abord, puis `pop` décroissante, puis nom (déterminisme) ; une petite capitale garde `cap` = 1 (toujours éligible, spec §3) mais se classe par population, pour ne pas masquer une grande ville voisine (Monaco devant Marseille, F7) | ≤ 300 Ko brut |
 | `countries.json` | `{"version":1,"countries":[[lon,lat,"nom",rang],…]}` trié par `rang` croissant puis nom | ≤ 15 Ko |
 | `rivers.bin` | binaire, §5 | ≤ 400 Ko brut |
 
@@ -70,14 +75,18 @@ affichées, plafond.
 |---|---|---|
 | ≥ 2,5 | capitales et `pop` ≥ 5 M | `rang` ≤ 3 |
 | ≥ 1,6 | `pop` ≥ 1 M (et capitales) | `rang` ≤ 5 |
-| ≥ 1,25 | `pop` ≥ 100 k (et capitales) | tous |
+| ≥ 1,25 | `pop` ≥ 100 k (et capitales) | `rang` ≤ 7 (micro-États exclus : leur capitale reste une étiquette de ville) |
 | < 1,25 | toutes | aucun |
 
 Constantes nommées et exportées (`CITY_TIERS`, `COUNTRY_TIERS`) : réglables à l'œil en
 validation sans toucher à la logique.
 
 **Visibilité :** devant l'horizon (produit scalaire avec la direction caméra > 1/d — point à
-rayon 1, seuil de la spec tuiles §5), puis projection écran dans le viewport avec une marge.
+rayon 1, seuil de la spec tuiles §5), **et** son rayon projeté sous `LIMB_FRACTION` (0,92) × le
+rayon du limbe — sinon le texte, posé à droite ou centré sur le point, déborderait hors du disque
+du globe près du bord (F3) ; court-circuit avant projection, comme le test d'horizon — puis
+projection écran dans le viewport, sans marge : une étiquette peut être coupée au bord de
+l'écran (dette connue).
 
 **Ordre de placement :** étiquettes déjà affichées et toujours éligibles d'abord (stabilité :
 pas de clignotement en rotation), puis pays, puis villes, chacun dans l'ordre du fichier.
@@ -88,7 +97,9 @@ vide l'ensemble « déjà affichées », ce qui rétablit l'ordre de priorité s
 **Anti-chevauchement glouton :** boîte estimée sans mesure DOM — largeur =
 `max(len(nom), len(valeur)) × CHAR_W + marges`, hauteur fixe (une ou deux lignes) ; une
 étiquette dont la boîte touche une boîte déjà posée est rejetée. Arrêt au **plafond** :
-`LABEL_CAP = { high: 60, low: 30 }`. Sous 600 px de large, le plafond est divisé par deux.
+`LABEL_CAP = { high: 60, low: 30 }`. Sous 600 px de large, le plafond est ramené aux deux tiers
+(F4 : l'anti-chevauchement limite déjà la densité, diviser par deux laissait de la place inutilisée
+sur mobile).
 
 Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (high).
 
@@ -98,12 +109,17 @@ Sortie : liste `{ id, x, y, kind }`. Coût visé : ≤ 2 ms pour 7 300 lieux (hi
   (décoratif : le tooltip reste la voie de lecture) — tooltip, zoom et pincement inchangés.
 - Réserve de `div` réutilisés. Ville : point à la position exacte, nom à droite, valeur en
   gras dessous. Pays : capitales espacées, sans point ni valeur. Texte blanc, halo sombre
-  (`text-shadow`), lisible sur satellite, style carte et couches colorées.
+  (`text-shadow`), lisible sur satellite, style carte et couches colorées. **Variante sombre**
+  (F5) : `LabelsLayer.setDark(dark)` bascule la classe `dark` sur `#labels` — texte `#1b1f24`
+  à halo clair, point de ville sombre à halo clair, pays en `#2a2f36`. `controller.ts` l'active
+  en style carte (`mapStyleFor(d) ≥ 0,5`) **et** sans couche active lisible (`source === null`) :
+  avec une couche, le fond est sa couleur et le blanc à halo sombre reste le bon choix.
 - Apparition/disparition en fondu 150 ms ; aucun fondu si `prefers-reduced-motion`.
-- **Cadence** (`controller.ts`, inscrit sur `SceneHandle.onFrame` seulement quand
-  l'interrupteur est actif) : sélection recalculée quand la caméra a bougé, au plus toutes
-  les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue, par
-  `transform: translate3d`. Le contrôleur ne demande **jamais** de rendu WebGL.
+- **Cadence** (`controller.ts`, branché en permanence sur `SceneHandle.onViewChange`, appelé
+  avant chaque rendu — pas seulement quand l'interrupteur est actif — et qui sort tôt si
+  l'interrupteur est éteint ou sans données) : sélection recalculée quand la caméra a bougé,
+  au plus toutes les 100 ms ; repositionnement des étiquettes visibles à chaque frame rendue **dont la pose ou la taille a changé**,
+  par `transform: translate3d`. Le contrôleur ne demande **jamais** de rendu WebGL.
 - **Valeurs :** `sampleValue` sur les pixels bruts de la couche active + `def.format`,
   comme le tooltip ; recalculées seulement quand la couche, ses données ou la sélection
   changent. Nom seul : aucune couche, valeur < `tooltipMin`, pixels `null`. Le vent
@@ -122,19 +138,23 @@ taille cohérente) ; produit les segments 3D au **rayon 1,001** (sous le vent à
 subdivise tout segment > 2° (sinon la corde passe sous la surface), renvoie
 `{ starts, ends, ranks, countByRank }` où `countByRank[r]` = nombre de segments de rang ≤ r.
 
-**Budget : ≤ 25 000 segments** après subdivision (leçon du 2026-09-18 : le coût par
-instance est sensible sur l'UHD 620). Le script affiche le compte ; un test le vérifie sur
-le fichier commité.
+**Budget : ≤ 50 000 segments** après subdivision. Relevé de 25 000 à 50 000 le 2026-09-18, après
+validation navigateur : le coût mesuré des fleuves est faible (tampons statiques envoyés une
+fois) et la tolérance de 0,045° imposée par l'ancien budget rendait les fleuves anguleux sous
+d ≈ 1,2 ; `instanceCount` continue de limiter les vues lointaines aux rangs majeurs. Le script
+affiche le compte ; un test le vérifie sur le fichier commité.
 
 **`render/rivers.ts`** : un `Mesh` de quads instanciés (tampons statiques, envoyés une
 fois), `renderOrder` sous le vent. Le GLSL d'élargissement en espace écran est **extrait
 dans un fragment partagé** par `wind.vert.glsl` et `rivers.vert.glsl` (concaténation des
 `?raw` côté TS), pour ne pas diverger.
 
-**Apparition selon le zoom :** rang maximal `RIVER_TIERS` — d ≥ 2,5 → 3 ; d ≥ 1,6 → 5 ;
-d ≥ 1,25 → 7 ; en dessous → tous. `instanceCount = countByRank[rangMax]` (préfixe, grâce au
-tri) ; le dernier rang admis apparaît en fondu (uniform `uMaxRank` flottant, `smoothstep`
-sur un rang) plutôt que d'un coup. Mis à jour par le même `onFrame`, sans tick propre.
+**Apparition selon le zoom :** `RIVER_TIERS` sont des **points de contrôle** (d, rang) interpolés
+linéairement — 3 à d ≥ 2,5 ; 5 à d = 1,6 ; 7 à d = 1,25 ; tous à d ≤ 1,05. `instanceCount =
+countByRank[rangMax]` (préfixe, grâce au tri) ; le dernier rang admis apparaît en fondu (uniform
+`uMaxRank` flottant, `clamp` linéaire sur un rang, pas un `smoothstep`) plutôt que d'un coup. Mis
+à jour par le même `SceneHandle.onViewChange` que les étiquettes, branché dès la première
+activation des fleuves, sans tick propre.
 
 **Style :** 1,5 px CSS × pixel ratio, bords anti-crénelés ; couleur bleu-cyan clair
 `(0,55 ; 0,82 ; 1,0)` sur satellite, bleu soutenu `(0,25 ; 0,50 ; 0,85)` en style carte
@@ -168,7 +188,7 @@ couches, comme les frontières.
 **pytest** (`tests/test_build_geo.py`) : tri par priorité, arrondi, repli `NAME_FR` → `NAME`,
 écartement des lieux sans nom, Douglas-Peucker sur une polyligne connue, encodage/relecture
 de `rivers.bin`, déterminisme ; **validité des fichiers commités** (schéma, ordre, Paris et
-Tokyo présents, ≤ 25 000 segments, tailles sous budget). Aucun accès réseau dans les tests.
+Tokyo présents, ≤ 50 000 segments, tailles sous budget). Aucun accès réseau dans les tests.
 
 **Vitest :** `labels/select` (seuils par d, horizon, hors viewport, chevauchement, plafond,
 plafond mobile, stabilité des déjà-affichées, ordre pays/villes) ; `labels/data` (valide /
