@@ -108,7 +108,7 @@ describe("référencement — fichiers statiques (spec site public §6)", () => 
 
 describe("panneau About (spec site public §5)", () => {
   it("texte indexable dans le HTML initial", () => {
-    for (const heading of ['<h1 id="about-title">GlobeLayers</h1>', "<h2>Layers</h2>", "<h2>Data &amp; freshness</h2>", "<h2>Sources &amp; credits</h2>", "<h2>Privacy</h2>"]) {
+    for (const heading of ['<h1 id="about-title">GlobeLayers — live 3D weather globe</h1>', "<h2>Layers</h2>", "<h2>Data &amp; freshness</h2>", "<h2>Sources &amp; credits</h2>", "<h2>Privacy</h2>"]) {
       expect(html, heading).toContain(heading);
     }
     expect(html).toContain("cookie-free audience measurement");
