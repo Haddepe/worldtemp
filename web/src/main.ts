@@ -2,23 +2,18 @@ import * as THREE from "three";
 import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS, TILES_BASE_URL } from "./config";
 import { LayerLoader, ManifestLoader, isStale, type LoadedLayer } from "./data/loader";
 import type { Manifest } from "./data/manifest";
-import { loadLabelSet, loadRivers, once } from "./geo/loader";
-import { parseFlag, withFlag } from "./geo/params";
+import { setupGeo } from "./geo/wiring";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
-import { LabelsController } from "./labels/controller";
-import { createLabelsLayer } from "./labels/layer";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
 import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
-import { createRiversLayer, type RiversLayer } from "./render/rivers";
 import { createScene } from "./render/scene";
 import { createWindLayer } from "./render/wind";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
-import { mapStyleFor } from "./tiles/lod";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
@@ -220,86 +215,8 @@ async function boot(): Promise<void> {
     (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader, layer: windLayer };
   }
 
-  // Repères géographiques (spec repères §6) : fichiers statiques servis avec le site.
-  const GEO_BASE_URL = `${import.meta.env.BASE_URL}geo`;
-  const fetchGeo = async (url: string): Promise<Response> => {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`HTTP ${r.status} sur ${url}`);
-    return r;
-  };
-  const labelSet = once(() => loadLabelSet(GEO_BASE_URL, (url) => fetchGeo(url).then((r) => r.json() as Promise<unknown>)));
-  const riverSegments = once(() => loadRivers(GEO_BASE_URL, (url) => fetchGeo(url).then((r) => r.arrayBuffer())));
-
-  const labelsCtl = new LabelsController({
-    layer: createLabelsLayer(ui.labels),
-    camera: sceneHandle.camera,
-    size: () => ({ width: canvas.clientWidth, height: canvas.clientHeight }),
-    tier: decision.tier,
-  });
-  sceneHandle.onViewChange(() => labelsCtl.onView());
-  let labelsOn = parseFlag(location.search, "labels");
-  let labelsLoaded = false;
-  const applyLabels = async (): Promise<void> => {
-    if (labelsOn && !labelsLoaded) {
-      try {
-        labelsCtl.setData(await labelSet());
-        labelsLoaded = true;
-      } catch (e) {
-        console.warn("[worldtemp] étiquettes indisponibles :", e);
-        labelsToggle.setDisabled(true);
-        return;
-      }
-    }
-    labelsCtl.setEnabled(labelsOn); // `labelsOn` relu après l'attente : il a pu basculer pendant le chargement
-  };
-  const labelsToggle = createToggle(ui.labelsToggle, (on) => {
-    labelsOn = on;
-    history.replaceState(null, "", withFlag(location.search, "labels", on));
-    void applyLabels();
-  }, "Étiquettes indisponibles");
-  labelsToggle.setOn(labelsOn);
-
-  let rivers: RiversLayer | null = null;
-  let riversOn = parseFlag(location.search, "rivers");
-  // Création non réentrante (I1) : un clic on/off/on pendant le téléchargement lançait deux
-  // créations (deux maillages, deux écouteurs onViewChange). `once` garantit un seul appel du
-  // corps, échec compris (l'interrupteur reste grisé tant qu'aucun `generated_at` neuf n'arrive —
-  // il n'y en a pas ici, ces fichiers sont statiques, donc un échec est définitif pour la session).
-  const buildRivers = once(async (): Promise<RiversLayer> => {
-    const layer = createRiversLayer(await riverSegments());
-    sceneHandle.scene.add(layer.object);
-    sceneHandle.onViewChange((view) => {
-      const d = view.cameraPosition.length();
-      layer.setView(d, mapStyleFor(d));
-    });
-    return layer;
-  });
-  const applyRivers = async (): Promise<void> => {
-    if (riversOn && !rivers) {
-      try {
-        rivers = await buildRivers();
-      } catch (e) {
-        console.warn("[worldtemp] fleuves indisponibles :", e);
-        riversToggle.setDisabled(true);
-        return;
-      }
-    }
-    if (rivers) {
-      const d = sceneHandle.camera.position.length();
-      rivers.setView(d, mapStyleFor(d));
-      rivers.object.visible = riversOn;
-      sceneHandle.requestRender();
-    }
-  };
-  const riversToggle = createToggle(ui.riversToggle, (on) => {
-    riversOn = on;
-    history.replaceState(null, "", withFlag(location.search, "rivers", on));
-    void applyRivers();
-  }, "Fleuves indisponibles");
-  riversToggle.setOn(riversOn);
-  if (import.meta.env.DEV) {
-    (window as unknown as { __worldtempGeo: unknown }).__worldtempGeo = { labels: labelsCtl, rivers: () => rivers };
-  }
+  // Repères géographiques (spec repères §6) : étiquettes et fleuves, câblés dans `geo/wiring.ts`.
+  const geo = setupGeo({ ui, scene: sceneHandle, canvas, tier: decision.tier });
 
   const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {
     const enc = manifest.layers[def.id]!.encoding;
@@ -356,7 +273,7 @@ async function boot(): Promise<void> {
       globe.setIsoStep(0);
       ui.setLegendVisible(false);
       tooltip.setData(null);
-      labelsCtl.setValueSource(null);
+      geo.setValueSource(null);
       sceneHandle.requestRender();
       refreshBanner();
       return;
@@ -389,7 +306,7 @@ async function boot(): Promise<void> {
     ui.setLegendVisible(true);
     const tooltipData = active.pixels ? { def, pixels: active.pixels, grid: manifest.grid, encoding: enc } : null;
     tooltip.setData(tooltipData);
-    labelsCtl.setValueSource(tooltipData);
+    geo.setValueSource(tooltipData);
     sceneHandle.requestRender();
     refreshBanner();
     console.info(`[worldtemp] couche ${id} ${entry.run} f${entry.forecast_hour}, valide ${entry.valid_time_utc}`);
@@ -476,8 +393,7 @@ async function boot(): Promise<void> {
   };
 
   await applyData();
-  void applyLabels();
-  void applyRivers();
+  geo.start();
   setInterval(applyData, REFRESH_MS);
   setInterval(refreshBanner, 60_000);
   document.addEventListener("visibilitychange", () => {
