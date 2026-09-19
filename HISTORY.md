@@ -370,7 +370,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Fleuves en lignes vectorielles** (quads instanciés, fragment GLSL partagé avec le vent), pas dans les tuiles carte *(2026-09-18)* | Les trois canaux des tuiles sont pris ; un quatrième imposerait de régénérer la pyramide. Données statiques commitées : versionnées avec le code, hors R2 et hors CI. |
 | **Budget des fleuves relevé de 25 000 à 50 000 segments** (tolérance 0,02°, 45 663 segments) *(2026-09-18, accord utilisateur après validation)* | À 0,045° les méandres étaient anguleux sous d ≈ 1,2. Coût mesuré non mesurable : 56 fps avec vent + fleuves contre 55 sans (UHD 620). |
 | **Micro-États rétrogradés par la population** : pays < 200 000 hab. → rang + 2 (hors palier) ; capitale < 100 000 hab. → garde `cap` = 1 (toujours éligible) mais se classe par population *(2026-09-18, validation navigateur)* | « Cité du Vatican » masquait Rome, puis « Monaco » masquait Marseille. `LABELRANK` 6 mélange micro-États et vrais pays, `TINY` est incohérent : la population est le seul critère fiable. Les petites capitales s'affichent encore là où rien ne leur dispute la place (États insulaires). |
-| **Plafond des écrans étroits aux deux tiers** (40/20) au lieu de la moitié validée en spec ; **marge de limbe** 0,92 ; **variante sombre** des étiquettes en style carte sans couche *(2026-09-18, validation navigateur — le premier point reste à confirmer par l'utilisateur sur téléphone)* | Mobile `low` sous-rempli à 15 étiquettes dont 8 pays ; texte débordant hors du disque à d = 3 ; blanc illisible sur le fond clair du style carte. |
+| **Plafond des écrans étroits aux deux tiers** (40/20) au lieu de la moitié validée en spec ; **marge de limbe** 0,92 ; **variante sombre** des étiquettes en style carte sans couche *(2026-09-18, validation navigateur ; plafond confirmé par l'utilisateur sur vrai téléphone le 2026-09-19 : « tout est bon »)* | Mobile `low` sous-rempli à 15 étiquettes dont 8 pays ; texte débordant hors du disque à d = 3 ; blanc illisible sur le fond clair du style carte. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -441,7 +441,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-18 | feat/rain-soften — `soften` 0,8 sur la pluie (une ligne de registre + test) | ✅ mergée, déployée par CI | `39ca638` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-soften-04 — `soften` pluie 0,8 → 0,4 (verdict utilisateur) | ✅ mergée, déployée par CI | `1c66add` | 248 passed vitest (27 fichiers) |
 | 2026-09-18 | fix/rain-no-soften — flou retiré de la pluie (verdict utilisateur final) | ✅ mergée, déployée par CI | `5c9b060` | 248 passed vitest (27 fichiers) |
-| 2026-09-18 | feat/labels-rivers — lot C : étiquettes villes/pays avec valeur de couche, fleuves (spec `2026-09-18-labels-rivers-design.md` `fae97ec`, plan `2026-09-18-labels-rivers.md` `d545af6`, 12 tâches, subagent-driven) | ⏳ **non mergée** — code, revues de tâche, validation navigateur et revue finale faits (HEAD de code `77d1e8f`) ; **en attente de la validation utilisateur sur vrai téléphone** (critère 9), puis T12 | — | 326 passed vitest (37 fichiers) ; 19 pytest `test_build_geo.py` ; bundle 160,65 Ko gzip |
+| 2026-09-19 | feat/labels-rivers — lot C : étiquettes villes/pays avec valeur de couche, fleuves (spec `2026-09-18-labels-rivers-design.md` `fae97ec`, plan `2026-09-18-labels-rivers.md` `d545af6`, 12 tâches, subagent-driven le 2026-09-18 ; validée sur vrai téléphone par l'utilisateur le 2026-09-19) | ✅ mergée, déployée par CI | `c4ed59e` | 326 passed vitest (37 fichiers) ; 204 passed / 10 skipped pytest local (Windows) ; bundle 160,65 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -491,6 +491,23 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 42 | **`main.ts` atteint 495 lignes** : le bloc des repères géographiques (chargement, deux interrupteurs, contrôleur, fleuves) y est autonome ; la revue finale recommande de l'extraire en `geo/wiring.ts` (`setupGeo({ ui, scene, canvas, tier })`), dans la lignée de la recommandation du lot B1 (machine à états de `main.ts`) | Chaque nouveau lot ajoute des points de réentrance dans un fichier sans test (I1 du lot C, TDZ du lot vent) | 🟡 ouvert |
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 — Lot C validé sur vrai téléphone, mergé (`c4ed59e`) et déployé
+
+- **Validation téléphone** (critère 9) : build `vite build` + `vite preview --host` servi sur le
+  réseau local, QR code généré en local (`npx qrcode`). Verdict utilisateur : « tout est bon sur
+  le téléphone, ça lag très légèrement mais c'est pratiquement imperceptible » — étiquettes,
+  fleuves, plafond étroit × 2/3 (§5) validés ; pas d'action sur le léger lag.
+- **Incident sans suite** : le serveur de prévisualisation a été coupé par Claude Code pour manque
+  de mémoire (1,1 Go libre sur 7,9) pendant l'attente ; l'utilisateur avait déjà testé. Port
+  libre, pas de node orphelin cette fois.
+- **T12** : merge local `--no-ff` `c4ed59e` dans `master`, tests et build relancés sur le résultat,
+  push (spec `fae97ec` et plan `d545af6` partent avec), déploiement par CI, espace de travail
+  `.superpowers/sdd/2026-09-18-labels-rivers/` supprimé, branche supprimée en local.
+- **Tests :** 326 vitest (37 fichiers), `tsc` propre ; 204 passed / 10 skipped pytest local.
+- **Build :** `index-*.js` 160,65 Ko gzip.
+- **Prochaine action :** aucun lot en cours. Pistes : dettes §8 (n° 38–42), brainstorming du
+  prochain lot à la demande de l'utilisateur.
 
 ### 2026-09-18 (2) — Lot C (étiquettes villes/pays avec valeur, fleuves) : implémenté et revu sur feat/labels-rivers, NON MERGÉ — en attente de la validation sur téléphone
 
@@ -1149,7 +1166,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-18 (**lot C implémenté et revu sur `feat/labels-rivers`, non mergé** — étiquettes villes/pays avec valeur de couche + fleuves ; T1–T11 faites, revue finale « With fixes » corrigée (`77d1e8f`), 326 vitest + 19 pytest, bundle 160,65 Ko gzip ; **en attente de la validation utilisateur sur vrai téléphone**, puis T12 merge/déploiement)
+**Dernière mise à jour :** 2026-09-19 (**lot C validé sur vrai téléphone, mergé `c4ed59e` et déployé** — étiquettes villes/pays avec valeur de couche + fleuves en prod ; 326 vitest + 204 pytest, bundle 160,65 Ko gzip ; aucun lot en cours)
+**Entrée précédente :** 2026-09-18 (**lot C implémenté et revu sur `feat/labels-rivers`, non mergé** — étiquettes villes/pays avec valeur de couche + fleuves ; T1–T11 faites, revue finale « With fixes » corrigée (`77d1e8f`), 326 vitest + 19 pytest, bundle 160,65 Ko gzip ; **en attente de la validation utilisateur sur vrai téléphone**, puis T12 merge/déploiement)
 **Entrée précédente :** 2026-09-18 (**vent et nuages validés par l'utilisateur en prod** — profils vent 5 000/K9 stride 3 et `soften` nuages 1,2 figés ; prochaine étape lot C)
 **Entrée précédente :** 2026-09-18 (**flou retiré de la pluie** — verdict utilisateur final (0,8 trop flou, 0,4 invisible), merge `5c9b060`, `soften` sur les nuages seuls, 248 vitest ; puis lot C)
 **Entrée précédente :** 2026-09-18 (**pluie : σ 0,8 → 0,4** — verdict utilisateur « trop flou », merge `1c66add`, 248 vitest ; puis lot C)
