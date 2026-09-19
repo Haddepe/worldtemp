@@ -59,6 +59,9 @@ html, body {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  /* cible tactile d'au moins 24 px (WCAG 2.2, Lighthouse target-size) */
+  min-width: 1.75rem;
+  min-height: 1.75rem;
   transition: transform 0.15s ease;
 }
 #toggle-overlay[aria-expanded="false"] { transform: rotate(180deg); }
@@ -201,7 +204,9 @@ html, body {
 
 @media (max-width: 600px) {
   #overlay { grid-template-rows: auto 1fr auto auto auto; }
-  #legend { min-width: 0; width: calc(100vw - 1.5rem); grid-row: 3; grid-column: 1 / -1; }
+  /* border-box : sans lui le padding s'ajoute aux 100vw − 1.5rem, la légende déborde de 11 px et
+     élargit toute la grille (bandeau et contrôles collés au bord droit). */
+  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 3; grid-column: 1 / -1; }
   #controls {
     grid-row: 4; grid-column: 1 / -1; justify-self: stretch;
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;
@@ -215,7 +220,7 @@ html, body {
 /* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */
 #about-open {
   background: none; border: 1px solid currentColor; border-radius: 50%;
-  width: 1.4rem; height: 1.4rem; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
+  width: 1.75rem; height: 1.75rem; flex: none; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
 }
 #about {
   padding: 0; border: none; border-radius: 0.75rem; color: inherit;

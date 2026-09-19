@@ -115,3 +115,34 @@ describe("panneau About (spec site public §5)", () => {
     expect(html).toContain('id="about-open"');
   });
 });
+
+/** Dimensions d'un JPEG : premier marqueur SOF0/SOF1/SOF2 (FFC0–FFC2). */
+function jpegSize(bytes: Uint8Array): { width: number; height: number } {
+  let o = 2;
+  while (o + 9 < bytes.length) {
+    if (bytes[o] !== 0xff) throw new Error("invalid JPEG marker");
+    const marker = bytes[o + 1]!;
+    const length = (bytes[o + 2]! << 8) | bytes[o + 3]!;
+    if (marker >= 0xc0 && marker <= 0xc2) {
+      return { height: (bytes[o + 5]! << 8) | bytes[o + 6]!, width: (bytes[o + 7]! << 8) | bytes[o + 8]! };
+    }
+    o += 2 + length;
+  }
+  throw new Error("no SOF marker");
+}
+
+describe("images de partage (spec site public §6)", () => {
+  it("og.jpg : JPEG 1200 × 630, ≤ 150 Ko", () => {
+    const bytes = readFileSync(join(WEB, "public/og.jpg"));
+    expect([bytes[0], bytes[1]]).toEqual([0xff, 0xd8]);
+    expect(bytes.length).toBeLessThanOrEqual(150_000);
+    expect(jpegSize(bytes)).toEqual({ width: 1200, height: 630 });
+  });
+  it("apple-touch-icon.png : PNG 180 × 180", () => {
+    const bytes = readFileSync(join(WEB, "public/apple-touch-icon.png"));
+    expect(String.fromCharCode(bytes[1]!, bytes[2]!, bytes[3]!)).toBe("PNG");
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    expect(view.getUint32(16)).toBe(180); // IHDR : largeur puis hauteur, gros-boutiste
+    expect(view.getUint32(20)).toBe(180);
+  });
+});
