@@ -182,7 +182,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       loader.ts                   # WindLoader : pixels CPU des deux PNG U/V fusionnés en un seul tampon entrelacé `WindField.uv` (jamais de texture GPU, plus de tampons RGBA 8 Mo conservés), remplacement atomique, garde dispose en vol, non réentrant
       controller.ts               # WindController : step cadencé à TICK_MS (30 Hz), dt borné MAX_DT_S et égal au temps réellement consommé par le tick (le reste d'accumulateur est reporté sans être recompté, `a68d44b`), inscrit sur SceneHandle.onFrame seulement quand le vent est actif
     geo/                        # lot C : chargement et paramètres des repères géographiques
-      loader.ts                   # once (promesse mémorisée, succès comme échec), loadLabelSet (un seul des deux fichiers en échec n'empêche pas l'autre), loadRivers ; accès réseau injectés
+      loader.ts                   # once (promesse mémorisée, succès comme échec), loadLabelSet (un seul des deux fichiers en échec n'empêche pas l'autre), loadRivers ; accès réseau injectés ; `GEO_VERSION` en `?v=` sur les trois URL (invalide le cache d'un jour quand les données changent)
       params.ts                   # pur : parseFlag / withFlag (`?labels=0|1`, `?rivers=0|1`, actifs par défaut)
       wiring.ts                   # `wireGeo` (dépendances injectées, testable en Node) : deux interrupteurs, URL, chargement paresseux, création non réentrante des fleuves, écouteur de vue inactif éteint ; `setupGeo({ ui, scene, canvas, tier })` : assemblage de production (LabelsController, obstacles = `ui.panelRects()`, crochet dev `__worldtempGeo`)
     labels/                     # lot C : étiquettes villes/pays en DOM
@@ -455,6 +455,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-19 | Lot D, validation à 500 px : le bouton de repli touchait le bord droit. Cause antérieure au lot : `#legend { width: calc(100vw − 1.5rem) }` sans `border-box` → légende de 500 px, grille élargie de 11 px ; le bouton About a seulement rendu le débordement visible. | `box-sizing: border-box` sur la légende mobile ; cibles tactiles du bandeau portées à 1,75 rem (Lighthouse `target-size`). |
 | 2026-09-19 | Plan du lot D : `vite.config.ts` importait `./src/build/beacon` sans extension → avertissement Vite à chaque build et test, rupture annoncée avec le futur chargeur de config. | Import en `.ts` + `allowImportingTsExtensions` (`noEmit` déjà vrai). Les plans avec code complet sont transcrits défauts compris : la revue l'a attrapé. |
 | 2026-09-19 | Sous Git Bash : `grep -c $''` a compté toutes les lignes (fausse alerte CRLF) et `grep` sur des lettres accentuées coupe les caractères multi-octets ; un heredoc `<<'EOF'` a aussi mangé des barres obliques inverses d'une regex Python. | Contrôles d'octets et de caractères en Python (`encoding="utf-8"`), `git ls-files --eol` pour les fins de ligne ; scripts à regex écrits par l'outil d'écriture de fichier, pas par heredoc. |
+| 2026-09-19 | Lot D déployé, **l'utilisateur voit encore les villes et les pays en français**. La prod servait bien les fichiers anglais : `/geo/*` a un cache navigateur d'un jour (`_headers`, lot C) et l'URL n'avait pas changé → tout visiteur déjà venu gardait l'ancienne copie 24 h. Le contrôle de prod par `curl` ne pouvait pas le voir (pas de cache navigateur). | `GEO_VERSION` (empreinte FNV-1a des trois fichiers) ajoutée en `?v=` aux URL de `geo/loader.ts` ; `geo-loader.test.ts` échoue en donnant la bonne valeur dès que les données changent. **Tout fichier servi avec un cache long sous une URL fixe doit porter une version dans son URL.** |
 | 2026-09-18 | Plan du lot C : trois défauts de **mon plan** trouvés par les revues, pas par les tests du plan — `rAF` différé posant `.on` après un retrait de la même frame (étiquette orpheline), rattrapage périmé re-sélectionnant 4 ms après une sélection naturelle, test d'angle par `acos(dot)` en Float32 mal conditionné à 0,2° | Le code complet dans un plan n'est pas une preuve : les implémenteurs le transcrivent fidèlement, défauts compris. Les revues de tâche et la consigne « ne force pas un test au vert, signale » ont fait leur travail. Mesurer un petit angle par la corde `2·asin(|s−e|/2R)`, jamais par `acos`. |
 
 ## 7. Historique par plan (chronologie)
@@ -564,6 +565,16 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F → finitions.
 **Dettes techniques encore ouvertes au 2026-09-19** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44 (n° 32, 36, 37 non relues ce jour), plus la machine à états des couches et du vent restée dans `main.ts`.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-19 (5) — Correctif : noms restés en français chez les visiteurs déjà venus (cache d'un jour de `geo/`)
+
+- Signalé par l'utilisateur juste après le déploiement du lot D (capture : ALLEMAGNE, Londres…).
+  Cause et correctif en §6 : URL des fichiers `geo/` versionnées par `GEO_VERSION`.
+- Rappel donné à l'utilisateur : la liste de mots de `english.test.ts` est une **liste noire** —
+  y ajouter des mots français durcit le contrôle, elle ne contient rien qui soit affiché.
+- **Tests :** 442 vitest, `tsc` propre. **Build :** 159,84 Ko gzip.
+- **Prochaine action :** Google Search Console et Bing Webmaster (accord de l'utilisateur à
+  chaque action), puis lot E ou F (§8).
 
 ### 2026-09-19 (4) — Lot D (« site public ») : implémenté, revu, validé dans le navigateur, mergé (`1295853`) et déployé
 
@@ -1325,7 +1336,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
+**Dernière mise à jour :** 2026-09-19 (**correctif : URL des fichiers `geo/` versionnées (`GEO_VERSION`)** — les visiteurs déjà venus gardaient les noms français 24 h à cause du cache d'un jour ; 442 vitest, bundle 159,84 Ko gzip)
+**Entrée précédente :** 2026-09-19 (**lot D « site public » mergé `1295853` et déployé** — site en anglais, SEO (Lighthouse 100), panneau About, beacon Cloudflare Web Analytics actif, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; reste : Google Search Console et Bing Webmaster)
 **Entrée précédente :** 2026-09-19 (**lot D « site public » implémenté, revu et validé dans le navigateur sur `feat/public-site`, non mergé** — site en anglais, SEO (Lighthouse 100), About, beacon, commentaires GLSL retirés ; 441 vitest + 207 pytest, bundle 159,82 Ko gzip ; **attend le jeton d'audience et l'accord de merge**)
 **Entrée précédente :** 2026-09-19 (**feuille de route relevée en §8 « Chantiers à venir » (lots D, E, F, R1–R6, P1–P4) ; lot D « site public » choisi**, brainstorming à suivre ; relief 3D géométrique déconseillé)
 **Entrée précédente :** 2026-09-19 (**dettes n° 42 et n° 41 validées dans le navigateur, mergées `116991f` et déployées** — 348 vitest + 206 pytest, bundle 161,62 Ko gzip ; aucun chantier en cours)
