@@ -136,20 +136,40 @@ export class DetailLabels {
   current(): DetailBatch {
     if (this.memo?.ver === this.ver) return this.memo.batch;
     const k = this.wanted.length ? Math.floor(DETAIL_BUDGET / this.wanted.length) : 0;
-    const refs: { p: Place; unit: Float32Array; i: number }[] = [];
+    // Candidats (ville, vecteurs de sa tuile, rang dans sa tuile), en tableaux parallèles.
+    const places: Place[] = [];
+    const src: Float32Array[] = [];
+    const at: number[] = [];
     for (const t of this.wanted) {
       const e = this.entries.get(tileKey(t));
       if (e?.state !== "ready") continue;
       const n = Math.min(k, e.places.length);
-      for (let i = 0; i < n; i++) refs.push({ p: e.places[i]!, unit: e.unit, i });
+      for (let i = 0; i < n; i++) {
+        places.push(e.places[i]!);
+        src.push(e.unit);
+        at.push(i);
+      }
     }
-    // ≤ DETAIL_BUDGET éléments ; tri stable : à égalité, l'ordre des tuiles voulues départage.
-    refs.sort(({ p: a }, { p: b }) => b.pop - a.pop || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    // ≤ DETAIL_BUDGET indices ; à égalité parfaite, l'ordre des tuiles voulues départage (comme avant).
+    const order = places.map((_, i) => i);
+    order.sort((x, y) => {
+      const a = places[x]!;
+      const b = places[y]!;
+      return b.pop - a.pop || (a.name < b.name ? -1 : a.name > b.name ? 1 : x - y);
+    });
     let batch = EMPTY;
-    if (refs.length) {
-      const unit = new Float32Array(refs.length * 3);
-      refs.forEach((r, j) => unit.set(r.unit.subarray(r.i * 3, r.i * 3 + 3), j * 3));
-      batch = { places: refs.map((r) => r.p), unit };
+    if (order.length) {
+      const out: Place[] = new Array<Place>(order.length);
+      const unit = new Float32Array(order.length * 3);
+      order.forEach((o, j) => {
+        out[j] = places[o]!;
+        const u = src[o]!;
+        const s = at[o]! * 3;
+        unit[j * 3] = u[s]!;
+        unit[j * 3 + 1] = u[s + 1]!;
+        unit[j * 3 + 2] = u[s + 2]!;
+      });
+      batch = { places: out, unit };
     }
     this.memo = { ver: this.ver, batch };
     return batch;

@@ -115,24 +115,35 @@ export interface DetailBatch {
  */
 export function extendLabelSet(base: LabelSet, extra: DetailBatch): LabelSet {
   if (extra.places.length === 0) return base;
-  const items: LabelItem[] = [];
-  const unit = new Float32Array((base.items.length + extra.places.length) * 3);
-  const push = (item: Omit<LabelItem, "id">, src: Float32Array, k: number): void => {
-    const id = items.length;
-    items.push({ ...item, id });
-    unit.set(src.subarray(k * 3, k * 3 + 3), id * 3);
-  };
+  // Appelée à chaque changement du détail (≤ DETAIL_BUDGET villes + le socle) : littéraux explicites
+  // et copie directe des vecteurs, sans décomposition d'objet ni vue `subarray` par item (T11, V1).
+  const ep = extra.places;
+  const eu = extra.unit;
+  const bu = base.unit;
+  const n = base.items.length + ep.length;
+  const items: LabelItem[] = new Array<LabelItem>(n);
+  const unit = new Float32Array(n * 3);
+  let id = 0;
   let j = 0;
   const pushExtra = (): void => {
-    const p = extra.places[j]!;
-    push({ kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: false, rank: 0 }, extra.unit, j);
+    const p = ep[j]!;
+    items[id] = { id, kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: false, rank: 0 };
+    unit[id * 3] = eu[j * 3]!;
+    unit[id * 3 + 1] = eu[j * 3 + 1]!;
+    unit[id * 3 + 2] = eu[j * 3 + 2]!;
+    id++;
     j++;
   };
   for (const b of base.items) {
-    while (j < extra.places.length && b.kind === "city" && !b.capital && extra.places[j]!.pop > b.pop) pushExtra();
-    push(b, base.unit, b.id);
+    while (j < ep.length && b.kind === "city" && !b.capital && ep[j]!.pop > b.pop) pushExtra();
+    items[id] = { id, kind: b.kind, name: b.name, lon: b.lon, lat: b.lat, pop: b.pop, capital: b.capital, rank: b.rank };
+    const k = b.id * 3;
+    unit[id * 3] = bu[k]!;
+    unit[id * 3 + 1] = bu[k + 1]!;
+    unit[id * 3 + 2] = bu[k + 2]!;
+    id++;
   }
-  while (j < extra.places.length) pushExtra();
+  while (j < ep.length) pushExtra();
   return { items, unit };
 }
 
