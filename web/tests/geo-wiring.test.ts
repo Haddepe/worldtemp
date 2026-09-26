@@ -117,12 +117,26 @@ describe("wireGeo — étiquettes (spec repères §6, §7)", () => {
   });
 
   it("après chaque activation, une vue est demandée (villes de détail sans attendre un mouvement)", async () => {
-    const h = harness();
+    // rivers=0 : les fleuves n'appellent jamais requestRender ici (désactivés, `rivers` reste
+    // `null`), donc tout appel observé vient bien de `applyLabels`, pas d'une coïncidence de
+    // planification avec le chemin des fleuves (allumés par défaut ailleurs).
+    const h = harness("?rivers=0");
     wireGeo(h.deps).start();
     await flush();
+    expect(h.deps.scene.requestRender).toHaveBeenCalled();
     const enabled = h.labels.setEnabled.mock.invocationCallOrder.at(-1)!;
     const rendered = h.deps.scene.requestRender.mock.invocationCallOrder.at(-1)!;
     expect(rendered).toBeGreaterThan(enabled);
+  });
+
+  it("un clic qui rebascule l'interrupteur redemande aussi une vue", async () => {
+    const h = harness("?rivers=0");
+    wireGeo(h.deps).start();
+    await flush();
+    h.deps.scene.requestRender.mockClear();
+    h.labelsButton.click();
+    await flush();
+    expect(h.deps.scene.requestRender).toHaveBeenCalled();
   });
 });
 
