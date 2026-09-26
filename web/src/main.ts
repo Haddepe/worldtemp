@@ -27,7 +27,7 @@ import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { locate } from "./ui/locate";
 import { byId, createOverlay } from "./ui/overlay";
-import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
+import { TapDetector, createTooltip, mouseInput, type Reading } from "./ui/tooltip";
 import { createToggle } from "./ui/toggle";
 import { WindController } from "./wind/controller";
 import { WindLoader } from "./wind/loader";
@@ -142,15 +142,16 @@ async function boot(): Promise<void> {
       tapInput("move", e);
       return;
     }
+    // Souris : tant qu'une lecture est épinglée (arrivée d'un vol), le survol ne la remplace pas.
     const c = canvasPoint(e);
-    tooltip.setReading(readingAt(c.x, c.y, c.w, c.h), "hover");
-    tooltip.update(sceneHandle.camera, c.w, c.h);
+    if (mouseInput(tooltip, "move", () => readingAt(c.x, c.y, c.w, c.h))) tooltip.update(sceneHandle.camera, c.w, c.h);
   });
   canvas.addEventListener("pointerleave", (e) => {
-    if (e.pointerType !== "touch") tooltip.setReading(null, "hover");
+    if (e.pointerType !== "touch") mouseInput(tooltip, "leave", () => null);
   });
   canvas.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "touch") tapInput("down", e);
+    else mouseInput(tooltip, "down", () => null); // un clic souris lève l'épingle, le survol reprend
   });
   canvas.addEventListener("pointerup", (e) => {
     if (e.pointerType === "touch") tapInput("up", e);
