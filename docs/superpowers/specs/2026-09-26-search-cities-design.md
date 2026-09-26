@@ -70,11 +70,17 @@ du socle. Évite « Munich » et « München » superposés.
 - **Normalisation** (identique Python et TypeScript, testée avec les mêmes cas) : décomposition
   NFD, suppression des diacritiques, minuscules, apostrophes et tirets → espace, espaces
   multiples réduits. `Épinal` → `epinal`, `Saint-Dié-des-Vosges` → `saint die des vosges`.
-- **Clés d'une ville** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3) et
-  les `alternatenames` en écriture latine, normalisés, dédoublonnés.
+- **Clés d'une ville** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3),
+  normalisés, dédoublonnés ; **plus**, pour les villes d'au moins **100 000 habitants**
+  seulement, leurs `alternatenames` en écriture latine (exonymes : « munchen » → Munich). Les
+  prendre pour toutes les villes gonflerait l'index de plusieurs dizaines de Mo pour des noms
+  alternatifs de villages rarement cherchés (précision du 2026-09-26, rédaction du plan).
+- Seules les villes GeoNames sont indexées : une ville du socle sans correspondance GeoNames
+  (§3.3) n'est pas trouvable par la recherche (cas marginal, accepté).
 - **Préfixe** = 2 premiers caractères de la clé normalisée (lettres/chiffres ; le reste est
   regroupé dans `_.json`). Une ville figure dans chaque fichier de préfixe d'une de ses clés.
-- Format : `{"version": 1, "entries": [[name, region, country, lon, lat, pop, [clés…]], …]}`,
+- Format : `{"version": 1, "entries": [[name, region, country, lon, lat, pop, [clés…]], …]}`
+  (dans chaque fichier, une entrée ne porte que **ses clés qui commencent par ce préfixe**),
   triées par population décroissante ; `region` = nom anglais-ASCII d'`admin1CodesASCII`
   (vide si inconnu) ; `country` = nom anglais de `countryInfo.txt`.
 - Estimation : ~400 à 700 fichiers de quelques dizaines de Ko (un fichier de préfixe courant
@@ -156,8 +162,8 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
 
 `navigator.geolocation.getCurrentPosition` (`enableHighAccuracy: false`, `timeout: 10000`,
 `maximumAge: 600000`). Succès → vol (§5.3), tooltip sans nom de ville (valeur seule). Refus,
-indisponibilité ou délai dépassé → « Location unavailable » dans `#status`. La position n'est
-**ni envoyée ni stockée**.
+indisponibilité ou délai dépassé → « Location unavailable » dans `#status` pendant 5 s. La
+position n'est **ni envoyée ni stockée** ; le paragraphe « Privacy » du panneau About le dit.
 
 ### 5.5 Mobile
 
