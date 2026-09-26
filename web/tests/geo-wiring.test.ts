@@ -115,6 +115,15 @@ describe("wireGeo — étiquettes (spec repères §6, §7)", () => {
     expect(h.labels.setEnabled).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("après chaque activation, une vue est demandée (villes de détail sans attendre un mouvement)", async () => {
+    const h = harness();
+    wireGeo(h.deps).start();
+    await flush();
+    const enabled = h.labels.setEnabled.mock.invocationCallOrder.at(-1)!;
+    const rendered = h.deps.scene.requestRender.mock.invocationCallOrder.at(-1)!;
+    expect(rendered).toBeGreaterThan(enabled);
+  });
 });
 
 describe("wireGeo — fleuves (spec repères §6, §7)", () => {

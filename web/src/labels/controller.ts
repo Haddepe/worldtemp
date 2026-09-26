@@ -8,7 +8,7 @@ import type { Tier } from "../gpu/tier";
 import { projectToScreen } from "../render/pick";
 import { mapStyleFor } from "../tiles/lod";
 import type { TooltipData } from "../ui/tooltip";
-import type { LabelSet } from "./data";
+import { extendLabelSet, itemKey, type DetailBatch, type LabelSet } from "./data";
 import type { LabelView, LabelsLayer } from "./layer";
 import { labelCap, selectLabels, tierIndex, type Box, type Placed } from "./select";
 import { labelValue } from "./text";
@@ -25,6 +25,8 @@ export interface LabelsControllerDeps {
   obstacles?: () => readonly Box[];
   now?: () => number;
   defer?: (cb: () => void, ms: number) => unknown;
+  /** Villes de détail visibles (spec lot F §4) ; `version` change quand leur ensemble change. */
+  detail?: { readonly version: number; current(): DetailBatch };
 }
 
 interface Size { width: number; height: number }
@@ -33,6 +35,9 @@ const p = new THREE.Vector3();
 
 export class LabelsController {
   private set: LabelSet | null = null;
+  /** Socle (`places.json` + pays) ; `set` = socle + villes de détail, reconstruit par `syncDetail`. */
+  private baseSet: LabelSet | null = null;
+  private detailVer = -1;
   private source: TooltipData | null = null;
   /** Une couche colore le globe, que ses pixels soient lisibles (`source`) ou non. */
   private layerShown = false;
@@ -60,10 +65,16 @@ export class LabelsController {
   }
 
   setData(set: LabelSet | null): void {
+    this.baseSet = set;
     this.set = set;
+    this.detailVer = -1;
     this.placed = [];
     this.values.clear();
     if (this.enabled) this.refresh();
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
   }
 
   /** `layerShown` : une couche est affichée même si ses valeurs sont illisibles (`data` nul) —
@@ -138,15 +149,37 @@ export class LabelsController {
     }, ms);
   }
 
+  /** Refusionne socle + détail si le détail a changé. Renvoie les clés des étiquettes placées
+   * avant la fusion (les ids changent), `null` si rien n'a été refusionné. */
+  private syncDetail(): Set<string> | null {
+    const detail = this.deps.detail;
+    if (!detail || !this.baseSet || !this.set || detail.version === this.detailVer) return null;
+    const old = this.set;
+    const keys = new Set(this.placed.map((pl) => itemKey(old.items[pl.id]!)));
+    this.detailVer = detail.version;
+    this.set = extendLabelSet(this.baseSet, detail.current());
+    this.placed = [];
+    this.values.clear();
+    return keys;
+  }
+
   private refresh(size: Size = this.deps.size()): void {
-    const set = this.set;
-    if (!set) return;
+    if (!this.set) return;
     const { camera } = this.deps;
     const { width, height } = size;
     const d = camera.position.length();
     const tier = tierIndex(d);
-    // Changement de palier : on repart de l'ordre de priorité strict (spec §3).
-    const shown = tier === this.lastTier ? new Set(this.placed.map((x) => x.id)) : new Set<number>();
+    const sameTier = tier === this.lastTier;
+    const prevIds = new Set(this.placed.map((x) => x.id));
+    const prevKeys = this.syncDetail();
+    const set = this.set;
+    // Changement de palier : on repart de l'ordre de priorité strict (spec §3). Après une fusion,
+    // les ids ont changé : les étiquettes affichées sont retrouvées par leur clé.
+    let shown = new Set<number>();
+    if (sameTier) {
+      if (prevKeys === null) shown = prevIds;
+      else for (const it of set.items) if (prevKeys.has(itemKey(it))) shown.add(it.id);
+    }
     this.lastTier = tier;
     this.placed = selectLabels({
       set, d, camDir: { x: camera.position.x / d, y: camera.position.y / d, z: camera.position.z / d },
