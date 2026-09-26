@@ -16,6 +16,13 @@ export const DETAIL_CONCURRENCY = 4;
 export const DETAIL_CACHE = 64;
 /** Délai minimal avant de réessayer une tuile en échec (et seulement si la caméra a bougé, dette n° 19). */
 export const DETAIL_RETRY_MS = 2000;
+/**
+ * Budget de candidats de détail (validation navigateur T11, V1) : chaque tuile voulue et prête ne
+ * fournit que ses `floor(DETAIL_BUDGET / nombre de tuiles voulues)` villes les plus peuplées. Au-delà,
+ * le plafond d'affichage (`LABEL_CAP`) les rend invisibles de toute façon, mais leur fusion et leur
+ * sélection coûtaient des centaines de ms à chaque tuile arrivée.
+ */
+export const DETAIL_BUDGET = 6000;
 
 export interface DetailDeps {
   /** JSON de l'URL ; `null` si 404 (tuile sans ville) ; rejette sur tout autre échec. */
@@ -23,6 +30,8 @@ export interface DetailDeps {
   now?: () => number;
   /** Tuiles voulues pour une vue (défaut `detailTiles`) ; injectable pour compter les appels. */
   select?: (view: ViewState, enabled: boolean) => TileId[];
+  /** Vecteurs unité d'une tuile, calculés une fois à son arrivée (défaut `unitVectors`) ; injectable pour compter les appels. */
+  vectors?: (places: readonly Place[]) => Float32Array;
 }
 
 /** Position (3), hauteur du viewport, champ vertical, bouton Labels, plans du frustum (6 × 4). */
@@ -48,7 +57,7 @@ function writeSignature(view: ViewState, enabled: boolean, out: Float64Array): v
 
 type Entry =
   | { state: "loading"; ctrl: AbortController }
-  | { state: "ready"; places: Place[] }
+  | { state: "ready"; places: Place[]; unit: Float32Array }
   | { state: "failed"; at: number };
 
 const EMPTY: DetailBatch = { places: [], unit: new Float32Array(0) };
@@ -68,6 +77,7 @@ export class DetailLabels {
   private memo: { ver: number; batch: DetailBatch } | null = null;
   private readonly now: () => number;
   private readonly select: (view: ViewState, enabled: boolean) => TileId[];
+  private readonly vectors: (places: readonly Place[]) => Float32Array;
 
   constructor(
     private readonly base: string,
@@ -76,6 +86,7 @@ export class DetailLabels {
   ) {
     this.now = deps.now ?? (() => performance.now());
     this.select = deps.select ?? detailTiles;
+    this.vectors = deps.vectors ?? unitVectors;
   }
 
   /** Change dès que l'ensemble des villes visibles change. */
@@ -119,16 +130,27 @@ export class DetailLabels {
     if (this.readySignature() !== before) this.ver++;
   }
 
-  /** Villes des tuiles voulues et prêtes, par population décroissante puis nom. */
+  /** Villes des tuiles voulues et prêtes, par population décroissante puis nom : au plus
+   * `floor(DETAIL_BUDGET / nombre de tuiles voulues)` par tuile (ses plus peuplées, les lignes d'une
+   * tuile étant déjà triées). Vecteurs recopiés depuis ceux de chaque tuile, jamais recalculés. */
   current(): DetailBatch {
     if (this.memo?.ver === this.ver) return this.memo.batch;
-    const all: Place[] = [];
+    const k = this.wanted.length ? Math.floor(DETAIL_BUDGET / this.wanted.length) : 0;
+    const refs: { p: Place; unit: Float32Array; i: number }[] = [];
     for (const t of this.wanted) {
       const e = this.entries.get(tileKey(t));
-      if (e?.state === "ready") all.push(...e.places);
+      if (e?.state !== "ready") continue;
+      const n = Math.min(k, e.places.length);
+      for (let i = 0; i < n; i++) refs.push({ p: e.places[i]!, unit: e.unit, i });
     }
-    all.sort((a, b) => b.pop - a.pop || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    const batch = all.length ? { places: all, unit: unitVectors(all) } : EMPTY;
+    // ≤ DETAIL_BUDGET éléments ; tri stable : à égalité, l'ordre des tuiles voulues départage.
+    refs.sort(({ p: a }, { p: b }) => b.pop - a.pop || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    let batch = EMPTY;
+    if (refs.length) {
+      const unit = new Float32Array(refs.length * 3);
+      refs.forEach((r, j) => unit.set(r.unit.subarray(r.i * 3, r.i * 3 + 3), j * 3));
+      batch = { places: refs.map((r) => r.p), unit };
+    }
     this.memo = { ver: this.ver, batch };
     return batch;
   }
@@ -138,11 +160,13 @@ export class DetailLabels {
     return false;
   }
 
+  /** Le nombre de tuiles voulues fixe la part de chaque tuile (`DETAIL_BUDGET`) : il en fait partie. */
   private readySignature(): string {
-    return this.wanted
+    const ready = this.wanted
       .map(tileKey)
       .filter((k) => this.entries.get(k)?.state === "ready")
       .join(";");
+    return `${this.wanted.length}|${ready}`;
   }
 
   private pump(): void {
@@ -163,7 +187,8 @@ export class DetailLabels {
     let next: Entry;
     try {
       const json = await this.deps.fetchJson(`${this.base}/cities/${t.z}/${t.x}/${t.y}.json?v=${GEO_VERSION}`, ctrl.signal);
-      next = { state: "ready", places: json === null ? [] : parseDetailPlaces(json) };
+      const places = json === null ? [] : parseDetailPlaces(json);
+      next = { state: "ready", places, unit: this.vectors(places) };
     } catch (e) {
       if (ctrl.signal.aborted) return;
       console.warn(`[worldtemp] city tile ${key} unavailable:`, e);

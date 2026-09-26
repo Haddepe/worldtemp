@@ -127,6 +127,12 @@ dans la tuile qui contient (6,45 ; 48,17) et dans `search/ep.json`.
   réessai au prochain mouvement de caméra (même politique que les tuiles image, dette n° 19).
 - Les lignes sont converties en `LabelItem` (vecteurs unitaires précalculés), comme
   `places.json`, via les fonctions existantes de `labels/data.ts`.
+- **Budget de candidats** (validation navigateur T11, V1) : `DETAIL_BUDGET = 6000`. Chaque tuile
+  voulue et prête ne fournit que ses `floor(6000 / nombre de tuiles voulues)` villes les plus
+  peuplées (lignes déjà triées) ; de loin chaque tuile donne ses grandes villes, tout près presque
+  toutes. Vecteurs unité calculés une fois par tuile à son arrivée, jamais au moment de la fusion
+  (qui trie ≤ 6 000 éléments). Motif : tri de ~36 k villes et vecteurs recalculés à chaque tuile
+  arrivée = jusqu'à 169 ms par fusion (CPU ×4), alors que `LABEL_CAP` n'en affiche que 60.
 - Dépendances injectées (`fetchJson`, horloge) pour les tests.
 
 ### 4.2 Intégration (`labels/controller.ts`)

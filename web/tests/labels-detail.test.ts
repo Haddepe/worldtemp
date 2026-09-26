@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import { GEO_VERSION } from "../src/geo/loader";
-import { DETAIL_CACHE, DETAIL_CONCURRENCY, DetailLabels, detailTiles } from "../src/labels/detail";
+import { unitVectors } from "../src/labels/data";
+import { DETAIL_BUDGET, DETAIL_CACHE, DETAIL_CONCURRENCY, DetailLabels, detailTiles } from "../src/labels/detail";
 import { tileAt } from "../src/tiles/grid";
 import { viewStateFrom } from "../src/tiles/lod";
 import { lonLatToVec3 } from "../src/tiles/patch";
@@ -167,5 +168,76 @@ describe("DetailLabels — chargement, cache, annulation", () => {
       await flush();
     }
     expect((detail as unknown as { entries: Map<string, unknown> }).entries.size).toBeLessThanOrEqual(DETAIL_CACHE + 40);
+  });
+});
+
+describe("DetailLabels — budget de candidats (validation T11, V1)", () => {
+  /** `n` villes triées par population décroissante, noms préfixés par `tag`. */
+  const rowsOf = (tag: string, n: number, base: number) =>
+    Array.from({ length: n }, (_, i) => [((base + i) % 350) - 175 + 0.001 * i, 10, `${tag}${i}`, 1_000_000 - 7 * i - base]);
+  const T = (x: number) => ({ z: 5, x, y: 10 });
+
+  /** Tuiles voulues pilotées par `wanted` ; toutes les requêtes sont servies par `serve`. */
+  async function setup(tiles: Record<number, unknown[][]>) {
+    const net = fakeNet();
+    let wanted = [T(1), T(2), T(3)];
+    const select = vi.fn(() => wanted);
+    const vectors = vi.fn(unitVectors);
+    const detail = new DetailLabels("/geo", { fetchJson: net.fetchJson, select, vectors }, () => {});
+    let lon = 0;
+    const serve = async (list: typeof wanted) => {
+      wanted = list;
+      detail.update(view((lon += 1), 0, 1.1), true); // caméra bougée : nouvelle sélection
+      for (let i = 0; i < 5; i++) {
+        for (const [u, p] of net.pending) {
+          const x = Number(u.split("/")[4]);
+          p.resolve(tile(tiles[x] ?? []));
+          net.pending.delete(u);
+        }
+        await flush();
+      }
+    };
+    await serve(wanted);
+    return { detail, vectors, serve };
+  }
+
+  it("chaque tuile voulue et prête donne au plus floor(DETAIL_BUDGET / tuiles voulues) villes, ses plus peuplées", async () => {
+    const big = Math.floor(DETAIL_BUDGET / 3) + 500;
+    const { detail } = await setup({ 1: rowsOf("A", big, 0), 2: rowsOf("B", big, 3), 3: rowsOf("C", 10, 5) });
+    const k = Math.floor(DETAIL_BUDGET / 3);
+    const names = detail.current().places.map((p) => p.name);
+    expect(names.length).toBe(k + k + 10);
+    expect(names.length).toBeLessThanOrEqual(DETAIL_BUDGET);
+    for (const tag of ["A", "B"]) {
+      const got = names.filter((n) => n.startsWith(tag));
+      expect(got.length).toBe(k);
+      expect(got).toContain(`${tag}0`);
+      expect(got).toContain(`${tag}${k - 1}`);
+      expect(got).not.toContain(`${tag}${k}`);
+    }
+  });
+
+  it("ordre par population décroissante puis nom, vecteurs alignés sur les villes", async () => {
+    const { detail } = await setup({ 1: rowsOf("A", 50, 0), 2: [[1, 2, "Zed", 999_993], [1, 3, "Abc", 999_993]], 3: rowsOf("C", 50, 1) });
+    const batch = detail.current();
+    const sorted = [...batch.places].sort((a, b) => b.pop - a.pop || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    expect(batch.places).toEqual(sorted);
+    expect(batch.places.findIndex((p) => p.name === "Abc")).toBeLessThan(batch.places.findIndex((p) => p.name === "Zed"));
+    expect(Array.from(batch.unit)).toEqual(Array.from(unitVectors(batch.places)));
+  });
+
+  it("vecteurs calculés une fois par tuile, pas à chaque version ; plus de tuiles voulues = part réduite", async () => {
+    const big = DETAIL_BUDGET;
+    const { detail, vectors, serve } = await setup({ 1: rowsOf("A", big, 0), 2: rowsOf("B", big, 3), 3: rowsOf("C", big, 5), 4: rowsOf("D", big, 7) });
+    expect(vectors).toHaveBeenCalledTimes(3);
+    const v1 = detail.version;
+    expect(detail.current().places.length).toBe(3 * Math.floor(DETAIL_BUDGET / 3));
+    await serve([T(1), T(2), T(3), T(4)]);
+    expect(detail.version).toBeGreaterThan(v1);
+    expect(detail.current().places.length).toBe(4 * Math.floor(DETAIL_BUDGET / 4));
+    expect(vectors).toHaveBeenCalledTimes(4); // seule la nouvelle tuile
+    await serve([T(1), T(2)]); // tuiles déjà prêtes : aucun recalcul
+    expect(detail.current().places.length).toBe(2 * Math.floor(DETAIL_BUDGET / 2));
+    expect(vectors).toHaveBeenCalledTimes(4);
   });
 });
