@@ -239,6 +239,8 @@ html, body {
 #search-results li { min-height: 2.5rem; box-sizing: border-box; padding: 0.5rem; border-radius: 0.25rem; cursor: pointer; }
 #search-results li[aria-selected="true"], #search-results li:hover { background: rgba(255, 255, 255, 0.15); }
 #search-message { margin: 0.25rem 0 0; opacity: 0.8; }
+/* Toujours rendu (région role="status") : vide, il ne laisse aucun espace. Pas de display: none, qui casserait l'annonce. */
+#search-message:empty { margin: 0; }
 #about {
   padding: 0; border: none; border-radius: 0.75rem; color: inherit;
   background: var(--panel-bg); backdrop-filter: blur(10px);

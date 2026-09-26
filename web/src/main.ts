@@ -297,12 +297,14 @@ async function boot(): Promise<void> {
   // Toute interaction avec le globe reprend la main : le vol est annulé dès le pointerdown ou la molette.
   canvas.addEventListener("pointerdown", () => flight.cancel());
   canvas.addEventListener("wheel", () => flight.cancel(), { passive: true });
-  const goTo = (lon: number, lat: number, name?: string): void => {
+  /** `shareView` : réécrire l'URL à l'arrivée — oui pour une ville choisie, non pour « ma position »
+   * (la position n'est ni stockée ni partagée, promesse du panneau About ; relecture finale F4). */
+  const goTo = (lon: number, lat: number, name: string | undefined, shareView: boolean): void => {
     tooltip.setReading(null, "pin");
     flight.start(lon, lat, FLY_DISTANCE, () => {
       tooltip.setReading({ lon, lat, name }, "pin");
       tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
-      history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      if (shareView) history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
       sceneHandle.requestRender();
     });
   };
@@ -319,12 +321,12 @@ async function boot(): Promise<void> {
       if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
       return r.json() as Promise<unknown>;
     }),
-    onChoose: (r) => goTo(r.lon, r.lat, r.name),
+    onChoose: (r) => goTo(r.lon, r.lat, r.name, true),
     onLayoutChange: () => ui.notifyLayout(),
   });
   byId<HTMLButtonElement>("locate").addEventListener("click", () => {
     locate("geolocation" in navigator ? navigator.geolocation : undefined).then(
-      ({ lon, lat }) => goTo(lon, lat),
+      ({ lon, lat }) => goTo(lon, lat, undefined, false),
       (e: unknown) => {
         console.warn("[worldtemp] location unavailable:", e);
         flashNotice(STRINGS.status.locationUnavailable);

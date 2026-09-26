@@ -21,6 +21,29 @@ export interface DetailDeps {
   /** JSON de l'URL ; `null` si 404 (tuile sans ville) ; rejette sur tout autre échec. */
   fetchJson(url: string, signal: AbortSignal): Promise<unknown | null>;
   now?: () => number;
+  /** Tuiles voulues pour une vue (défaut `detailTiles`) ; injectable pour compter les appels. */
+  select?: (view: ViewState, enabled: boolean) => TileId[];
+}
+
+/** Position (3), hauteur du viewport, champ vertical, bouton Labels, plans du frustum (6 × 4). */
+const SIG_LEN = 6 + 24;
+
+/** Tout ce dont dépend `detailTiles` : deux vues de même signature donnent les mêmes tuiles. */
+function writeSignature(view: ViewState, enabled: boolean, out: Float64Array): void {
+  const c = view.cameraPosition;
+  out[0] = c.x;
+  out[1] = c.y;
+  out[2] = c.z;
+  out[3] = view.viewportHeight;
+  out[4] = view.fovYRad;
+  out[5] = enabled ? 1 : 0;
+  let i = 6;
+  for (const pl of view.frustum.planes) {
+    out[i++] = pl.normal.x;
+    out[i++] = pl.normal.y;
+    out[i++] = pl.normal.z;
+    out[i++] = pl.constant;
+  }
 }
 
 type Entry =
@@ -39,10 +62,12 @@ export function detailTiles(view: ViewState, enabled: boolean): TileId[] {
 export class DetailLabels {
   private readonly entries = new Map<string, Entry>();
   private wanted: TileId[] = [];
-  private lastPos = "";
+  private readonly sig = new Float64Array(SIG_LEN);
+  private readonly lastSig = new Float64Array(SIG_LEN).fill(Number.NaN);
   private ver = 0;
   private memo: { ver: number; batch: DetailBatch } | null = null;
   private readonly now: () => number;
+  private readonly select: (view: ViewState, enabled: boolean) => TileId[];
 
   constructor(
     private readonly base: string,
@@ -50,6 +75,7 @@ export class DetailLabels {
     private readonly onChange: () => void,
   ) {
     this.now = deps.now ?? (() => performance.now());
+    this.select = deps.select ?? detailTiles;
   }
 
   /** Change dès que l'ensemble des villes visibles change. */
@@ -59,11 +85,17 @@ export class DetailLabels {
 
   /** À chaque vue (`SceneHandle.onViewChange`). */
   update(view: ViewState, enabled: boolean): void {
-    const pos = view.cameraPosition.toArray().join(",");
-    const moved = pos !== this.lastPos;
-    this.lastPos = pos;
+    // Appelée à chaque image quand le vent anime : vue et bouton inchangés, sans échec en attente
+    // de réessai → mêmes tuiles, rien à faire (relecture finale F4). Les arrivées de tuiles
+    // relancent elles-mêmes `pump()` depuis `load()`.
+    writeSignature(view, enabled, this.sig);
+    let same = true;
+    for (let i = 0; i < SIG_LEN; i++) if (this.sig[i] !== this.lastSig[i]) same = false;
+    if (same && !this.hasFailed()) return;
+    const moved = this.sig[0] !== this.lastSig[0] || this.sig[1] !== this.lastSig[1] || this.sig[2] !== this.lastSig[2];
+    this.lastSig.set(this.sig);
     const before = this.readySignature();
-    this.wanted = detailTiles(view, enabled);
+    this.wanted = this.select(view, enabled);
     const keys = new Set(this.wanted.map(tileKey));
     const now = this.now();
     for (const [key, e] of this.entries) {
@@ -99,6 +131,11 @@ export class DetailLabels {
     const batch = all.length ? { places: all, unit: unitVectors(all) } : EMPTY;
     this.memo = { ver: this.ver, batch };
     return batch;
+  }
+
+  private hasFailed(): boolean {
+    for (const e of this.entries.values()) if (e.state === "failed") return true;
+    return false;
   }
 
   private readySignature(): string {

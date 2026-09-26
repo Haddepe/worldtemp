@@ -159,7 +159,11 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
   « Épinal — Grand Est, France » (région omise si vide).
 - Clavier : ↑/↓, Entrée, Échap. ARIA : `role="combobox"`, `aria-expanded`, `aria-controls`,
   `role="listbox"` / `role="option"`, `aria-activedescendant`.
-- Messages : « No matches » ; « Search unavailable » en cas d'échec réseau.
+- Messages : « No matches » ; « Search unavailable » en cas d'échec réseau. `#search-message`
+  (`role="status"`) reste toujours rendu, seul son texte change (vide : marge nulle), pour que
+  l'annonce soit lue.
+- Après un choix, le focus revient au bouton loupe ; à la réouverture, la requête est relancée
+  si le champ n'est pas vide.
 - Une frappe plus récente annule le résultat d'une requête plus ancienne.
 
 ### 5.3 Vol animé (`web/src/render/fly.ts`)
@@ -170,14 +174,21 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
 - **Toute interaction utilisateur interrompt le vol** (pointeur, molette, touche de navigation).
 - `prefers-reduced-motion: reduce` → saut direct (`setInitialView`).
 - À l'arrivée : marqueur et tooltip existants ouverts au point, avec le **nom du lieu** et la
-  valeur de la couche active ; URL mise à jour (`?lon=&lat=&d=`, via `history.replaceState`).
+  valeur de la couche active (épinglé sans couche, vent ni nom, le **marqueur seul** s'affiche) ;
+  **après un choix de ville seulement**, URL mise à jour (`?lon=&lat=&d=`, via
+  `history.replaceState`) — jamais après « ma position » (§5.4).
+- Le tooltip épinglé à l'arrivée n'est pas remplacé par le survol de la souris ; un clic sur le
+  globe lève l'épingle et le survol reprend (relecture finale, F2). Le tactile ne change pas.
 
 ### 5.4 « Ma position »
 
 `navigator.geolocation.getCurrentPosition` (`enableHighAccuracy: false`, `timeout: 10000`,
-`maximumAge: 600000`). Succès → vol (§5.3), tooltip sans nom de ville (valeur seule). Refus,
-indisponibilité ou délai dépassé → « Location unavailable » dans `#status` pendant 5 s. La
-position n'est **ni envoyée ni stockée** ; le paragraphe « Privacy » du panneau About le dit.
+`maximumAge: 600000`). Succès → vol (§5.3), tooltip sans nom de ville (valeur seule, ou
+marqueur seul sans couche). Refus, indisponibilité ou délai dépassé → « Location unavailable »
+dans `#status` pendant 5 s. La position n'est **ni envoyée ni stockée** ; le paragraphe
+« Privacy » du panneau About le dit. En conséquence, l'URL **n'est pas réécrite** après
+« ma position » : elle se partage et reste dans l'historique du navigateur (décision de la
+relecture finale, F4).
 
 ### 5.5 Mobile
 
@@ -196,9 +207,10 @@ couvre les nouveaux textes.
 - Zoom sur le Grand Est : Épinal apparaît avec sa valeur ; aucune erreur console ; images/s
   inchangées au repos.
 - Recherche « epi » → Épinal parmi les résultats français (pas en tête : Épinay-sur-Seine est
-  plus peuplée) ; « paris » → Paris (France) en tête ; « beijing » → Beijing en tête ; « munich » et « munchen »
-  donnent la même ville ; vol, marqueur, tooltip ; URL mise à jour.
-- 📍 accepté puis refusé.
+  plus peuplée) ; « paris » → Paris (France) en tête ; « beijing » → Beijing en tête ;
+  « munich » et « munchen » donnent la même ville ; vol, marqueur, tooltip ; URL mise à jour.
+- 📍 accepté (marqueur même sans couche, URL inchangée) puis refusé ; le survol souris ne
+  remplace pas le tooltip épinglé, un clic le lève.
 - Largeur mobile (500 px, plancher de l'outillage) : champ, liste, boutons.
 
 ## 7. Critères d'acceptation
@@ -208,7 +220,8 @@ couvre les nouveaux textes.
 3. La recherche trouve une ville > 1 000 hab. par son nom local, ASCII ou anglais, sans service
    externe.
 4. Choisir un résultat ou sa position amène la caméra au lieu (vol, ou saut si reduced-motion),
-   ouvre marqueur et tooltip, met l'URL à jour ; une interaction interrompt le vol.
+   ouvre marqueur et tooltip, met l'URL à jour (résultat seulement, jamais sa position) ; une
+   interaction interrompt le vol.
 5. Géolocalisation refusée → message, aucune autre conséquence.
 6. GeoNames crédité dans `#attribution` et le panneau About.
 7. Tous les tests verts (vitest, pytest), `tsc` propre, build de production réussi.

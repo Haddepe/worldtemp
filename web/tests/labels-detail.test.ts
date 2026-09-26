@@ -126,6 +126,37 @@ describe("DetailLabels — chargement, cache, annulation", () => {
     warn.mockRestore();
   });
 
+  it("vue et bouton inchangés : deux update identiques → une seule sélection de tuiles (relecture finale F4)", () => {
+    const net = fakeNet();
+    const select = vi.fn(detailTiles);
+    const detail = new DetailLabels("/geo", { fetchJson: net.fetchJson, select }, () => {});
+    const v = view(6.45, 48.17, 1.1);
+    detail.update(v, true);
+    detail.update(v, true);
+    expect(select).toHaveBeenCalledTimes(1);
+    detail.update(view(6.45, 48.17, 1.1), true); // même pose, autre objet : toujours rien à faire
+    expect(select).toHaveBeenCalledTimes(1);
+    detail.update(v, false); // bouton Labels éteint
+    expect(select).toHaveBeenCalledTimes(2);
+    detail.update(view(6.5, 48.17, 1.1), false); // caméra bougée
+    expect(select).toHaveBeenCalledTimes(3);
+  });
+
+  it("un échec en attente de réessai désactive le raccourci", async () => {
+    const net = fakeNet();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const select = vi.fn(detailTiles);
+    const detail = new DetailLabels("/geo", { fetchJson: net.fetchJson, select }, () => {});
+    const v = view(6.45, 48.17, 1.05);
+    detail.update(v, true);
+    const [, p] = [...net.pending.entries()][0]!;
+    p.reject(new Error("HTTP 500"));
+    await flush();
+    detail.update(v, true);
+    expect(select).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
   it("cache LRU borné à DETAIL_CACHE tuiles hors vue", async () => {
     const net = fakeNet();
     const detail = new DetailLabels("/geo", net, () => {});
