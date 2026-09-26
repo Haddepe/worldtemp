@@ -31,7 +31,7 @@ def test_is_latin():
     assert gn.is_latin("Saint-Dié-des-Vosges")
     assert gn.is_latin("St. John's (Old Town)")
     assert gn.is_latin("Kōfu")
-    assert gn.is_latin("L'Isle-sur-la-Sorgue")
+    assert gn.is_latin("L\u2019Isle-sur-la-Sorgue")  # apostrophe typographique U+2019
     assert not gn.is_latin("北京")
     assert not gn.is_latin("Москва")
     assert not gn.is_latin("")
