@@ -70,18 +70,28 @@ du socle. Évite « Munich » et « München » superposés.
 - **Normalisation** (identique Python et TypeScript, testée avec les mêmes cas) : décomposition
   NFD, suppression des diacritiques, minuscules, apostrophes et tirets → espace, espaces
   multiples réduits. `Épinal` → `epinal`, `Saint-Dié-des-Vosges` → `saint die des vosges`.
-- **Clés d'une ville** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3),
-  normalisés, dédoublonnés ; **plus**, pour les villes d'au moins **100 000 habitants**
-  seulement, leurs `alternatenames` en écriture latine (exonymes : « munchen » → Munich). Les
-  prendre pour toutes les villes gonflerait l'index de plusieurs dizaines de Mo pour des noms
-  alternatifs de villages rarement cherchés (précision du 2026-09-26, rédaction du plan).
+- **Clés d'une ville**, en deux listes (relecture finale du 2026-09-26, F1) :
+  - **primaires** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3),
+    normalisés, dédoublonnés ;
+  - **alternatives** : pour les villes d'au moins **100 000 habitants** seulement, leurs
+    `alternatenames` en écriture latine (exonymes : « munchen » → Munich), normalisés, sans
+    celles déjà présentes en primaire. Les prendre pour toutes les villes gonflerait l'index de
+    plusieurs dizaines de Mo pour des noms alternatifs de villages rarement cherchés (précision
+    du 2026-09-26, rédaction du plan).
+  Les séparer évite qu'un surnom (« paris of the north » → Varsovie, « bei xin si tuo ke » →
+  Basingstoke) fasse passer une grande ville devant les vraies Paris ou Beijing.
+- **Dédoublonnage socle** : une même ligne du socle ne produit qu'une entrée — celle de la ville
+  GeoNames la plus peuplée qui lui est rattachée (§3.3), avec sa région et ses clés (deux lignes
+  GeoNames rattachées à Hong Kong ou Bristol donnaient deux entrées identiques).
 - Seules les villes GeoNames sont indexées : une ville du socle sans correspondance GeoNames
   (§3.3) n'est pas trouvable par la recherche (cas marginal, accepté).
 - **Préfixe** = 2 premiers caractères de la clé normalisée (lettres/chiffres ; le reste est
-  regroupé dans `_.json`). Une ville figure dans chaque fichier de préfixe d'une de ses clés.
-- Format : `{"version": 1, "entries": [[name, region, country, lon, lat, pop, [clés…]], …]}`
-  (dans chaque fichier, une entrée ne porte que **ses clés qui commencent par ce préfixe**),
-  triées par population décroissante ; `region` = nom anglais-ASCII d'`admin1CodesASCII`
+  regroupé dans `_.json`). Une ville figure dans chaque fichier de préfixe d'une de ses clés
+  (primaire ou alternative).
+- Format : `{"version": 2, "entries": [[name, region, country, lon, lat, pop, [clés primaires…],
+  [clés alternatives…]], …]}` (dans chaque fichier, chaque liste ne porte que **les clés qui
+  commencent par ce préfixe** ; l'une des deux peut être vide), triées par population
+  décroissante ; `region` = nom anglais-ASCII d'`admin1CodesASCII`
   (vide si inconnu) ; `country` = nom anglais de `countryInfo.txt`.
 - Estimation : ~400 à 700 fichiers de quelques dizaines de Ko (un fichier de préfixe courant
   comme `sa` peut dépasser 100 Ko non compressé : accepté, il est gzippé par Pages).
@@ -141,7 +151,9 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
   focus ; Échap ou un second clic le referme.
 - À partir de **2 caractères** : normalisation (§3.5), chargement de `geo/search/{préfixe}.json`
   une seule fois (cache mémoire), filtrage local des entrées dont une clé **commence par** la
-  saisie normalisée, tri par population décroissante, **8 résultats au plus**, affichés
+  saisie normalisée ; d'abord celles trouvées par une clé **primaire** (ordre du fichier :
+  population décroissante), puis seulement celles trouvées par une clé **alternative** seule
+  (§3.5), **8 résultats au plus** au total, affichés
   « Épinal — Grand Est, France » (région omise si vide).
 - Clavier : ↑/↓, Entrée, Échap. ARIA : `role="combobox"`, `aria-expanded`, `aria-controls`,
   `role="listbox"` / `role="option"`, `aria-activedescendant`.
@@ -181,7 +193,8 @@ couvre les nouveaux textes.
 
 - Zoom sur le Grand Est : Épinal apparaît avec sa valeur ; aucune erreur console ; images/s
   inchangées au repos.
-- Recherche « epi » → Épinal en tête des résultats français ; « munich » et « munchen »
+- Recherche « epi » → Épinal parmi les résultats français (pas en tête : Épinay-sur-Seine est
+  plus peuplée) ; « paris » → Paris (France) en tête ; « beijing » → Beijing en tête ; « munich » et « munchen »
   donnent la même ville ; vol, marqueur, tooltip ; URL mise à jour.
 - 📍 accepté puis refusé.
 - Largeur mobile (500 px, plancher de l'outillage) : champ, liste, boutons.

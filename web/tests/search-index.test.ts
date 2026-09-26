@@ -4,11 +4,11 @@ import { GeoDataError } from "../src/labels/data";
 import { CitySearch, MAX_RESULTS, parseSearchFile, resultLabel } from "../src/search/index";
 
 const EP = {
-  version: 1,
+  version: 2,
   entries: [
-    ["Épinal", "Grand Est", "France", 6.45, 48.17, 32188, ["epinal"]],
-    ["Epila", "Aragon", "Spain", -1.28, 41.6, 4500, ["epila"]],
-    ["Epe", "Gelderland", "Netherlands", 5.98, 52.35, 3000, ["epe"]],
+    ["Épinal", "Grand Est", "France", 6.45, 48.17, 32188, ["epinal"], []],
+    ["Epila", "Aragon", "Spain", -1.28, 41.6, 4500, ["epila"], []],
+    ["Epe", "Gelderland", "Netherlands", 5.98, 52.35, 3000, ["epe"], []],
   ],
 };
 
@@ -17,12 +17,14 @@ describe("parseSearchFile", () => {
     expect(parseSearchFile(EP)[0]).toEqual({
       result: { name: "Épinal", region: "Grand Est", country: "France", lon: 6.45, lat: 48.17, pop: 32188 },
       keys: ["epinal"],
+      altKeys: [],
     });
   });
   it("rejette une version inconnue ou une entrée mal formée", () => {
-    expect(() => parseSearchFile({ version: 2, entries: [] })).toThrowError(GeoDataError);
-    expect(() => parseSearchFile({ version: 1, entries: [["X", "", "", 0, 0, 1]] })).toThrowError(GeoDataError);
-    expect(() => parseSearchFile({ version: 1, entries: [["X", "", "", 0, 0, 1, "x"]] })).toThrowError(GeoDataError);
+    expect(() => parseSearchFile({ version: 1, entries: [] })).toThrowError(GeoDataError);
+    expect(() => parseSearchFile({ version: 2, entries: [["X", "", "", 0, 0, 1, ["x"]]] })).toThrowError(GeoDataError);
+    expect(() => parseSearchFile({ version: 2, entries: [["X", "", "", 0, 0, 1, "x", []]] })).toThrowError(GeoDataError);
+    expect(() => parseSearchFile({ version: 2, entries: [["X", "", "", 0, 0, 1, ["x"], [1]]] })).toThrowError(GeoDataError);
   });
 });
 
@@ -67,8 +69,26 @@ describe("CitySearch", () => {
     expect((await s.query("ep")).length).toBe(3);
   });
   it(`au plus ${MAX_RESULTS} résultats`, async () => {
-    const many = { version: 1, entries: Array.from({ length: 20 }, (_, i) => [`Ep${i}`, "", "", 0, 0, 1000 - i, [`ep${i}`]]) };
+    const many = { version: 2, entries: Array.from({ length: 20 }, (_, i) => [`Ep${i}`, "", "", 0, 0, 1000 - i, [`ep${i}`], []]) };
     const s = new CitySearch("/geo", async () => many);
     expect(await s.query("ep")).toHaveLength(MAX_RESULTS);
+  });
+  it("une clé primaire passe avant une clé alternative d'une ville plus peuplée", async () => {
+    const pa = {
+      version: 2,
+      entries: [
+        ["Warsaw", "Mazovia", "Poland", 21.01, 52.23, 1700000, [], ["paris of the north"]],
+        ["Paris", "Ile-de-France", "France", 2.35, 48.86, 1100000, ["paris"], []],
+        ["Paris", "Texas", "United States", -95.56, 33.66, 25000, ["paris"], []],
+      ],
+    };
+    const s = new CitySearch("/geo", async () => pa);
+    expect((await s.query("paris")).map((r) => r.country)).toEqual(["France", "United States", "Poland"]);
+  });
+  it(`les alternatives complètent seulement jusqu'à ${MAX_RESULTS} résultats`, async () => {
+    const alts = Array.from({ length: 5 }, (_, i) => [`Alt${i}`, "", "", 0, 0, 9000 - i, [], [`ep alt ${i}`]]);
+    const prims = Array.from({ length: 5 }, (_, i) => [`Ep${i}`, "", "", 0, 0, 100 - i, [`ep${i}`], []]);
+    const s = new CitySearch("/geo", async () => ({ version: 2, entries: [...alts, ...prims] }));
+    expect((await s.query("ep")).map((r) => r.name)).toEqual(["Ep0", "Ep1", "Ep2", "Ep3", "Ep4", "Alt0", "Alt1", "Alt2"]);
   });
 });

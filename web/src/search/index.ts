@@ -20,21 +20,26 @@ export interface SearchResult {
 
 interface Entry {
   result: SearchResult;
+  /** Clés primaires (nom affiché, asciiname, nom du socle) de ce préfixe. */
   keys: string[];
+  /** Clés alternatives (alternatenames) de ce préfixe : classées après toutes les primaires. */
+  altKeys: string[];
 }
+
+const isStrings = (a: unknown): a is string[] => Array.isArray(a) && a.every((k) => typeof k === "string");
 
 export function parseSearchFile(json: unknown): Entry[] {
   if (typeof json !== "object" || json === null) throw new GeoDataError("search: expected an object");
   const doc = json as Record<string, unknown>;
-  if (doc.version !== 1) throw new GeoDataError(`search: unknown version ${String(doc.version)}`);
+  if (doc.version !== 2) throw new GeoDataError(`search: unknown version ${String(doc.version)}`);
   if (!Array.isArray(doc.entries)) throw new GeoDataError("search: expected an array");
   return doc.entries.map((e: unknown) => {
-    if (!Array.isArray(e) || e.length !== 7) throw new GeoDataError("search: expected rows of 7 fields");
-    const [name, region, country, lon, lat, pop, keys] = e as unknown[];
+    if (!Array.isArray(e) || e.length !== 8) throw new GeoDataError("search: expected rows of 8 fields");
+    const [name, region, country, lon, lat, pop, keys, altKeys] = e as unknown[];
     if (typeof name !== "string" || typeof region !== "string" || typeof country !== "string") throw new GeoDataError("search: invalid text field");
     if (typeof lon !== "number" || typeof lat !== "number" || typeof pop !== "number") throw new GeoDataError("search: invalid number field");
-    if (!Array.isArray(keys) || !keys.every((k) => typeof k === "string")) throw new GeoDataError("search: invalid keys");
-    return { result: { name, region, country, lon, lat, pop }, keys: keys as string[] };
+    if (!isStrings(keys) || !isStrings(altKeys)) throw new GeoDataError("search: invalid keys");
+    return { result: { name, region, country, lon, lat, pop }, keys, altKeys };
   });
 }
 
@@ -56,13 +61,17 @@ export class CitySearch {
   async query(text: string): Promise<SearchResult[]> {
     const q = normalizeName(text);
     if (q.length < MIN_CHARS) return [];
+    // Primaires d'abord (ordre du fichier = population décroissante), puis les entrées trouvées
+    // seulement par une clé alternative : « paris of the north » ne passe pas devant Paris (Texas).
     const out: SearchResult[] = [];
+    const alt: SearchResult[] = [];
     for (const e of await this.file(prefixOf(q))) {
-      if (!e.keys.some((k) => k.startsWith(q))) continue;
-      out.push(e.result);
-      if (out.length >= MAX_RESULTS) break;
+      if (e.keys.some((k) => k.startsWith(q))) {
+        out.push(e.result);
+        if (out.length >= MAX_RESULTS) return out;
+      } else if (alt.length < MAX_RESULTS && e.altKeys.some((k) => k.startsWith(q))) alt.push(e.result);
     }
-    return out;
+    return out.concat(alt).slice(0, MAX_RESULTS);
   }
 
   private file(prefix: string): Promise<Entry[]> {

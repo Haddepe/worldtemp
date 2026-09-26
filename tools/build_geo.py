@@ -271,7 +271,7 @@ def main() -> int:
                                   gn.parse_countries(_geonames_lines("countries")))
     _write_tree(OUT / "cities", {f"{gn.DETAIL_LEVEL}/{x}/{y}.json": dump_json({"version": 1, "places": rows})
                                  for (x, y), rows in tiles.items()})
-    _write_tree(OUT / "search", {f"{p}.json": dump_json({"version": 1, "entries": rows}) for p, rows in index.items()})
+    _write_tree(OUT / "search", {f"{p}.json": dump_json({"version": 2, "entries": rows}) for p, rows in index.items()})
     print(f"GeoNames : {len(cities)} villes, {len(matches)} rattachées au socle, {len(tiles)} tuiles de détail, "
           f"{len(index)} fichiers d'index")
     return 0

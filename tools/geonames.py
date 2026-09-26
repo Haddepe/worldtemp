@@ -163,39 +163,56 @@ def build_detail_tiles(cities: list[City], matches: dict[int, list]) -> dict[tup
     return tiles
 
 
-def _keys(c: City, socle_name: str | None) -> list[str]:
-    raw = [c.name, c.ascii]
-    if socle_name:
-        raw.append(socle_name)
-    if c.pop >= ALT_KEYS_MIN_POP:
-        raw.extend(c.alt)
+def _norm_keys(raw: Iterable[str], exclude: Iterable[str] = ()) -> list[str]:
+    """Clés normalisées des noms latins, sans doublon, dans l'ordre, hors `exclude`."""
     keys: list[str] = []
+    skip = set(exclude)
     for r in raw:
         if not r or not is_latin(r):
             continue
         k = normalize(r)
-        if k and k not in keys:
+        if k and k not in keys and k not in skip:
             keys.append(k)
     return keys
 
 
+def _keys(c: City, socle_name: str | None) -> tuple[list[str], list[str]]:
+    """(clés primaires : nom, asciiname, nom du socle ; clés alternatives : alternatenames si
+    pop ≥ ALT_KEYS_MIN_POP, moins les primaires). Le front classe les primaires d'abord (spec §3.5) :
+    sinon « paris of the north » ferait passer Varsovie devant Paris (Texas)."""
+    primary = _norm_keys([c.name, c.ascii, socle_name or ""])
+    alt = _norm_keys(c.alt, primary) if c.pop >= ALT_KEYS_MIN_POP else []
+    return primary, alt
+
+
 def build_search_index(cities: list[City], matches: dict[int, list], admin1: dict[str, str],
                        countries: dict[str, str]) -> dict[str, list[list]]:
-    """Préfixe → entrées `[name, region, country, lon, lat, pop, [clés de ce préfixe]]` (spec §3.5)."""
+    """Préfixe → entrées `[name, region, country, lon, lat, pop, [clés primaires de ce préfixe],
+    [clés alternatives de ce préfixe]]` (spec §3.5). Une ligne du socle ne produit qu'une entrée :
+    celle de la ville GeoNames la plus peuplée qui lui est rattachée."""
+    kept: dict[int, int] = {}  # id(ligne du socle) → index de la ville GeoNames retenue
+    for i, s in matches.items():
+        j = kept.get(id(s))
+        if j is None or (cities[i].pop, -i) > (cities[j].pop, -j):
+            kept[id(s)] = i
     files: dict[str, list[list]] = {}
     for i, c in enumerate(cities):
         s = matches.get(i)
+        if s is not None and kept[id(s)] != i:
+            continue
         name = s[2] if s else display_name(c.name, c.ascii)
         if not name:
             continue
         lon, lat, pop = (s[0], s[1], s[3]) if s else (round(c.lon, 2), round(c.lat, 2), c.pop)
         region = admin1.get(f"{c.cc}.{c.admin1}", "")
         country = countries.get(c.cc, "")
-        by_prefix: dict[str, list[str]] = {}
-        for k in _keys(c, s[2] if s else None):
-            by_prefix.setdefault(prefix_of(k), []).append(k)
-        for p, ks in by_prefix.items():
-            files.setdefault(p, []).append([name, region, country, lon, lat, pop, ks])
+        primary, alt = _keys(c, s[2] if s else None)
+        by_prefix: dict[str, tuple[list[str], list[str]]] = {}
+        for slot, ks in ((0, primary), (1, alt)):
+            for k in ks:
+                by_prefix.setdefault(prefix_of(k), ([], []))[slot].append(k)
+        for p, (pk, ak) in by_prefix.items():
+            files.setdefault(p, []).append([name, region, country, lon, lat, pop, pk, ak])
     for rows in files.values():
         rows.sort(key=lambda r: (-r[5], r[0]))
     return files

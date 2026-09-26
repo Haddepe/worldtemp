@@ -112,13 +112,35 @@ def test_build_search_index():
     admin1 = {"FR.44": "Grand Est", "DE.02": "Bavaria"}
     countries = {"FR": "France", "DE": "Germany"}
     index = gn.build_search_index(cities, matches, admin1, countries)
-    # Épinal : clés « epinal » (nom et ascii) ; pas d'alternatenames sous 100 000 hab.
-    assert index["ep"] == [["Épinal", "Grand Est", "France", 6.45, 48.17, 32_188, ["epinal"]]]
+    # Épinal : clé primaire « epinal » (nom et ascii) ; pas d'alternatenames sous 100 000 hab.
+    assert index["ep"] == [["Épinal", "Grand Est", "France", 6.45, 48.17, 32_188, ["epinal"], []]]
     assert "sp" not in index
-    # Munich : nom, coordonnées et population du socle ; exonymes latins indexés (≥ 100 000 hab.),
-    # chaque fichier ne portant que les clés de son préfixe ; l'alternatename cyrillique est ignoré.
-    assert index["mu"] == [["Munich", "Bavaria", "Germany", 11.58, 48.14, 1_275_000, ["munich", "munchen"]]]
-    assert index["mo"] == [["Munich", "Bavaria", "Germany", 11.58, 48.14, 1_275_000, ["monaco di baviera"]]]
+    # Munich : nom, coordonnées et population du socle ; exonymes latins indexés en clés
+    # alternatives (≥ 100 000 hab.), chaque fichier ne portant que les clés de son préfixe ;
+    # l'alternatename cyrillique est ignoré.
+    assert index["mu"] == [["Munich", "Bavaria", "Germany", 11.58, 48.14, 1_275_000, ["munich"], ["munchen"]]]
+    assert index["mo"] == [["Munich", "Bavaria", "Germany", 11.58, 48.14, 1_275_000, [], ["monaco di baviera"]]]
+
+
+def test_build_search_index_retire_des_alternatives_les_cles_deja_primaires():
+    # « Epinal » en alternatename (≥ 100 000 hab. pour l'exemple) doublonne la clé primaire.
+    grande = gn_line(9, "Épinal", "Epinal", ["Epinal", "Spinal"], 48.17, 6.45, "FR", "44", 150_000)
+    index = gn.build_search_index(gn.parse_cities([grande]), {}, {}, {})
+    assert index["ep"][0][6:] == [["epinal"], []]
+    assert index["sp"][0][6:] == [[], ["spinal"]]
+
+
+def test_build_search_index_une_seule_entree_par_ligne_du_socle():
+    # Deux lignes GeoNames rattachées à la même ligne du socle (cas Hong Kong, Bristol) :
+    # une seule entrée, celle de la ville GeoNames la plus peuplée (sa région, ses clés).
+    petite = gn_line(2, "München-Nord", "Muenchen-Nord", ["Munich"], 48.15, 11.57, "DE", "09", 200_000)
+    cities = gn.parse_cities([petite, MUNICH])
+    matches = gn.match_socle(cities, SOCLE)
+    assert len(matches) == 2 and matches[0] is matches[1]
+    index = gn.build_search_index(cities, matches, {"DE.02": "Bavaria", "DE.09": "X"}, {"DE": "Germany"})
+    assert [e[:3] for rows in index.values() for e in rows] == [
+        ["Munich", "Bavaria", "Germany"], ["Munich", "Bavaria", "Germany"]]  # fichiers « mu » et « mo »
+    assert index["mu"] == [["Munich", "Bavaria", "Germany", 11.58, 48.14, 1_275_000, ["munich"], ["munchen"]]]
 
 
 def test_build_search_index_trie_par_population_decroissante():

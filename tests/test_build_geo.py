@@ -271,14 +271,29 @@ def test_fichiers_commites_index_de_recherche():
         raw = path.read_bytes()
         assert len(raw) <= 2_000_000 and b"\r" not in raw
         prefix = path.stem
-        for e in json.loads(raw)["entries"]:
-            assert len(e) == 7 and e[6] and all(gn.prefix_of(k) == prefix for k in e[6])
+        doc = json.loads(raw)
+        assert doc["version"] == 2
+        for e in doc["entries"]:
+            assert len(e) == 8 and (e[6] or e[7])
+            assert all(gn.prefix_of(k) == prefix for k in e[6] + e[7])
+            assert not set(e[6]) & set(e[7])  # une clé déjà primaire n'est pas répétée en alternative
+    # Une ligne du socle ne produit qu'une entrée (Hong Kong, Bristol étaient en double).
+    for stem, name in (("ho", "Hong Kong"), ("br", "Bristol")):
+        rows = json.loads((GEO / "search" / f"{stem}.json").read_bytes())["entries"]
+        keys = [tuple(e[:6]) for e in rows]
+        assert len(keys) == len(set(keys)), stem
+        assert any(e[0] == name for e in rows)
     ep = json.loads((GEO / "search" / "ep.json").read_bytes())["entries"]
     epinal = next(e for e in ep if e[0] == "Épinal")
     assert epinal[1:3] == ["Grand Est", "France"]
     mu = json.loads((GEO / "search" / "mu.json").read_bytes())["entries"]
     munich = next(e for e in mu if e[0] == "Munich")
-    assert "munchen" in munich[6]
+    assert "munich" in munich[6] and "munchen" in munich[7]
+    # Classement : une clé primaire passe avant une clé alternative (le front lit primaires puis
+    # alternatives) — « paris » : Paris (France) est une clé primaire, Varsovie seulement alternative.
+    pa = json.loads((GEO / "search" / "pa.json").read_bytes())["entries"]
+    primary = [e[0] for e in pa if any(k.startswith("paris") for k in e[6])]
+    assert primary[0] == "Paris" and "Warsaw" not in primary
 
 
 def test_dossier_geo_dans_le_budget():
