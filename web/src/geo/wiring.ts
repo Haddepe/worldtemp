@@ -149,7 +149,7 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
         return r.json() as Promise<unknown>;
       },
     },
-    () => labels.relayout(),
+    () => labels.invalidate(), // rafale de tuiles : au plus une re-sélection par intervalle (F3)
   );
   const labels = new LabelsController({
     layer: createLabelsLayer(ui.labels),

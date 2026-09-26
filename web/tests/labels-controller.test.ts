@@ -322,6 +322,47 @@ describe("LabelsController — villes de détail (spec lot F §4.2)", () => {
     expect(r.last().map((v) => v.name)).toEqual(["Base"]);
   });
 
+  it("invalidate : trois appels rapprochés → une seule sélection, puis une au délai suivant (relecture finale F3)", () => {
+    const detail = fakeDetail();
+    const r = rig(1.1, detail);
+    r.ctl.setData(buildLabelSet([{ lon: 2, lat: 47, name: "Base", pop: 40_000, capital: false }], []));
+    r.ctl.setEnabled(true);
+    const selections = () => r.frames.length; // caméra immobile : seul une sélection peint
+    expect(selections()).toBe(1);
+    r.advance(SELECT_INTERVAL_MS + 50);
+    const tile = (n: number, name: string) => {
+      detail.places = [...detail.places, { lon: 2 + n * 0.8, lat: 47.4, name, pop: 30_000, capital: false }];
+      detail.version = n;
+    };
+    tile(1, "A");
+    r.ctl.invalidate();
+    r.advance(10);
+    tile(2, "B");
+    r.ctl.invalidate();
+    r.advance(10);
+    tile(3, "C");
+    r.ctl.invalidate();
+    expect(selections()).toBe(2);
+    expect(r.last().map((v) => v.name).sort()).toEqual(["A", "Base"]);
+    // Un seul rattrapage armé (au 2e appel, 10 ms après la sélection) pour le reste de
+    // l'intervalle — sans que la caméra ait bougé.
+    expect(r.deferred.length).toBe(1);
+    expect(r.deferred[0]!.ms).toBe(SELECT_INTERVAL_MS - 10);
+    r.advance(SELECT_INTERVAL_MS - 20);
+    r.deferred[0]!.cb();
+    expect(selections()).toBe(3);
+    expect(r.last().map((v) => v.name).sort()).toEqual(["A", "B", "Base", "C"]);
+    expect(r.deferred.length).toBe(1); // rien de plus à rattraper
+  });
+
+  it("invalidate : sans effet éteint", () => {
+    const r = rig(1.1);
+    r.ctl.setData(buildLabelSet([{ lon: 2, lat: 47, name: "Base", pop: 40_000, capital: false }], []));
+    r.ctl.invalidate();
+    expect(r.frames.length).toBe(0);
+    expect(r.deferred.length).toBe(0);
+  });
+
   it("isEnabled reflète setEnabled", () => {
     const r = rig(3);
     expect(r.ctl.isEnabled()).toBe(false);

@@ -129,7 +129,9 @@ dans la tuile qui contient (6,45 ; 48,17) et dans `search/ep.json`.
 - À chaque sélection (toutes les 100 ms), les candidats sont **socle + villes des tuiles de
   détail visibles** ; `selectLabels` est inchangé (priorité population, anti-collision gloutonne,
   `LABEL_CAP`).
-- L'arrivée d'une tuile relance une sélection (Épinal apparaît sans mouvement de caméra).
+- L'arrivée d'une tuile relance une sélection (Épinal apparaît sans mouvement de caméra), par
+  `LabelsController.invalidate()` : au plus une sélection toutes les 100 ms, la rafale de tuiles
+  d'un zoom étant rattrapée par la sélection différée (relecture finale, F3).
 - Les étiquettes de détail portent la valeur de la couche active comme les autres.
 - De loin (d ≥ 1,25) : socle seul, **zéro requête** de détail.
 
