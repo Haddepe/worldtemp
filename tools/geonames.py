@@ -9,6 +9,24 @@ from __future__ import annotations
 import re
 import unicodedata
 
+import math
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tiler.grid import tile_at  # noqa: E402  (même grille que web/src/tiles/grid.ts)
+
+MIN_POP = 1000
+# Sous ce seuil, les alternatenames ne sont pas indexés : ils gonfleraient l'index de dizaines de Mo
+# pour des noms de villages rarement cherchés ; au-dessus, ils portent les exonymes (« munchen »).
+ALT_KEYS_MIN_POP = 100_000
+DEDUP_KM = 10.0
+DETAIL_LEVEL = 5
+EARTH_KM = 6371.0
+
 # Lettres que la décomposition NFD ne ramène pas à l'ASCII.
 _FOLD = {"ß": "ss", "ø": "o", "ł": "l", "æ": "ae", "œ": "oe", "đ": "d", "ı": "i", "þ": "th", "ð": "d"}
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -45,3 +63,139 @@ def is_latin(s: str) -> bool:
 def display_name(name: str, ascii_name: str) -> str:
     """Nom GeoNames s'il est en écriture latine (« Épinal »), sinon `asciiname` (spec §3.2)."""
     return name if name and is_latin(name) else ascii_name
+
+
+@dataclass(frozen=True)
+class City:
+    name: str
+    ascii: str
+    alt: tuple[str, ...]
+    lat: float
+    lon: float
+    cc: str
+    admin1: str
+    pop: int
+
+
+def parse_cities(lines: Iterable[str]) -> list[City]:
+    """cities1000.txt : colonnes 1 name, 2 asciiname, 3 alternatenames, 4 lat, 5 lon, 8 pays, 10 admin1, 14 pop."""
+    out = []
+    for line in lines:
+        f = line.rstrip("\n").split("\t")
+        if len(f) < 15:
+            continue
+        pop = int(f[14] or 0)
+        if pop < MIN_POP:
+            continue
+        alt = tuple(a for a in f[3].split(",") if a)
+        out.append(City(f[1], f[2], alt, float(f[4]), float(f[5]), f[8], f[10], pop))
+    return out
+
+
+def parse_admin1(lines: Iterable[str]) -> dict[str, str]:
+    """admin1CodesASCII.txt : `CC.code`, nom, nom ASCII, geonameid → {`CC.code`: nom ASCII}."""
+    out = {}
+    for line in lines:
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 3:
+            out[f[0]] = f[2]
+    return out
+
+
+def parse_countries(lines: Iterable[str]) -> dict[str, str]:
+    """countryInfo.txt : lignes `#` ignorées ; colonne 0 ISO, colonne 4 nom anglais."""
+    out = {}
+    for line in lines:
+        if line.startswith("#"):
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 5:
+            out[f[0]] = f[4]
+    return out
+
+
+def _km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * EARTH_KM * math.asin(min(1.0, math.sqrt(h)))
+
+
+def _names(c: City) -> set[str]:
+    return {normalize(n) for n in (c.name, c.ascii, *c.alt) if n}
+
+
+def match_socle(cities: list[City], socle_rows: list[list]) -> dict[int, list]:
+    """Index de ville GeoNames → ligne du socle `[lon, lat, name, pop, cap]` représentant le même lieu
+    (spec §3.3) : nom normalisé du socle parmi les noms de la ville, à moins de DEDUP_KM ; le plus proche."""
+    buckets: dict[tuple[int, int], list[list]] = {}
+    for row in socle_rows:
+        buckets.setdefault((math.floor(row[1]), math.floor(row[0])), []).append(row)
+    out = {}
+    for i, c in enumerate(cities):
+        names = _names(c)
+        best, best_km = None, DEDUP_KM
+        cy, cx = math.floor(c.lat), math.floor(c.lon)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                for row in buckets.get((cy + dy, cx + dx), ()):
+                    if normalize(row[2]) not in names:
+                        continue
+                    km = _km(c.lon, c.lat, row[0], row[1])
+                    if km < best_km:
+                        best, best_km = row, km
+        if best is not None:
+            out[i] = best
+    return out
+
+
+def build_detail_tiles(cities: list[City], matches: dict[int, list]) -> dict[tuple[int, int], list[list]]:
+    """Villes sans équivalent dans le socle, rangées par tuile du niveau DETAIL_LEVEL (spec §3.4)."""
+    tiles: dict[tuple[int, int], list[list]] = {}
+    for i, c in enumerate(cities):
+        if i in matches:
+            continue
+        name = display_name(c.name, c.ascii)
+        if not name:
+            continue
+        tiles.setdefault(tile_at(DETAIL_LEVEL, c.lon, c.lat), []).append([round(c.lon, 2), round(c.lat, 2), name, c.pop])
+    for rows in tiles.values():
+        rows.sort(key=lambda r: (-r[3], r[2]))
+    return tiles
+
+
+def _keys(c: City, socle_name: str | None) -> list[str]:
+    raw = [c.name, c.ascii]
+    if socle_name:
+        raw.append(socle_name)
+    if c.pop >= ALT_KEYS_MIN_POP:
+        raw.extend(c.alt)
+    keys: list[str] = []
+    for r in raw:
+        if not r or not is_latin(r):
+            continue
+        k = normalize(r)
+        if k and k not in keys:
+            keys.append(k)
+    return keys
+
+
+def build_search_index(cities: list[City], matches: dict[int, list], admin1: dict[str, str],
+                       countries: dict[str, str]) -> dict[str, list[list]]:
+    """Préfixe → entrées `[name, region, country, lon, lat, pop, [clés de ce préfixe]]` (spec §3.5)."""
+    files: dict[str, list[list]] = {}
+    for i, c in enumerate(cities):
+        s = matches.get(i)
+        name = s[2] if s else display_name(c.name, c.ascii)
+        if not name:
+            continue
+        lon, lat, pop = (s[0], s[1], s[3]) if s else (round(c.lon, 2), round(c.lat, 2), c.pop)
+        region = admin1.get(f"{c.cc}.{c.admin1}", "")
+        country = countries.get(c.cc, "")
+        by_prefix: dict[str, list[str]] = {}
+        for k in _keys(c, s[2] if s else None):
+            by_prefix.setdefault(prefix_of(k), []).append(k)
+        for p, ks in by_prefix.items():
+            files.setdefault(p, []).append([name, region, country, lon, lat, pop, ks])
+    for rows in files.values():
+        rows.sort(key=lambda r: (-r[5], r[0]))
+    return files
