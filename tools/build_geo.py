@@ -264,7 +264,8 @@ def main() -> int:
     print(f"{len(places)} villes, {len(countries)} pays, {len(lines)} lignes de fleuve, "
           f"{segment_count(lines)} segments (tolérance {tol:.4f}°)")
 
-    cities = gn.parse_cities(_geonames_lines("cities"))
+    parsed = gn.parse_cities(_geonames_lines("cities"))
+    cities = gn.drop_sections(parsed, places)
     matches = gn.match_socle(cities, places)
     tiles = gn.build_detail_tiles(cities, matches)
     index = gn.build_search_index(cities, matches, gn.parse_admin1(_geonames_lines("admin1")),
@@ -272,7 +273,8 @@ def main() -> int:
     _write_tree(OUT / "cities", {f"{gn.DETAIL_LEVEL}/{x}/{y}.json": dump_json({"version": 1, "places": rows})
                                  for (x, y), rows in tiles.items()})
     _write_tree(OUT / "search", {f"{p}.json": dump_json({"version": 2, "entries": rows}) for p, rows in index.items()})
-    print(f"GeoNames : {len(cities)} villes, {len(matches)} rattachées au socle, {len(tiles)} tuiles de détail, "
+    print(f"GeoNames : {len(cities)} villes ({len(parsed) - len(cities)} sections numérotées écartées), "
+          f"{len(matches)} rattachées au socle, {len(tiles)} tuiles de détail, "
           f"{len(index)} fichiers d'index")
     return 0
 

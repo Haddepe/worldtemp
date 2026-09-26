@@ -74,6 +74,31 @@ def test_parse_cities_ecarte_les_sections_de_lieu_habite_pplx():
     assert [c.name for c in gn.parse_cities([arr, capitale, EPINAL])] == ["Paris", "Épinal"]
 
 
+def test_drop_sections_ecarte_les_sections_numerotees_proches_d_une_ville_du_socle():
+    # Validation T11 : sections codées PPL / PPLA5, que le filtre PPLX ne voit pas.
+    socle = [[2.35, 48.86, "Paris", 11_000_000, 1], [4.83, 45.76, "Lyon", 1_423_000, 0],
+             [5.37, 43.3, "Marseille", 1_400_000, 0]]
+    parties = [
+        gn_line(1, "Paris 15 Vaugirard", "Paris 15 Vaugirard", [], 48.84, 2.29, "FR", "11", 235_178),
+        gn_line(2, "Paris 20 Ménilmontant", "Paris 20 Menilmontant", [], 48.86, 2.4, "FR", "11", 185_140),
+        gn_line(3, "Lyon 03", "Lyon 03", [], 45.76, 4.85, "FR", "84", 102_725),
+        gn_line(4, "Marseille 08", "Marseille 08", [], 43.24, 5.38, "FR", "93", 78_837, code="PPLA5"),
+    ]
+    assert gn.drop_sections(gn.parse_cities(parties), socle) == []
+
+
+def test_drop_sections_garde_la_ville_les_homonymes_prefixes_et_les_lieux_lointains():
+    socle = [[2.35, 48.86, "Paris", 11_000_000, 1]]
+    gardees = [
+        gn_line(1, "Paris", "Paris", [], 48.85, 2.35, "FR", "11", 2_138_551, code="PPLC"),
+        gn_line(2, "Parisot", "Parisot", [], 48.9, 2.3, "FR", "11", 1_200),  # pas « paris <chiffre> »
+        gn_line(3, "Paris 2", "Paris 2", [], 45.0, 2.35, "FR", "76", 1_500),  # à ~430 km de Paris
+        gn_line(4, "Villeparisis 2", "Villeparisis 2", [], 48.94, 2.61, "FR", "11", 5_000),  # ne commence pas par « paris »
+    ]
+    cities = gn.parse_cities(gardees)
+    assert gn.drop_sections(cities, socle) == cities
+
+
 def test_parse_admin1_et_countries():
     assert gn.parse_admin1(["FR.44\tGrand Est\tGrand Est\t11071622\n"]) == {"FR.44": "Grand Est"}
     lines = ["# ISO\tISO3\n", "FR\tFRA\t250\tFR\tFrance\tParis\t547030\t67000000\tEU\n"]

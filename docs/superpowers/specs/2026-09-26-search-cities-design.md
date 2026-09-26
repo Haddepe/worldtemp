@@ -43,9 +43,13 @@ problème d'affichage. Ce lot :
   `admin1 code`, `population`, `feature code`.
 - **Sections de lieu habité écartées** (validation navigateur T11, V2) : les lignes de feature
   code `PPLX` (arrondissements, quartiers : « Lyon 03 », « Paris 10e Arrondissement ») ne
-  produisent ni tuile de détail ni entrée de recherche. Limite connue : GeoNames code les
+  produisent ni tuile de détail ni entrée de recherche. GeoNames code pourtant les
   arrondissements « Paris 01 Louvre »… « Paris 20 Ménilmontant » en `PPL` et « Marseille 01 »… en
-  `PPLA5` ; ils ne sont pas écartés par cette règle.
+  `PPLA5` : sont donc aussi écartées les **sections numérotées** d'une ville du socle — nom affiché
+  ou `asciiname` normalisé commençant par « <nom normalisé du socle> <chiffre> » (`^<socle> \d`)
+  **et** à moins de 10 km (`DEDUP_KM`) de cette ville (`drop_sections`). « Paris », « Parisot » ou un
+  « Paris 2 » lointain restent. Au build de 2026-09-26 : 38 lignes (Paris 01–20, Marseille 01–16,
+  Seremban 2 et 3 en Malaisie).
 - **Licence** : GeoNames est en **CC BY 4.0** (usage commercial permis, crédit obligatoire).
   « GeoNames » s'ajoute à `#attribution` et à la ligne des sources du panneau About.
 

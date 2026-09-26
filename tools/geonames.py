@@ -128,27 +128,57 @@ def _names(c: City) -> set[str]:
     return {normalize(n) for n in (c.name, c.ascii, *c.alt) if n}
 
 
-def match_socle(cities: list[City], socle_rows: list[list]) -> dict[int, list]:
-    """Index de ville GeoNames → ligne du socle `[lon, lat, name, pop, cap]` représentant le même lieu
-    (spec §3.3) : nom normalisé du socle parmi les noms de la ville, à moins de DEDUP_KM ; le plus proche."""
+def _socle_buckets(socle_rows: list[list]) -> dict[tuple[int, int], list[list]]:
+    """Lignes du socle rangées par case d'un degré (lat, lon), pour les recherches de voisinage."""
     buckets: dict[tuple[int, int], list[list]] = {}
     for row in socle_rows:
         buckets.setdefault((math.floor(row[1]), math.floor(row[0])), []).append(row)
+    return buckets
+
+
+def _near(buckets: dict[tuple[int, int], list[list]], c: City) -> Iterable[tuple[list, float]]:
+    """Lignes du socle à moins de DEDUP_KM de la ville, avec leur distance (cases voisines seulement)."""
+    cy, cx = math.floor(c.lat), math.floor(c.lon)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            for row in buckets.get((cy + dy, cx + dx), ()):
+                km = _km(c.lon, c.lat, row[0], row[1])
+                if km < DEDUP_KM:
+                    yield row, km
+
+
+def match_socle(cities: list[City], socle_rows: list[list]) -> dict[int, list]:
+    """Index de ville GeoNames → ligne du socle `[lon, lat, name, pop, cap]` représentant le même lieu
+    (spec §3.3) : nom normalisé du socle parmi les noms de la ville, à moins de DEDUP_KM ; le plus proche."""
+    buckets = _socle_buckets(socle_rows)
     out = {}
     for i, c in enumerate(cities):
         names = _names(c)
         best, best_km = None, DEDUP_KM
-        cy, cx = math.floor(c.lat), math.floor(c.lon)
-        for dy in (-1, 0, 1):
-            for dx in (-1, 0, 1):
-                for row in buckets.get((cy + dy, cx + dx), ()):
-                    if normalize(row[2]) not in names:
-                        continue
-                    km = _km(c.lon, c.lat, row[0], row[1])
-                    if km < best_km:
-                        best, best_km = row, km
+        for row, km in _near(buckets, c):
+            if normalize(row[2]) in names and km < best_km:
+                best, best_km = row, km
         if best is not None:
             out[i] = best
+    return out
+
+
+def drop_sections(cities: list[City], socle_rows: list[list]) -> list[City]:
+    """Écarte les sections numérotées d'une ville du socle (validation T11, V2) : nom affiché ou
+    asciiname normalisé commençant par « <nom normalisé du socle> <chiffre> » (« paris 15 vaugirard »,
+    « lyon 03 », « marseille 08 ») à moins de DEDUP_KM de cette ville. GeoNames les code PPL ou
+    PPLA5, que le filtre PPLX de parse_cities ne voit pas. Ni tuile de détail ni entrée de recherche."""
+    buckets = _socle_buckets(socle_rows)
+    out = []
+    for c in cities:
+        names = [normalize(n) for n in (c.name, c.ascii) if n]
+        section = any(
+            re.match(re.escape(normalize(row[2])) + r" \d", n)
+            for row, _ in _near(buckets, c)
+            for n in names
+        )
+        if not section:
+            out.append(c)
     return out
 
 

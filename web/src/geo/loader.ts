@@ -12,7 +12,7 @@ import { parseRivers, type RiverSegments } from "../rivers/data";
  * public/geo/ (chemins triés puis octets) : geo-loader.test.ts échoue, en donnant la bonne
  * valeur, dès que les données changent.
  */
-export const GEO_VERSION = "cf3a99db";
+export const GEO_VERSION = "b2454821";
 
 /** Mémorise la promesse, succès comme échec : pas de second téléchargement dans la session. */
 export function once<T>(load: () => Promise<T>): () => Promise<T> {
