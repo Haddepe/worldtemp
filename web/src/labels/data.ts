@@ -87,3 +87,63 @@ export function buildLabelSet(places: Place[], countries: Country[]): LabelSet {
   }
   return { items, unit };
 }
+
+/** Tuile de villes de détail `geo/cities/5/{x}/{y}.json` (spec lot F §3.4) : `[lon, lat, name, pop]`. */
+export function parseDetailPlaces(json: unknown): Place[] {
+  return rows(json, "places", 4).map((r) => {
+    const pop = r[3];
+    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places: invalid population");
+    return { ...lonLatName(r, "places"), pop, capital: false };
+  });
+}
+
+export function unitVectors(places: readonly { lon: number; lat: number }[]): Float32Array {
+  const unit = new Float32Array(places.length * 3);
+  const v = new THREE.Vector3();
+  places.forEach((p, i) => {
+    lonLatToVec3(p.lon, p.lat, v);
+    unit[i * 3] = v.x;
+    unit[i * 3 + 1] = v.y;
+    unit[i * 3 + 2] = v.z;
+  });
+  return unit;
+}
+
+/** Villes de détail visibles, triées par population décroissante, avec leurs vecteurs unité. */
+export interface DetailBatch {
+  places: readonly Place[];
+  unit: Float32Array;
+}
+
+/**
+ * Socle + villes de détail (spec lot F §4.2). L'ordre des items est l'ordre de priorité de la
+ * sélection : une ville de détail passe devant une ville ordinaire du socle moins peuplée, jamais
+ * devant un pays ni une capitale (le socle garde son ordre propre, F7).
+ */
+export function extendLabelSet(base: LabelSet, extra: DetailBatch): LabelSet {
+  if (extra.places.length === 0) return base;
+  const items: LabelItem[] = [];
+  const unit = new Float32Array((base.items.length + extra.places.length) * 3);
+  const push = (item: Omit<LabelItem, "id">, src: Float32Array, k: number): void => {
+    const id = items.length;
+    items.push({ ...item, id });
+    unit.set(src.subarray(k * 3, k * 3 + 3), id * 3);
+  };
+  let j = 0;
+  const pushExtra = (): void => {
+    const p = extra.places[j]!;
+    push({ kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: false, rank: 0 }, extra.unit, j);
+    j++;
+  };
+  for (const b of base.items) {
+    while (j < extra.places.length && b.kind === "city" && !b.capital && extra.places[j]!.pop > b.pop) pushExtra();
+    push(b, base.unit, b.id);
+  }
+  while (j < extra.places.length) pushExtra();
+  return { items, unit };
+}
+
+/** Identité stable d'un item d'un `LabelSet` à l'autre (les ids changent à chaque fusion). */
+export function itemKey(item: LabelItem): string {
+  return `${item.kind}|${item.name}|${item.lon}|${item.lat}`;
+}
