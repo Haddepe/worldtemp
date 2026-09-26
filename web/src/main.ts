@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS, TILES_BASE_URL } from "./config";
 import { LayerLoader, ManifestLoader, isStale, type LoadedLayer } from "./data/loader";
 import type { Manifest } from "./data/manifest";
+import { withView } from "./geo/params";
 import { setupGeo } from "./geo/wiring";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
@@ -9,18 +10,22 @@ import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
 import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
 import { buildLut, createLutTexture } from "./render/colormap";
+import { FLY_DISTANCE, Flight } from "./render/fly";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
 import { createStarsLayer } from "./render/stars";
 import { createWindLayer } from "./render/wind";
+import { CitySearch } from "./search/index";
+import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { createAbout } from "./ui/about";
 import { formatBanner } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
+import { locate } from "./ui/locate";
 import { byId, createOverlay } from "./ui/overlay";
 import { TapDetector, createTooltip, type Reading } from "./ui/tooltip";
 import { createToggle } from "./ui/toggle";
@@ -213,6 +218,9 @@ async function boot(): Promise<void> {
   let windFailedAt: string | null = null;
   /** Statut « Vent indisponible », après layerNotice dans l'ordre de priorité. */
   let windNotice: string | null = null;
+  /** Retour d'une action de l'utilisateur (« Location unavailable »), prioritaire, effacé après 5 s. */
+  let userNotice: string | null = null;
+  let userNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   const windToggle = createToggle(ui.windToggle, (on) => {
     windOn = on;
     history.replaceState(null, "", withWindParam(location.search, on));
@@ -248,13 +256,14 @@ async function boot(): Promise<void> {
     if (!def || !active) {
       ui.setBanner("GlobeLayers");
       ui.setStatus(
-        layerNotice ?? windNotice ?? (updateFailed ? STRINGS.status.updateFailed : tilesReady ? null : STRINGS.status.noMapDetail),
+        userNotice ?? layerNotice ?? windNotice ?? (updateFailed ? STRINGS.status.updateFailed : tilesReady ? null : STRINGS.status.noMapDetail),
       );
       return;
     }
     ui.setBanner(formatBanner(active.entry, Date.now()));
     ui.setStatus(
-      layerNotice ??
+      userNotice ??
+        layerNotice ??
         windNotice ??
         (updateFailed
           ? STRINGS.status.updateFailed
@@ -265,6 +274,62 @@ async function boot(): Promise<void> {
               : STRINGS.status.noMapDetail),
     );
   };
+
+  const flashNotice = (text: string): void => {
+    userNotice = text;
+    refreshBanner();
+    clearTimeout(userNoticeTimer);
+    userNoticeTimer = setTimeout(() => {
+      userNotice = null;
+      refreshBanner();
+    }, 5_000);
+  };
+
+  // Recherche de ville et « ma position » (spec lot F §5) : vol, puis marqueur et tooltip au point.
+  const flight = new Flight({
+    camera: sceneHandle.camera,
+    controls: sceneHandle.controls,
+    onFrame: (cb) => sceneHandle.onFrame(cb),
+    requestRender: () => sceneHandle.requestRender(),
+    reducedMotion: () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+  });
+  // Toute interaction avec le globe reprend la main (capture : avant OrbitControls et le zoom).
+  canvas.addEventListener("pointerdown", () => flight.cancel(), { capture: true });
+  canvas.addEventListener("wheel", () => flight.cancel(), { capture: true, passive: true });
+  const goTo = (lon: number, lat: number, name?: string): void => {
+    tooltip.setReading(null, "pin");
+    flight.start(lon, lat, FLY_DISTANCE, () => {
+      tooltip.setReading({ lon, lat, name }, "pin");
+      tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
+      history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      sceneHandle.requestRender();
+    });
+  };
+  const geoBase = `${import.meta.env.BASE_URL}geo`;
+  createSearchUi({
+    openButton: byId<HTMLButtonElement>("search-open"),
+    panel: byId<HTMLElement>("search"),
+    input: byId<HTMLInputElement>("search-input"),
+    list: byId<HTMLElement>("search-results"),
+    message: byId<HTMLElement>("search-message"),
+    search: new CitySearch(geoBase, async (url) => {
+      const r = await fetch(url);
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      return r.json() as Promise<unknown>;
+    }),
+    onChoose: (r) => goTo(r.lon, r.lat, r.name),
+    onLayoutChange: () => ui.notifyLayout(),
+  });
+  byId<HTMLButtonElement>("locate").addEventListener("click", () => {
+    locate("geolocation" in navigator ? navigator.geolocation : undefined).then(
+      ({ lon, lat }) => goTo(lon, lat),
+      (e: unknown) => {
+        console.warn("[worldtemp] location unavailable:", e);
+        flashNotice(STRINGS.status.locationUnavailable);
+      },
+    );
+  });
 
   /** Applique la couche `id` (null = Aucune) : charge si besoin, pose texture, LUT, isolignes, légende, tooltip, URL. */
   const activate = async (id: string | null, fromUser: boolean): Promise<void> => {
