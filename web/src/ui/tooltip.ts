@@ -16,6 +16,8 @@ import { byId } from "./overlay";
 export interface Reading {
   lon: number;
   lat: number;
+  /** Nom du lieu (recherche), affiché au-dessus des valeurs. */
+  name?: string;
 }
 
 export interface TooltipData {
@@ -77,6 +79,12 @@ export class TapDetector {
   }
 }
 
+/** Texte du tooltip : nom du lieu (s'il y en a un) puis une valeur par ligne ; `null` = rien à montrer. */
+export function tooltipText(name: string | undefined, values: readonly string[]): string | null {
+  const lines = name ? [name, ...values] : [...values];
+  return lines.length ? lines.join("\n") : null;
+}
+
 /** Position du coin haut-gauche du tooltip : centré, au-dessus du point (en dessous près du bord haut). */
 export function placeTooltip(
   point: { x: number; y: number },
@@ -122,14 +130,15 @@ export function createTooltip(): Tooltip {
   };
 
   const refreshText = () => {
-    if (!reading || (!data && !wind)) return;
-    const lines: string[] = [];
-    if (data) lines.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
+    if (!reading) return;
+    const values: string[] = [];
+    if (data) values.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
     if (wind) {
       sampleUV(wind, reading.lon, reading.lat, windSample);
-      lines.push(formatWind(windSample.u, windSample.v));
+      values.push(formatWind(windSample.u, windSample.v));
     }
-    tip.textContent = lines.join("\n");
+    const text = tooltipText(reading.name, values);
+    if (text !== null) tip.textContent = text;
   };
 
   return {
@@ -152,7 +161,7 @@ export function createTooltip(): Tooltip {
       refreshText();
     },
     update(camera, width, height) {
-      if (!reading || (!data && !wind)) {
+      if (!reading || (!data && !wind && !reading.name)) {
         hide();
         return;
       }

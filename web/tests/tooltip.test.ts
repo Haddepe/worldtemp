@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TapDetector, placeTooltip } from "../src/ui/tooltip";
+import { TapDetector, placeTooltip, tooltipText } from "../src/ui/tooltip";
 
 describe("TapDetector — spec navigation §6", () => {
   it("tap valide : down puis up < 300 ms, < 8 px → position du down", () => {
@@ -55,5 +55,16 @@ describe("placeTooltip", () => {
   it("borné horizontalement dans le viewport (marge 4 px)", () => {
     expect(placeTooltip({ x: 10, y: 400 }, tip, vp).left).toBe(4);
     expect(placeTooltip({ x: 995, y: 400 }, tip, vp).left).toBe(1000 - 80 - 4);
+  });
+});
+
+describe("tooltipText — nom du lieu au-dessus des valeurs (spec lot F §5.3)", () => {
+  it("nom puis valeurs, une par ligne", () => {
+    expect(tooltipText("Paris", ["12 °C", "Wind 10 km/h"])).toBe("Paris\n12 °C\nWind 10 km/h");
+  });
+  it("sans nom : valeurs seules ; sans valeur : nom seul ; rien : null", () => {
+    expect(tooltipText(undefined, ["12 °C"])).toBe("12 °C");
+    expect(tooltipText("Paris", [])).toBe("Paris");
+    expect(tooltipText(undefined, [])).toBeNull();
   });
 });
