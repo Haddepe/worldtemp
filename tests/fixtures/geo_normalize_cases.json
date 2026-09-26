@@ -1,0 +1,26 @@
+{
+  "normalize": [
+    ["Épinal", "epinal"],
+    ["Saint-Dié-des-Vosges", "saint die des vosges"],
+    ["München", "munchen"],
+    ["Łódź", "lodz"],
+    ["Ærøskøbing", "aeroskobing"],
+    ["Straße", "strasse"],
+    ["St. John's", "st john s"],
+    ["  Œuf  ", "oeuf"],
+    ["İzmir", "izmir"],
+    ["São Paulo", "sao paulo"],
+    ["Kōfu", "kofu"],
+    ["Xi'an", "xi an"],
+    ["Þórshöfn", "thorshofn"],
+    ["北京", ""]
+  ],
+  "prefix": [
+    ["epinal", "ep"],
+    ["saint die", "sa"],
+    ["s hertogenbosch", "s_"],
+    ["a", "a_"],
+    ["", "__"],
+    ["9 de julio", "9_"]
+  ]
+}

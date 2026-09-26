@@ -9,6 +9,7 @@ import type { Tier } from "../gpu/tier";
 import { STRINGS } from "../i18n";
 import { LabelsController } from "../labels/controller";
 import type { LabelSet } from "../labels/data";
+import { DetailLabels } from "../labels/detail";
 import { createLabelsLayer } from "../labels/layer";
 import { createRiversLayer, type RiversLayer } from "../render/rivers";
 import type { SceneHandle } from "../render/scene";
@@ -63,6 +64,7 @@ export function wireGeo(deps: GeoWiringDeps): GeoWiring {
       }
     }
     deps.labels.setEnabled(labelsOn); // `labelsOn` relu après l'attente : il a pu basculer pendant le chargement
+    deps.scene.requestRender(); // une vue part : les villes de détail sont demandées sans attendre un mouvement
   };
   const labelsToggle = createToggle(deps.labelsButton, (on) => {
     labelsOn = on;
@@ -137,6 +139,18 @@ async function fetchGeo(url: string): Promise<Response> {
 export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCanvasElement; tier: Tier }): GeoHandle {
   const { ui, scene, canvas, tier } = opts;
   const base = `${import.meta.env.BASE_URL}geo`;
+  const detail = new DetailLabels(
+    base,
+    {
+      async fetchJson(url, signal) {
+        const r = await fetch(url, { signal });
+        if (r.status === 404) return null; // tuile sans ville (océan) : pas un échec
+        if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+        return r.json() as Promise<unknown>;
+      },
+    },
+    () => labels.invalidate(), // rafale de tuiles : au plus une re-sélection par intervalle (F3)
+  );
   const labels = new LabelsController({
     layer: createLabelsLayer(ui.labels),
     camera: scene.camera,
@@ -144,9 +158,13 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
     tier,
     // Le canvas couvre le viewport : les rectangles des panneaux sont déjà dans son repère.
     obstacles: () => ui.panelRects(),
+    detail,
   });
   ui.onLayoutChange(() => labels.relayout());
-  scene.onViewChange(() => labels.onView());
+  scene.onViewChange((view) => {
+    detail.update(view, labels.isEnabled());
+    labels.onView();
+  });
   const wiring = wireGeo({
     labelsButton: ui.labelsToggle,
     riversButton: ui.riversToggle,
@@ -165,7 +183,7 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
   });
   // Crochet de validation : dev seulement, comme `__worldtemp`.
   if (import.meta.env.DEV) {
-    (window as unknown as { __worldtempGeo: unknown }).__worldtempGeo = { labels, rivers: wiring.rivers };
+    (window as unknown as { __worldtempGeo: unknown }).__worldtempGeo = { labels, rivers: wiring.rivers, detail };
   }
   return { start: wiring.start, setValueSource: (data, layerShown) => labels.setValueSource(data, layerShown) };
 }

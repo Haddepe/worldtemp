@@ -28,6 +28,7 @@ export const STRINGS = {
     noMapDetail: "Map detail unavailable",
     layerUnavailable: "Layer unavailable",
     windUnavailable: "Wind unavailable",
+    locationUnavailable: "Location unavailable",
   },
   fatal: {
     noWebgl: "This browser does not support WebGL, which the 3D globe requires.",
@@ -48,6 +49,10 @@ export const STRINGS = {
     compass: ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
   },
   legend: { isolines: "isolines", min: "min", max: "max" },
+  search: {
+    noMatches: "No matches",
+    unavailable: "Search unavailable",
+  },
   sources: {
     gfs_0p25: "NOAA GFS 0.25°",
     gefs_chem_0p25: "NOAA GEFS-Aerosols 0.25°",

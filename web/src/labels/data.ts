@@ -73,17 +73,81 @@ export function parseCountries(json: unknown): Country[] {
   });
 }
 
+export function unitVectors(places: readonly { lon: number; lat: number }[]): Float32Array {
+  const unit = new Float32Array(places.length * 3);
+  const v = new THREE.Vector3();
+  places.forEach((p, i) => {
+    lonLatToVec3(p.lon, p.lat, v);
+    unit[i * 3] = v.x;
+    unit[i * 3 + 1] = v.y;
+    unit[i * 3 + 2] = v.z;
+  });
+  return unit;
+}
+
 export function buildLabelSet(places: Place[], countries: Country[]): LabelSet {
   const items: LabelItem[] = [];
   for (const c of countries) items.push({ id: items.length, kind: "country", name: c.name, lon: c.lon, lat: c.lat, pop: 0, capital: false, rank: c.rank });
   for (const p of places) items.push({ id: items.length, kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: p.capital, rank: 0 });
-  const unit = new Float32Array(items.length * 3);
-  const v = new THREE.Vector3();
-  for (const it of items) {
-    lonLatToVec3(it.lon, it.lat, v);
-    unit[it.id * 3] = v.x;
-    unit[it.id * 3 + 1] = v.y;
-    unit[it.id * 3 + 2] = v.z;
-  }
+  const unit = unitVectors(items);
   return { items, unit };
+}
+
+/** Tuile de villes de détail `geo/cities/5/{x}/{y}.json` (spec lot F §3.4) : `[lon, lat, name, pop]`. */
+export function parseDetailPlaces(json: unknown): Place[] {
+  return rows(json, "places", 4).map((r) => {
+    const pop = r[3];
+    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places: invalid population");
+    return { ...lonLatName(r, "places"), pop, capital: false };
+  });
+}
+
+/** Villes de détail visibles, triées par population décroissante, avec leurs vecteurs unité. */
+export interface DetailBatch {
+  places: readonly Place[];
+  unit: Float32Array;
+}
+
+/**
+ * Socle + villes de détail (spec lot F §4.2). L'ordre des items est l'ordre de priorité de la
+ * sélection : une ville de détail passe devant une ville ordinaire du socle moins peuplée, jamais
+ * devant un pays ni une capitale (le socle garde son ordre propre, F7).
+ */
+export function extendLabelSet(base: LabelSet, extra: DetailBatch): LabelSet {
+  if (extra.places.length === 0) return base;
+  // Appelée à chaque changement du détail (≤ DETAIL_BUDGET villes + le socle) : littéraux explicites
+  // et copie directe des vecteurs, sans décomposition d'objet ni vue `subarray` par item (T11, V1).
+  const ep = extra.places;
+  const eu = extra.unit;
+  const bu = base.unit;
+  const n = base.items.length + ep.length;
+  const items: LabelItem[] = new Array<LabelItem>(n);
+  const unit = new Float32Array(n * 3);
+  let id = 0;
+  let j = 0;
+  const pushExtra = (): void => {
+    const p = ep[j]!;
+    items[id] = { id, kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: false, rank: 0 };
+    unit[id * 3] = eu[j * 3]!;
+    unit[id * 3 + 1] = eu[j * 3 + 1]!;
+    unit[id * 3 + 2] = eu[j * 3 + 2]!;
+    id++;
+    j++;
+  };
+  for (const b of base.items) {
+    while (j < ep.length && b.kind === "city" && !b.capital && ep[j]!.pop > b.pop) pushExtra();
+    items[id] = { id, kind: b.kind, name: b.name, lon: b.lon, lat: b.lat, pop: b.pop, capital: b.capital, rank: b.rank };
+    const k = b.id * 3;
+    unit[id * 3] = bu[k]!;
+    unit[id * 3 + 1] = bu[k + 1]!;
+    unit[id * 3 + 2] = bu[k + 2]!;
+    id++;
+  }
+  while (j < ep.length) pushExtra();
+  return { items, unit };
+}
+
+/** Identité stable d'un item d'un `LabelSet` à l'autre (les ids changent à chaque fusion). */
+export function itemKey(item: LabelItem): string {
+  return `${item.kind}|${item.name}|${item.lon}|${item.lat}`;
 }

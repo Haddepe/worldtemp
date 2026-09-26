@@ -1,19 +1,25 @@
-"""Natural Earth → web/public/geo/ (spec repères §2, §5).
+"""Natural Earth + GeoNames → web/public/geo/ (spec repères §2, §5 ; spec lot F §3).
 
     python tools/build_geo.py
 
-Stdlib seule. Télécharge trois GeoJSON figés sur NE_TAG dans tools/.geo-cache/ (git-ignoré)
-et écrit places.json, countries.json, rivers.bin — déterministes, commités, servis avec le site.
+Stdlib seule. Télécharge dans tools/.geo-cache/ (git-ignoré) trois GeoJSON Natural Earth figés sur
+NE_TAG et trois fichiers GeoNames (non versionnés côté GeoNames : le cache fait foi tant qu'il
+n'est pas effacé) ; écrit places.json, countries.json, rivers.bin, cities/5/{x}/{y}.json et
+search/{pp}.json — déterministes à cache égal, commités, servis avec le site.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import shutil
 import struct
 import sys
 import urllib.request
+import zipfile
 from pathlib import Path
+
+import geonames as gn
 
 NE_TAG = "v5.1.2"
 BASE_URL = f"https://raw.githubusercontent.com/nvkelso/natural-earth-vector/{NE_TAG}/geojson/"
@@ -22,6 +28,8 @@ SOURCES = {
     "countries": "ne_50m_admin_0_countries.geojson",
     "rivers": "ne_10m_rivers_lake_centerlines.geojson",
 }
+GEONAMES_URL = "https://download.geonames.org/export/dump/"
+GEONAMES = {"cities": "cities1000.zip", "admin1": "admin1CodesASCII.txt", "countries": "countryInfo.txt"}
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tools" / ".geo-cache"
 OUT = ROOT / "web" / "public" / "geo"
@@ -207,18 +215,42 @@ def dump_json(obj) -> bytes:
     return (json.dumps(obj, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
 
-def _load(key: str) -> list[dict]:
+def _download(url: str, path: Path) -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return
+    print(f"téléchargement {url}…")
+    # Téléchargement atomique (M7) : écrire vers un fichier temporaire puis le renommer vers
+    # le chemin final, pour qu'un téléchargement interrompu ne laisse jamais de cache corrompu
+    # à supprimer à la main.
+    part = path.with_suffix(path.suffix + ".part")
+    urllib.request.urlretrieve(url, part)
+    part.replace(path)
+
+
+def _load(key: str) -> list[dict]:
     path = CACHE / f"{NE_TAG}-{SOURCES[key]}"
-    if not path.exists():
-        print(f"téléchargement {SOURCES[key]} ({NE_TAG})…")
-        # Téléchargement atomique (M7) : écrire vers un fichier temporaire puis le renommer vers
-        # le chemin final, pour qu'un téléchargement interrompu ne laisse jamais de cache corrompu
-        # à supprimer à la main.
-        part = path.with_suffix(path.suffix + ".part")
-        urllib.request.urlretrieve(BASE_URL + SOURCES[key], part)
-        part.replace(path)
+    _download(BASE_URL + SOURCES[key], path)
     return json.loads(path.read_text(encoding="utf-8"))["features"]
+
+
+def _geonames_lines(key: str) -> list[str]:
+    path = CACHE / f"geonames-{GEONAMES[key]}"
+    _download(GEONAMES_URL + GEONAMES[key], path)
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as z:
+            return z.read("cities1000.txt").decode("utf-8").splitlines(keepends=True)
+    return path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+
+def _write_tree(root: Path, files: dict[str, bytes]) -> None:
+    """Remplace entièrement `root` : une ville disparue de GeoNames ne laisse pas de fichier orphelin."""
+    if root.exists():
+        shutil.rmtree(root)
+    for rel, data in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
 
 
 def main() -> int:
@@ -231,6 +263,19 @@ def main() -> int:
     (OUT / "rivers.bin").write_bytes(encode_rivers(lines))
     print(f"{len(places)} villes, {len(countries)} pays, {len(lines)} lignes de fleuve, "
           f"{segment_count(lines)} segments (tolérance {tol:.4f}°)")
+
+    parsed = gn.parse_cities(_geonames_lines("cities"))
+    cities = gn.drop_sections(parsed, places)
+    matches = gn.match_socle(cities, places)
+    tiles = gn.build_detail_tiles(cities, matches)
+    index = gn.build_search_index(cities, matches, gn.parse_admin1(_geonames_lines("admin1")),
+                                  gn.parse_countries(_geonames_lines("countries")))
+    _write_tree(OUT / "cities", {f"{gn.DETAIL_LEVEL}/{x}/{y}.json": dump_json({"version": 1, "places": rows})
+                                 for (x, y), rows in tiles.items()})
+    _write_tree(OUT / "search", {f"{p}.json": dump_json({"version": 2, "entries": rows}) for p, rows in index.items()})
+    print(f"GeoNames : {len(cities)} villes ({len(parsed) - len(cities)} sections numérotées écartées), "
+          f"{len(matches)} rattachées au socle, {len(tiles)} tuiles de détail, "
+          f"{len(index)} fichiers d'index")
     return 0
 
 

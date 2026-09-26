@@ -16,6 +16,8 @@ export interface Overlay {
   panelRects(): { x0: number; y0: number; x1: number; y1: number }[];
   /** Appelé quand les panneaux sont repliés ou déployés. */
   onLayoutChange(cb: () => void): void;
+  /** Un panneau a changé de taille hors du bouton de repli (champ de recherche). */
+  notifyLayout(): void;
   setBanner(text: string): void;
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
@@ -66,6 +68,9 @@ export function createOverlay(): Overlay {
     },
     onLayoutChange(cb) {
       layoutListeners.push(cb);
+    },
+    notifyLayout() {
+      for (const cb of layoutListeners) cb();
     },
     setBanner(text) {
       bannerText.textContent = text;

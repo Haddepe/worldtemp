@@ -12,3 +12,12 @@ export function withFlag(search: string, name: string, on: boolean): string {
   p.set(name, on ? "1" : "0");
   return `?${p.toString()}`;
 }
+
+/** Réécrit `lon`, `lat`, `d` (vue partageable après un vol, spec lot F §5.3). Résultat préfixé par `?`. */
+export function withView(search: string, lon: number, lat: number, d: number): string {
+  const p = new URLSearchParams(search);
+  p.set("lon", lon.toFixed(2));
+  p.set("lat", lat.toFixed(2));
+  p.set("d", d.toFixed(3));
+  return `?${p.toString()}`;
+}

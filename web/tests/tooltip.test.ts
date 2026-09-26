@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { TapDetector, placeTooltip } from "../src/ui/tooltip";
+import * as THREE from "three";
+import { describe, expect, it, vi } from "vitest";
+import { lonLatToVec3 } from "../src/tiles/patch";
+import { TapDetector, createTooltip, mouseInput, placeTooltip, tooltipText, type Reading } from "../src/ui/tooltip";
 
 describe("TapDetector — spec navigation §6", () => {
   it("tap valide : down puis up < 300 ms, < 8 px → position du down", () => {
@@ -55,5 +57,104 @@ describe("placeTooltip", () => {
   it("borné horizontalement dans le viewport (marge 4 px)", () => {
     expect(placeTooltip({ x: 10, y: 400 }, tip, vp).left).toBe(4);
     expect(placeTooltip({ x: 995, y: 400 }, tip, vp).left).toBe(1000 - 80 - 4);
+  });
+});
+
+describe("tooltipText — nom du lieu au-dessus des valeurs (spec lot F §5.3)", () => {
+  it("nom puis valeurs, une par ligne", () => {
+    expect(tooltipText("Paris", ["12 °C", "Wind 10 km/h"])).toBe("Paris\n12 °C\nWind 10 km/h");
+  });
+  it("sans nom : valeurs seules ; sans valeur : nom seul ; rien : null", () => {
+    expect(tooltipText(undefined, ["12 °C"])).toBe("12 °C");
+    expect(tooltipText("Paris", [])).toBe("Paris");
+    expect(tooltipText(undefined, [])).toBeNull();
+  });
+});
+
+/** Éléments factices : Vitest tourne sans DOM, le tooltip n'utilise que ces membres. */
+function fakeEls() {
+  const el = () => ({ hidden: true, textContent: "", offsetWidth: 80, offsetHeight: 20, style: { transform: "" }, setAttribute: vi.fn() });
+  return { tip: el(), marker: el() } as unknown as { tip: HTMLElement; marker: HTMLElement };
+}
+
+/** Caméra à d = 3 au-dessus de (0°, 0°), regardant le centre du globe. */
+function camera(): THREE.PerspectiveCamera {
+  const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  cam.position.copy(lonLatToVec3(0, 0, new THREE.Vector3()).multiplyScalar(3));
+  cam.lookAt(0, 0, 0);
+  cam.updateMatrixWorld();
+  return cam;
+}
+
+describe("createTooltip — épingle (relecture finale lot F, F2 et F4)", () => {
+  it("isPinned : vrai seulement en mode pin avec une lecture", () => {
+    const t = createTooltip(fakeEls());
+    expect(t.isPinned()).toBe(false);
+    t.setReading(null, "pin");
+    expect(t.isPinned()).toBe(false);
+    t.setReading({ lon: 0, lat: 0 }, "pin");
+    expect(t.isPinned()).toBe(true);
+    t.setReading({ lon: 0, lat: 0 }, "hover");
+    expect(t.isPinned()).toBe(false);
+  });
+  it("épinglé sans couche, sans vent ni nom : marqueur visible, bulle masquée", () => {
+    const els = fakeEls();
+    const t = createTooltip(els);
+    t.setReading({ lon: 0, lat: 0 }, "pin");
+    t.update(camera(), 400, 400);
+    expect(els.marker.hidden).toBe(false);
+    expect(els.tip.hidden).toBe(true);
+  });
+  it("épinglé avec un nom : marqueur et bulle visibles", () => {
+    const els = fakeEls();
+    const t = createTooltip(els);
+    t.setReading({ lon: 0, lat: 0, name: "Epinal" }, "pin");
+    t.update(camera(), 400, 400);
+    expect(els.marker.hidden).toBe(false);
+    expect(els.tip.hidden).toBe(false);
+    expect(els.tip.textContent).toBe("Epinal");
+  });
+  it("survol sans rien à écrire : ni marqueur ni bulle", () => {
+    const els = fakeEls();
+    const t = createTooltip(els);
+    t.setReading({ lon: 0, lat: 0 }, "hover");
+    t.update(camera(), 400, 400);
+    expect(els.marker.hidden).toBe(true);
+    expect(els.tip.hidden).toBe(true);
+  });
+});
+
+describe("mouseInput — le survol n'écrase pas une lecture épinglée (F2)", () => {
+  function fake(pinned: boolean) {
+    const t = { pinned, setReading: vi.fn((r: Reading | null, m: "hover" | "pin") => void (t.pinned = m === "pin" && r !== null)), isPinned: () => t.pinned };
+    return t;
+  }
+  const here: Reading = { lon: 1, lat: 2 };
+  it("non épinglé : move lit le point survolé, leave efface", () => {
+    const t = fake(false);
+    expect(mouseInput(t, "move", () => here)).toBe(true);
+    expect(t.setReading).toHaveBeenLastCalledWith(here, "hover");
+    expect(mouseInput(t, "leave", () => here)).toBe(true);
+    expect(t.setReading).toHaveBeenLastCalledWith(null, "hover");
+  });
+  it("épinglé : move et leave ignorés", () => {
+    const t = fake(true);
+    const read = vi.fn(() => here);
+    expect(mouseInput(t, "move", read)).toBe(false);
+    expect(mouseInput(t, "leave", read)).toBe(false);
+    expect(t.setReading).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
+  it("épinglé : un clic lève l'épingle, puis le survol reprend", () => {
+    const t = fake(true);
+    expect(mouseInput(t, "down", () => here)).toBe(true);
+    expect(t.setReading).toHaveBeenLastCalledWith(null, "hover");
+    expect(mouseInput(t, "move", () => here)).toBe(true);
+    expect(t.setReading).toHaveBeenLastCalledWith(here, "hover");
+  });
+  it("non épinglé : un clic ne change rien", () => {
+    const t = fake(false);
+    expect(mouseInput(t, "down", () => here)).toBe(false);
+    expect(t.setReading).not.toHaveBeenCalled();
   });
 });

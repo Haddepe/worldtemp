@@ -40,7 +40,16 @@ problème d'affichage. Ce lot :
   régions, clé `CC.code`), plus **`countryInfo.txt`** (nom anglais du pays par code ISO).
   Téléchargés dans `tools/.geo-cache/` (déjà ignoré par git), comme Natural Earth. Champs
   utilisés : `name`, `asciiname`, `alternatenames`, `latitude`, `longitude`, `country code`,
-  `admin1 code`, `population`.
+  `admin1 code`, `population`, `feature code`.
+- **Sections de lieu habité écartées** (validation navigateur T11, V2) : les lignes de feature
+  code `PPLX` (arrondissements, quartiers : « Lyon 03 », « Paris 10e Arrondissement ») ne
+  produisent ni tuile de détail ni entrée de recherche. GeoNames code pourtant les
+  arrondissements « Paris 01 Louvre »… « Paris 20 Ménilmontant » en `PPL` et « Marseille 01 »… en
+  `PPLA5` : sont donc aussi écartées les **sections numérotées** d'une ville du socle — nom affiché
+  ou `asciiname` normalisé commençant par « <nom normalisé du socle> <chiffre> » (`^<socle> \d`)
+  **et** à moins de 10 km (`DEDUP_KM`) de cette ville (`drop_sections`). « Paris », « Parisot » ou un
+  « Paris 2 » lointain restent. Au build de 2026-09-26 : 38 lignes (Paris 01–20, Marseille 01–16,
+  Seremban 2 et 3 en Malaisie).
 - **Licence** : GeoNames est en **CC BY 4.0** (usage commercial permis, crédit obligatoire).
   « GeoNames » s'ajoute à `#attribution` et à la ligne des sources du panneau About.
 
@@ -70,18 +79,28 @@ du socle. Évite « Munich » et « München » superposés.
 - **Normalisation** (identique Python et TypeScript, testée avec les mêmes cas) : décomposition
   NFD, suppression des diacritiques, minuscules, apostrophes et tirets → espace, espaces
   multiples réduits. `Épinal` → `epinal`, `Saint-Dié-des-Vosges` → `saint die des vosges`.
-- **Clés d'une ville** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3),
-  normalisés, dédoublonnés ; **plus**, pour les villes d'au moins **100 000 habitants**
-  seulement, leurs `alternatenames` en écriture latine (exonymes : « munchen » → Munich). Les
-  prendre pour toutes les villes gonflerait l'index de plusieurs dizaines de Mo pour des noms
-  alternatifs de villages rarement cherchés (précision du 2026-09-26, rédaction du plan).
+- **Clés d'une ville**, en deux listes (relecture finale du 2026-09-26, F1) :
+  - **primaires** : nom affiché, `asciiname`, nom du socle s'il y a correspondance (§3.3),
+    normalisés, dédoublonnés ;
+  - **alternatives** : pour les villes d'au moins **100 000 habitants** seulement, leurs
+    `alternatenames` en écriture latine (exonymes : « munchen » → Munich), normalisés, sans
+    celles déjà présentes en primaire. Les prendre pour toutes les villes gonflerait l'index de
+    plusieurs dizaines de Mo pour des noms alternatifs de villages rarement cherchés (précision
+    du 2026-09-26, rédaction du plan).
+  Les séparer évite qu'un surnom (« paris of the north » → Varsovie, « bei xin si tuo ke » →
+  Basingstoke) fasse passer une grande ville devant les vraies Paris ou Beijing.
+- **Dédoublonnage socle** : une même ligne du socle ne produit qu'une entrée — celle de la ville
+  GeoNames la plus peuplée qui lui est rattachée (§3.3), avec sa région et ses clés (deux lignes
+  GeoNames rattachées à Hong Kong ou Bristol donnaient deux entrées identiques).
 - Seules les villes GeoNames sont indexées : une ville du socle sans correspondance GeoNames
   (§3.3) n'est pas trouvable par la recherche (cas marginal, accepté).
 - **Préfixe** = 2 premiers caractères de la clé normalisée (lettres/chiffres ; le reste est
-  regroupé dans `_.json`). Une ville figure dans chaque fichier de préfixe d'une de ses clés.
-- Format : `{"version": 1, "entries": [[name, region, country, lon, lat, pop, [clés…]], …]}`
-  (dans chaque fichier, une entrée ne porte que **ses clés qui commencent par ce préfixe**),
-  triées par population décroissante ; `region` = nom anglais-ASCII d'`admin1CodesASCII`
+  regroupé dans `_.json`). Une ville figure dans chaque fichier de préfixe d'une de ses clés
+  (primaire ou alternative).
+- Format : `{"version": 2, "entries": [[name, region, country, lon, lat, pop, [clés primaires…],
+  [clés alternatives…]], …]}` (dans chaque fichier, chaque liste ne porte que **les clés qui
+  commencent par ce préfixe** ; l'une des deux peut être vide), triées par population
+  décroissante ; `region` = nom anglais-ASCII d'`admin1CodesASCII`
   (vide si inconnu) ; `country` = nom anglais de `countryInfo.txt`.
 - Estimation : ~400 à 700 fichiers de quelques dizaines de Ko (un fichier de préfixe courant
   comme `sa` peut dépasser 100 Ko non compressé : accepté, il est gzippé par Pages).
@@ -112,6 +131,12 @@ dans la tuile qui contient (6,45 ; 48,17) et dans `search/ep.json`.
   réessai au prochain mouvement de caméra (même politique que les tuiles image, dette n° 19).
 - Les lignes sont converties en `LabelItem` (vecteurs unitaires précalculés), comme
   `places.json`, via les fonctions existantes de `labels/data.ts`.
+- **Budget de candidats** (validation navigateur T11, V1) : `DETAIL_BUDGET = 6000`. Chaque tuile
+  voulue et prête ne fournit que ses `floor(6000 / nombre de tuiles voulues)` villes les plus
+  peuplées (lignes déjà triées) ; de loin chaque tuile donne ses grandes villes, tout près presque
+  toutes. Vecteurs unité calculés une fois par tuile à son arrivée, jamais au moment de la fusion
+  (qui trie ≤ 6 000 éléments). Motif : tri de ~36 k villes et vecteurs recalculés à chaque tuile
+  arrivée = jusqu'à 169 ms par fusion (CPU ×4), alors que `LABEL_CAP` n'en affiche que 60.
 - Dépendances injectées (`fetchJson`, horloge) pour les tests.
 
 ### 4.2 Intégration (`labels/controller.ts`)
@@ -119,7 +144,9 @@ dans la tuile qui contient (6,45 ; 48,17) et dans `search/ep.json`.
 - À chaque sélection (toutes les 100 ms), les candidats sont **socle + villes des tuiles de
   détail visibles** ; `selectLabels` est inchangé (priorité population, anti-collision gloutonne,
   `LABEL_CAP`).
-- L'arrivée d'une tuile relance une sélection (Épinal apparaît sans mouvement de caméra).
+- L'arrivée d'une tuile relance une sélection (Épinal apparaît sans mouvement de caméra), par
+  `LabelsController.invalidate()` : au plus une sélection toutes les 100 ms, la rafale de tuiles
+  d'un zoom étant rattrapée par la sélection différée (relecture finale, F3).
 - Les étiquettes de détail portent la valeur de la couche active comme les autres.
 - De loin (d ≥ 1,25) : socle seul, **zéro requête** de détail.
 
@@ -141,11 +168,17 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
   focus ; Échap ou un second clic le referme.
 - À partir de **2 caractères** : normalisation (§3.5), chargement de `geo/search/{préfixe}.json`
   une seule fois (cache mémoire), filtrage local des entrées dont une clé **commence par** la
-  saisie normalisée, tri par population décroissante, **8 résultats au plus**, affichés
+  saisie normalisée ; d'abord celles trouvées par une clé **primaire** (ordre du fichier :
+  population décroissante), puis seulement celles trouvées par une clé **alternative** seule
+  (§3.5), **8 résultats au plus** au total, affichés
   « Épinal — Grand Est, France » (région omise si vide).
 - Clavier : ↑/↓, Entrée, Échap. ARIA : `role="combobox"`, `aria-expanded`, `aria-controls`,
   `role="listbox"` / `role="option"`, `aria-activedescendant`.
-- Messages : « No matches » ; « Search unavailable » en cas d'échec réseau.
+- Messages : « No matches » ; « Search unavailable » en cas d'échec réseau. `#search-message`
+  (`role="status"`) reste toujours rendu, seul son texte change (vide : marge nulle), pour que
+  l'annonce soit lue.
+- Après un choix, le focus revient au bouton loupe ; à la réouverture, la requête est relancée
+  si le champ n'est pas vide.
 - Une frappe plus récente annule le résultat d'une requête plus ancienne.
 
 ### 5.3 Vol animé (`web/src/render/fly.ts`)
@@ -156,14 +189,21 @@ city"`) et `#locate` (📍, `aria-label="Go to my location"`), même taille et m
 - **Toute interaction utilisateur interrompt le vol** (pointeur, molette, touche de navigation).
 - `prefers-reduced-motion: reduce` → saut direct (`setInitialView`).
 - À l'arrivée : marqueur et tooltip existants ouverts au point, avec le **nom du lieu** et la
-  valeur de la couche active ; URL mise à jour (`?lon=&lat=&d=`, via `history.replaceState`).
+  valeur de la couche active (épinglé sans couche, vent ni nom, le **marqueur seul** s'affiche) ;
+  **après un choix de ville seulement**, URL mise à jour (`?lon=&lat=&d=`, via
+  `history.replaceState`) — jamais après « ma position » (§5.4).
+- Le tooltip épinglé à l'arrivée n'est pas remplacé par le survol de la souris ; un clic sur le
+  globe lève l'épingle et le survol reprend (relecture finale, F2). Le tactile ne change pas.
 
 ### 5.4 « Ma position »
 
 `navigator.geolocation.getCurrentPosition` (`enableHighAccuracy: false`, `timeout: 10000`,
-`maximumAge: 600000`). Succès → vol (§5.3), tooltip sans nom de ville (valeur seule). Refus,
-indisponibilité ou délai dépassé → « Location unavailable » dans `#status` pendant 5 s. La
-position n'est **ni envoyée ni stockée** ; le paragraphe « Privacy » du panneau About le dit.
+`maximumAge: 600000`). Succès → vol (§5.3), tooltip sans nom de ville (valeur seule, ou
+marqueur seul sans couche). Refus, indisponibilité ou délai dépassé → « Location unavailable »
+dans `#status` pendant 5 s. La position n'est **ni envoyée ni stockée** ; le paragraphe
+« Privacy » du panneau About le dit. En conséquence, l'URL **n'est pas réécrite** après
+« ma position » : elle se partage et reste dans l'historique du navigateur (décision de la
+relecture finale, F4).
 
 ### 5.5 Mobile
 
@@ -181,9 +221,11 @@ couvre les nouveaux textes.
 
 - Zoom sur le Grand Est : Épinal apparaît avec sa valeur ; aucune erreur console ; images/s
   inchangées au repos.
-- Recherche « epi » → Épinal en tête des résultats français ; « munich » et « munchen »
-  donnent la même ville ; vol, marqueur, tooltip ; URL mise à jour.
-- 📍 accepté puis refusé.
+- Recherche « epi » → Épinal parmi les résultats français (pas en tête : Épinay-sur-Seine est
+  plus peuplée) ; « paris » → Paris (France) en tête ; « beijing » → Beijing en tête ;
+  « munich » et « munchen » donnent la même ville ; vol, marqueur, tooltip ; URL mise à jour.
+- 📍 accepté (marqueur même sans couche, URL inchangée) puis refusé ; le survol souris ne
+  remplace pas le tooltip épinglé, un clic le lève.
 - Largeur mobile (500 px, plancher de l'outillage) : champ, liste, boutons.
 
 ## 7. Critères d'acceptation
@@ -193,7 +235,8 @@ couvre les nouveaux textes.
 3. La recherche trouve une ville > 1 000 hab. par son nom local, ASCII ou anglais, sans service
    externe.
 4. Choisir un résultat ou sa position amène la caméra au lieu (vol, ou saut si reduced-motion),
-   ouvre marqueur et tooltip, met l'URL à jour ; une interaction interrompt le vol.
+   ouvre marqueur et tooltip, met l'URL à jour (résultat seulement, jamais sa position) ; une
+   interaction interrompt le vol.
 5. Géolocalisation refusée → message, aucune autre conséquence.
 6. GeoNames crédité dans `#attribution` et le panneau About.
 7. Tous les tests verts (vitest, pytest), `tsc` propre, build de production réussi.

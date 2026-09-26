@@ -10,6 +10,8 @@ declare module "node:fs" {
   /** Sans encodage : octets bruts (en-têtes JPEG / PNG de seo.test.ts). */
   export function readFileSync(path: string): Uint8Array;
   export function readdirSync(path: string): string[];
+  /** Avec `withFileTypes` : entrées de répertoire (geo-loader.test.ts, empreinte récursive de public/geo/). */
+  export function readdirSync(path: string, options: { withFileTypes: true }): { isDirectory(): boolean; name: string }[];
   export function statSync(path: string): { isDirectory(): boolean };
   export function existsSync(path: string): boolean;
 }

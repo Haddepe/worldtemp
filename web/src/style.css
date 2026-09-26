@@ -29,7 +29,11 @@ html, body {
   padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right))
     max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* Rangée 2 dédiée au panneau de recherche (repliable, auto : 0 quand `hidden`) : sans elle,
+     #search et #status se disputaient la même rangée par placement automatique et #status
+     finissait poussé dans une rangée implicite sous #legend/#controls quand la recherche
+     était ouverte (correctif tour 1, T10). */
+  grid-template-rows: auto auto 1fr auto;
   grid-template-columns: 1fr auto;
   gap: 0.5rem;
 }
@@ -67,10 +71,12 @@ html, body {
 #toggle-overlay[aria-expanded="false"] { transform: rotate(180deg); }
 #overlay.collapsed #legend,
 #overlay.collapsed #controls { display: none; }
-#status { grid-column: 1 / -1; justify-self: center; align-self: start; color: #ffd166; }
-#legend { grid-row: 3; grid-column: 1; align-self: end; justify-self: start; min-width: 16rem; }
+/* Rangée fixe (et non plus déduite du placement automatique) : #status reste sous le bandeau et
+   la recherche que celle-ci soit ouverte ou fermée (correctif tour 1, T10). */
+#status { grid-row: 3; grid-column: 1 / -1; justify-self: center; align-self: start; color: #ffd166; }
+#legend { grid-row: 4; grid-column: 1; align-self: end; justify-self: start; min-width: 16rem; }
 #controls {
-  grid-row: 3; grid-column: 2; align-self: end;
+  grid-row: 4; grid-column: 2; align-self: end;
   display: flex; flex-direction: column; gap: 0.25rem; align-items: stretch;
 }
 #controls [role="radio"], #controls [role="switch"] {
@@ -98,7 +104,7 @@ html, body {
 #legend .title { font-size: 0.8rem; margin-bottom: 0.3rem; }
 #legend[hidden] { display: none; }
 #attribution {
-  grid-row: 3; grid-column: 1 / -1; justify-self: center; align-self: end;
+  grid-row: 4; grid-column: 1 / -1; justify-self: center; align-self: end;
   margin: 0; font-size: 0.7rem; color: var(--panel-muted); pointer-events: none;
   text-shadow: 0 0 4px #000;
 }
@@ -203,25 +209,39 @@ html, body {
 #tooltip[hidden], #marker[hidden] { display: none; }
 
 @media (max-width: 600px) {
-  #overlay { grid-template-rows: auto 1fr auto auto auto; }
+  /* Même rangée dédiée à #search qu'en pleine largeur (voir #overlay ci-dessus) : +1 sur les
+     rangées explicites de #legend/#controls/#attribution (correctif tour 1, T10). */
+  #overlay { grid-template-rows: auto auto 1fr auto auto auto; }
   /* border-box : sans lui le padding s'ajoute aux 100vw − 1.5rem, la légende déborde de 11 px et
      élargit toute la grille (bandeau et contrôles collés au bord droit). */
-  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 3; grid-column: 1 / -1; }
+  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 4; grid-column: 1 / -1; }
   #controls {
-    grid-row: 4; grid-column: 1 / -1; justify-self: stretch;
+    grid-row: 5; grid-column: 1 / -1; justify-self: stretch;
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;
     -webkit-overflow-scrolling: touch;
   }
   #controls [role="radio"], #controls [role="switch"] { scroll-snap-align: start; min-height: 44px; flex: 0 0 auto; }
   #wind-toggle { margin-top: 0; }
-  #attribution { grid-row: 5; }
+  #attribution { grid-row: 6; }
 }
 
 /* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */
-#about-open {
+#about-open, #search-open, #locate {
   background: none; border: 1px solid currentColor; border-radius: 50%;
   width: 1.75rem; height: 1.75rem; flex: none; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
 }
+#search { grid-row: 2; grid-column: 1 / -1; justify-self: center; width: min(100%, 24rem); box-sizing: border-box; }
+#search-input {
+  width: 100%; box-sizing: border-box; min-height: 40px; padding: 0.5rem;
+  font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 0.375rem;
+}
+#search-results { list-style: none; margin: 0.25rem 0 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+/* Cibles tactiles ≥ 40 px (spec §5.5) en px : la racine est à 14 px, 2.5rem n'en donnait que 35 (T11, V3). */
+#search-results li { min-height: 40px; box-sizing: border-box; padding: 0.5rem; border-radius: 0.25rem; cursor: pointer; }
+#search-results li[aria-selected="true"], #search-results li:hover { background: rgba(255, 255, 255, 0.15); }
+#search-message { margin: 0.25rem 0 0; opacity: 0.8; }
+/* Toujours rendu (région role="status") : vide, il ne laisse aucun espace. Pas de display: none, qui casserait l'annonce. */
+#search-message:empty { margin: 0; }
 #about {
   padding: 0; border: none; border-radius: 0.75rem; color: inherit;
   background: var(--panel-bg); backdrop-filter: blur(10px);

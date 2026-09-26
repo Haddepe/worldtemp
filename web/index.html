@@ -50,9 +50,16 @@
     <div id="overlay">
       <header id="banner" class="panel">
         <span id="banner-text">Loading…</span>
+        <button id="search-open" type="button" aria-label="Search for a city" aria-expanded="false" aria-controls="search">🔍</button>
+        <button id="locate" type="button" aria-label="Go to my location">📍</button>
         <button id="about-open" type="button" aria-label="About GlobeLayers" aria-haspopup="dialog">?</button>
         <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Collapse or expand panels">▾</button>
       </header>
+      <div id="search" class="panel" hidden>
+        <input id="search-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="City name" placeholder="Search a city" autocomplete="off" spellcheck="false" />
+        <ul id="search-results" role="listbox" aria-label="Cities"></ul>
+        <p id="search-message" role="status"></p>
+      </div>
       <div id="status" class="panel" role="status" hidden></div>
       <aside id="legend" class="panel" aria-label="Layer legend"></aside>
       <aside id="controls" class="panel">
@@ -61,7 +68,7 @@
         <button id="labels-toggle" type="button" role="switch" aria-checked="false">Labels</button>
         <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Rivers</button>
       </aside>
-      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · NOAA GFS · GEFS-Aerosols</p>
+      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · GeoNames · NOAA GFS · GEFS-Aerosols</p>
       <div id="ad-slot" hidden></div>
     </div>
     <dialog id="about" aria-labelledby="about-title">
@@ -79,13 +86,14 @@
           <li><strong>Humidity</strong> — relative humidity 2 m above ground, in %.</li>
           <li><strong>PM2.5</strong> and <strong>Dust</strong> — fine particles and desert dust near the surface, in µg/m³.</li>
           <li><strong>Labels</strong> and <strong>Rivers</strong> — cities with the value of the active layer, countries, and major rivers.</li>
+          <li><strong>Search</strong> and <strong>My location</strong> — find any town of more than 1,000 inhabitants, or fly to where you are.</li>
         </ul>
         <h2>Data &amp; freshness</h2>
         <p>Weather layers come from the NOAA GFS model at 0.25° resolution and are refreshed every hour; air quality comes from NOAA GEFS-Aerosols, refreshed every 3 hours. The globe shows the forecast valid for the current hour, taken from the latest available model run; the banner always shows the run and valid time.</p>
         <h2>Sources &amp; credits</h2>
-        <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth.</p>
+        <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth · GeoNames (CC BY 4.0).</p>
         <h2>Privacy</h2>
-        <p>GlobeLayers uses cookie-free audience measurement by Cloudflare Web Analytics. No personal data is collected and there are no advertising trackers.</p>
+        <p>GlobeLayers uses cookie-free audience measurement by Cloudflare Web Analytics. No personal data is collected and there are no advertising trackers. The “My location” button uses your device's location only in your browser: it is never sent or stored.</p>
       </div>
     </dialog>
     <div id="tooltip" class="panel" role="status" aria-live="off" hidden></div>

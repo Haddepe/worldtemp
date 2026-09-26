@@ -16,6 +16,8 @@ import { byId } from "./overlay";
 export interface Reading {
   lon: number;
   lat: number;
+  /** Nom du lieu (recherche), affiché au-dessus des valeurs. */
+  name?: string;
 }
 
 export interface TooltipData {
@@ -77,6 +79,12 @@ export class TapDetector {
   }
 }
 
+/** Texte du tooltip : nom du lieu (s'il y en a un) puis une valeur par ligne ; `null` = rien à montrer. */
+export function tooltipText(name: string | undefined, values: readonly string[]): string | null {
+  const lines = name ? [name, ...values] : [...values];
+  return lines.length ? lines.join("\n") : null;
+}
+
 /** Position du coin haut-gauche du tooltip : centré, au-dessus du point (en dessous près du bord haut). */
 export function placeTooltip(
   point: { x: number; y: number },
@@ -100,13 +108,35 @@ export interface Tooltip {
   update(camera: THREE.PerspectiveCamera, width: number, height: number): void;
   /** Vrai si (x, y) est à moins de `radiusPx` du marqueur affiché (mode pin). */
   hitMarker(x: number, y: number, radiusPx?: number): boolean;
+  /** Vrai si une lecture est épinglée (mode pin, lecture non nulle). */
+  isPinned(): boolean;
+}
+
+/**
+ * Souris sur le canvas (relecture finale lot F, F2) : le survol n'écrase pas une lecture épinglée
+ * (arrivée d'un vol) ; un clic lève l'épingle et le survol reprend. Renvoie vrai si la lecture a changé.
+ */
+export function mouseInput(
+  t: Pick<Tooltip, "isPinned" | "setReading">,
+  type: "move" | "leave" | "down",
+  read: () => Reading | null,
+): boolean {
+  if (type === "down") {
+    if (!t.isPinned()) return false;
+    t.setReading(null, "hover");
+    return true;
+  }
+  if (t.isPinned()) return false;
+  t.setReading(type === "move" ? read() : null, "hover");
+  return true;
 }
 
 const MARKER_HALF = 6;
 
-export function createTooltip(): Tooltip {
-  const tip = byId<HTMLElement>("tooltip");
-  const marker = byId<HTMLElement>("marker");
+/** `els` : éléments injectables pour les tests (Vitest tourne sans DOM). */
+export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): Tooltip {
+  const tip = els?.tip ?? byId<HTMLElement>("tooltip");
+  const marker = els?.marker ?? byId<HTMLElement>("marker");
   let reading: Reading | null = null;
   let mode: "hover" | "pin" = "hover";
   let data: TooltipData | null = null;
@@ -122,14 +152,15 @@ export function createTooltip(): Tooltip {
   };
 
   const refreshText = () => {
-    if (!reading || (!data && !wind)) return;
-    const lines: string[] = [];
-    if (data) lines.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
+    if (!reading) return;
+    const values: string[] = [];
+    if (data) values.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
     if (wind) {
       sampleUV(wind, reading.lon, reading.lat, windSample);
-      lines.push(formatWind(windSample.u, windSample.v));
+      values.push(formatWind(windSample.u, windSample.v));
     }
-    tip.textContent = lines.join("\n");
+    const text = tooltipText(reading.name, values);
+    if (text !== null) tip.textContent = text;
   };
 
   return {
@@ -152,7 +183,10 @@ export function createTooltip(): Tooltip {
       refreshText();
     },
     update(camera, width, height) {
-      if (!reading || (!data && !wind)) {
+      // Épinglé, le marqueur s'affiche même sans rien à écrire (📍 sans couche : on voit où l'on
+      // est arrivé) ; la bulle, elle, reste masquée tant qu'elle n'a pas de texte.
+      const hasText = reading !== null && (data !== null || wind !== null || !!reading.name);
+      if (!reading || (!hasText && mode !== "pin")) {
         hide();
         return;
       }
@@ -161,9 +195,11 @@ export function createTooltip(): Tooltip {
         hide();
         return;
       }
-      tip.hidden = false;
-      const { left, top } = placeTooltip({ x: s.x, y: s.y }, { w: tip.offsetWidth, h: tip.offsetHeight }, { w: width, h: height });
-      tip.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
+      tip.hidden = !hasText;
+      if (hasText) {
+        const { left, top } = placeTooltip({ x: s.x, y: s.y }, { w: tip.offsetWidth, h: tip.offsetHeight }, { w: width, h: height });
+        tip.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
+      }
       if (mode === "pin") {
         marker.hidden = false;
         marker.style.transform = `translate(${(s.x - MARKER_HALF).toFixed(1)}px, ${(s.y - MARKER_HALF).toFixed(1)}px)`;
@@ -175,6 +211,9 @@ export function createTooltip(): Tooltip {
     },
     hitMarker(x, y, radiusPx = 24) {
       return markerScreen !== null && Math.hypot(x - markerScreen.x, y - markerScreen.y) < radiusPx;
+    },
+    isPinned() {
+      return mode === "pin" && reading !== null;
     },
   };
 }
