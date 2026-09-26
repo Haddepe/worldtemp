@@ -40,7 +40,12 @@ problème d'affichage. Ce lot :
   régions, clé `CC.code`), plus **`countryInfo.txt`** (nom anglais du pays par code ISO).
   Téléchargés dans `tools/.geo-cache/` (déjà ignoré par git), comme Natural Earth. Champs
   utilisés : `name`, `asciiname`, `alternatenames`, `latitude`, `longitude`, `country code`,
-  `admin1 code`, `population`.
+  `admin1 code`, `population`, `feature code`.
+- **Sections de lieu habité écartées** (validation navigateur T11, V2) : les lignes de feature
+  code `PPLX` (arrondissements, quartiers : « Lyon 03 », « Paris 10e Arrondissement ») ne
+  produisent ni tuile de détail ni entrée de recherche. Limite connue : GeoNames code les
+  arrondissements « Paris 01 Louvre »… « Paris 20 Ménilmontant » en `PPL` et « Marseille 01 »… en
+  `PPLA5` ; ils ne sont pas écartés par cette règle.
 - **Licence** : GeoNames est en **CC BY 4.0** (usage commercial permis, crédit obligatoire).
   « GeoNames » s'ajoute à `#attribution` et à la ligne des sources du panneau About.
 

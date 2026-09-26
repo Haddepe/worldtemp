@@ -20,6 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tiler.grid import tile_at  # noqa: E402  (même grille que web/src/tiles/grid.ts)
 
 MIN_POP = 1000
+# Sections de lieu habité (arrondissements, quartiers : « Paris 15 Vaugirard », « Lyon 03 ») :
+# écartées, elles encombraient la recherche et les étiquettes (validation navigateur T11, V2).
+EXCLUDED_CODES = frozenset({"PPLX"})
 # Sous ce seuil, les alternatenames ne sont pas indexés : ils gonfleraient l'index de dizaines de Mo
 # pour des noms de villages rarement cherchés ; au-dessus, ils portent les exonymes (« munchen »).
 ALT_KEYS_MIN_POP = 100_000
@@ -78,14 +81,15 @@ class City:
 
 
 def parse_cities(lines: Iterable[str]) -> list[City]:
-    """cities1000.txt : colonnes 1 name, 2 asciiname, 3 alternatenames, 4 lat, 5 lon, 8 pays, 10 admin1, 14 pop."""
+    """cities1000.txt : colonnes 1 name, 2 asciiname, 3 alternatenames, 4 lat, 5 lon, 7 feature code, 8 pays,
+    10 admin1, 14 pop. Les lignes de code EXCLUDED_CODES (PPLX) sont écartées."""
     out = []
     for line in lines:
         f = line.rstrip("\n").split("\t")
         if len(f) < 15:
             continue
         pop = int(f[14] or 0)
-        if pop < MIN_POP:
+        if pop < MIN_POP or f[7] in EXCLUDED_CODES:
             continue
         alt = tuple(a for a in f[3].split(",") if a)
         out.append(City(f[1], f[2], alt, float(f[4]), float(f[5]), f[8], f[10], pop))

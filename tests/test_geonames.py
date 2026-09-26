@@ -44,9 +44,9 @@ def test_display_name_prend_le_nom_latin_sinon_ascii():
     assert gn.display_name("", "Nowhere") == "Nowhere"
 
 
-def gn_line(gid, name, ascii_name, alt, lat, lon, cc, admin1, pop):
+def gn_line(gid, name, ascii_name, alt, lat, lon, cc, admin1, pop, code="PPL"):
     """Une ligne de cities1000.txt (19 colonnes TSV, seules celles lues par le module sont remplies)."""
-    cols = [str(gid), name, ascii_name, ",".join(alt), str(lat), str(lon), "P", "PPL", cc, "", admin1,
+    cols = [str(gid), name, ascii_name, ",".join(alt), str(lat), str(lon), "P", code, cc, "", admin1,
             "", "", "", str(pop), "", "0", "Europe/Paris", "2024-01-01"]
     return "\t".join(cols) + "\n"
 
@@ -64,6 +64,14 @@ def test_parse_cities_filtre_la_population_et_lit_les_colonnes():
     c = cities[0]
     assert (c.name, c.ascii, c.alt, c.cc, c.admin1, c.pop) == ("Épinal", "Epinal", ("Epinal", "Spinal"), "FR", "44", 32_188)
     assert (c.lat, c.lon) == (48.17264, 6.44976)
+
+
+def test_parse_cities_ecarte_les_sections_de_lieu_habite_pplx():
+    # T11 V2 : arrondissements et quartiers (« Paris 15 Vaugirard », « Lyon 03 ») encombraient la
+    # recherche et les étiquettes ; tout autre code (PPLA, PPLC, PPL…) est gardé.
+    arr = gn_line(6618621, "Paris 15 Vaugirard", "Paris 15 Vaugirard", [], 48.84, 2.29, "FR", "11", 235_178, code="PPLX")
+    capitale = gn_line(2988507, "Paris", "Paris", [], 48.85, 2.35, "FR", "11", 2_138_551, code="PPLC")
+    assert [c.name for c in gn.parse_cities([arr, capitale, EPINAL])] == ["Paris", "Épinal"]
 
 
 def test_parse_admin1_et_countries():
