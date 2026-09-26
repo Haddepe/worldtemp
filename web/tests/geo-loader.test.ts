@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { GEO_VERSION, loadLabelSet, loadRivers, once } from "../src/geo/loader";
 import { encodeRivers } from "./rivers-fixture";
 
@@ -56,14 +56,21 @@ describe("loadRivers", () => {
 });
 
 describe("GEO_VERSION — invalide le cache navigateur d'un jour des fichiers geo/", () => {
-  it("vaut l'empreinte FNV-1a des trois fichiers commités : à relever après chaque `tools/build_geo.py`", () => {
+  it("vaut l'empreinte FNV-1a de tout public/geo/ : à relever après chaque `tools/build_geo.py`", () => {
     // Sans cela, un visiteur déjà venu garde l'ancienne copie pendant 24 h (noms restés en
-    // français après le passage du site à l'anglais, 2026-09-19).
+    // français après le passage du site à l'anglais, 2026-09-19). Depuis le lot F, l'empreinte
+    // couvre aussi cities/ et search/ : chemins relatifs triés, puis octets de chaque fichier.
+    const root = join(__dirname, "..", "public", "geo");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+    const files = walk(root).map((p) => relative(root, p).replaceAll("\\", "/")).sort();
     let h = 0x811c9dc5;
-    for (const name of ["places.json", "countries.json", "rivers.bin"]) {
-      for (const byte of readFileSync(join(__dirname, "..", "public", "geo", name))) {
-        h = Math.imul(h ^ byte, 0x01000193) >>> 0;
-      }
+    const feed = (bytes: Uint8Array) => {
+      for (const byte of bytes) h = Math.imul(h ^ byte, 0x01000193) >>> 0;
+    };
+    for (const rel of files) {
+      feed(new TextEncoder().encode(rel));
+      feed(readFileSync(join(root, rel)));
     }
     expect(GEO_VERSION).toBe(h.toString(16).padStart(8, "0"));
   });

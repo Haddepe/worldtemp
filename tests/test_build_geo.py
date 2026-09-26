@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import build_geo as bg  # noqa: E402
+import geonames as gn  # noqa: E402
 
 
 def place(name, pop, lon, lat, cla="Populated place", name_en=None, upper=True):
@@ -245,3 +246,42 @@ def test_fichiers_commites_rivers():
     # sous d ≈ 1,2). Borne basse : preuve que la tolérance fine (0,02°) est bien committée, pas
     # l'ancienne (0,045° ne produisait que 22 046 segments).
     assert 40_000 < bg.segment_count(lines) <= 50_000
+
+
+def test_fichiers_commites_villes_de_detail():
+    files = sorted((GEO / "cities" / "5").glob("*/*.json"))
+    assert 500 <= len(files) <= 2048
+    total = 0
+    for path in files:
+        raw = path.read_bytes()
+        assert len(raw) <= 2_000_000 and b"\r" not in raw
+        rows = json.loads(raw)["places"]
+        assert rows and all(len(r) == 4 and r[3] >= 1000 for r in rows)
+        assert rows == sorted(rows, key=lambda r: (-r[3], r[2]))
+        total += len(rows)
+    assert 100_000 <= total <= 250_000
+    epinal = json.loads((GEO / "cities" / "5" / "33" / "7.json").read_bytes())["places"]
+    assert any(r[2] == "Épinal" for r in epinal)
+
+
+def test_fichiers_commites_index_de_recherche():
+    files = sorted((GEO / "search").glob("*.json"))
+    assert 200 <= len(files) <= 1300
+    for path in files:
+        raw = path.read_bytes()
+        assert len(raw) <= 2_000_000 and b"\r" not in raw
+        prefix = path.stem
+        for e in json.loads(raw)["entries"]:
+            assert len(e) == 7 and e[6] and all(gn.prefix_of(k) == prefix for k in e[6])
+    ep = json.loads((GEO / "search" / "ep.json").read_bytes())["entries"]
+    epinal = next(e for e in ep if e[0] == "Épinal")
+    assert epinal[1:3] == ["Grand Est", "France"]
+    mu = json.loads((GEO / "search" / "mu.json").read_bytes())["entries"]
+    munich = next(e for e in mu if e[0] == "Munich")
+    assert "munchen" in munich[6]
+
+
+def test_dossier_geo_dans_le_budget():
+    paths = [p for p in GEO.rglob("*") if p.is_file()]
+    assert len(paths) <= 5000
+    assert sum(p.stat().st_size for p in paths) <= 25_000_000

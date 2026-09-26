@@ -8,10 +8,11 @@ import { parseRivers, type RiverSegments } from "../rivers/data";
 /**
  * Version des fichiers `geo/`, ajoutée à leurs URL : ils sont servis avec un cache d'un jour, et
  * sans elle un visiteur déjà venu garde l'ancienne copie 24 h après un déploiement (noms restés
- * en français après le passage du site à l'anglais, 2026-09-19). Empreinte FNV-1a des trois
- * fichiers : `geo-loader.test.ts` échoue, en donnant la bonne valeur, dès que les données changent.
+ * en français après le passage du site à l'anglais, 2026-09-19). Empreinte FNV-1a de tout
+ * public/geo/ (chemins triés puis octets) : geo-loader.test.ts échoue, en donnant la bonne
+ * valeur, dès que les données changent.
  */
-export const GEO_VERSION = "6977d45f";
+export const GEO_VERSION = "971ad398";
 
 /** Mémorise la promesse, succès comme échec : pas de second téléchargement dans la session. */
 export function once<T>(load: () => Promise<T>): () => Promise<T> {
