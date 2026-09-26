@@ -249,7 +249,7 @@ async function boot(): Promise<void> {
   const refreshBanner = () => {
     if (manifests.manifest === null) {
       ui.setBanner("GlobeLayers");
-      ui.setStatus(STRINGS.status.noData);
+      ui.setStatus(userNotice ?? STRINGS.status.noData);
       return;
     }
     const def = activeId ? layerDef(activeId) : undefined;
@@ -293,9 +293,9 @@ async function boot(): Promise<void> {
     requestRender: () => sceneHandle.requestRender(),
     reducedMotion: () => matchMedia("(prefers-reduced-motion: reduce)").matches,
   });
-  // Toute interaction avec le globe reprend la main (capture : avant OrbitControls et le zoom).
-  canvas.addEventListener("pointerdown", () => flight.cancel(), { capture: true });
-  canvas.addEventListener("wheel", () => flight.cancel(), { capture: true, passive: true });
+  // Toute interaction avec le globe reprend la main : le vol est annulé dès le pointerdown ou la molette.
+  canvas.addEventListener("pointerdown", () => flight.cancel());
+  canvas.addEventListener("wheel", () => flight.cancel(), { passive: true });
   const goTo = (lon: number, lat: number, name?: string): void => {
     tooltip.setReading(null, "pin");
     flight.start(lon, lat, FLY_DISTANCE, () => {
