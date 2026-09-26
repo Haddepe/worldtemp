@@ -93,4 +93,17 @@ describe("extendLabelSet — socle + villes de détail", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(itemKey(set.items[3]!)).toBe("city|Epinal|6.45|48.17");
   });
+  it("capitals ne sont jamais dépassées par des villes de détail, même plus peuplées", () => {
+    const baseWithCapital = buildLabelSet(
+      [
+        { lon: 7.42, lat: 43.73, name: "Monaco", pop: 3_000, capital: true },
+        { lon: 1, lat: 1, name: "Smallville", pop: 2_000, capital: false },
+      ],
+      [],
+    );
+    const bigtownPlace = { lon: 6, lat: 48, name: "Bigtown", pop: 5_000, capital: false };
+    const extraWithBigtown = { places: [bigtownPlace], unit: unitVectors([{ lon: bigtownPlace.lon, lat: bigtownPlace.lat }]) };
+    const set = extendLabelSet(baseWithCapital, extraWithBigtown);
+    expect(set.items.map((i) => i.name)).toEqual(["Monaco", "Bigtown", "Smallville"]);
+  });
 });

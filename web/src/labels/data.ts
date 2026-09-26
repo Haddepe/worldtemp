@@ -73,30 +73,6 @@ export function parseCountries(json: unknown): Country[] {
   });
 }
 
-export function buildLabelSet(places: Place[], countries: Country[]): LabelSet {
-  const items: LabelItem[] = [];
-  for (const c of countries) items.push({ id: items.length, kind: "country", name: c.name, lon: c.lon, lat: c.lat, pop: 0, capital: false, rank: c.rank });
-  for (const p of places) items.push({ id: items.length, kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: p.capital, rank: 0 });
-  const unit = new Float32Array(items.length * 3);
-  const v = new THREE.Vector3();
-  for (const it of items) {
-    lonLatToVec3(it.lon, it.lat, v);
-    unit[it.id * 3] = v.x;
-    unit[it.id * 3 + 1] = v.y;
-    unit[it.id * 3 + 2] = v.z;
-  }
-  return { items, unit };
-}
-
-/** Tuile de villes de détail `geo/cities/5/{x}/{y}.json` (spec lot F §3.4) : `[lon, lat, name, pop]`. */
-export function parseDetailPlaces(json: unknown): Place[] {
-  return rows(json, "places", 4).map((r) => {
-    const pop = r[3];
-    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places: invalid population");
-    return { ...lonLatName(r, "places"), pop, capital: false };
-  });
-}
-
 export function unitVectors(places: readonly { lon: number; lat: number }[]): Float32Array {
   const unit = new Float32Array(places.length * 3);
   const v = new THREE.Vector3();
@@ -107,6 +83,23 @@ export function unitVectors(places: readonly { lon: number; lat: number }[]): Fl
     unit[i * 3 + 2] = v.z;
   });
   return unit;
+}
+
+export function buildLabelSet(places: Place[], countries: Country[]): LabelSet {
+  const items: LabelItem[] = [];
+  for (const c of countries) items.push({ id: items.length, kind: "country", name: c.name, lon: c.lon, lat: c.lat, pop: 0, capital: false, rank: c.rank });
+  for (const p of places) items.push({ id: items.length, kind: "city", name: p.name, lon: p.lon, lat: p.lat, pop: p.pop, capital: p.capital, rank: 0 });
+  const unit = unitVectors(items);
+  return { items, unit };
+}
+
+/** Tuile de villes de détail `geo/cities/5/{x}/{y}.json` (spec lot F §3.4) : `[lon, lat, name, pop]`. */
+export function parseDetailPlaces(json: unknown): Place[] {
+  return rows(json, "places", 4).map((r) => {
+    const pop = r[3];
+    if (typeof pop !== "number" || !Number.isFinite(pop)) throw new GeoDataError("places: invalid population");
+    return { ...lonLatName(r, "places"), pop, capital: false };
+  });
 }
 
 /** Villes de détail visibles, triées par population décroissante, avec leurs vecteurs unité. */
