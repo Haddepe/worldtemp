@@ -13,7 +13,7 @@ import unicodedata
 _FOLD = {"ß": "ss", "ø": "o", "ł": "l", "æ": "ae", "œ": "oe", "đ": "d", "ı": "i", "þ": "th", "ð": "d"}
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 _PREFIX_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789")
-_LATIN_PUNCT = set(" -''.(),/")
+_LATIN_PUNCT = set(" -'’.(),/")
 
 
 def normalize(s: str) -> str:
@@ -30,7 +30,7 @@ def prefix_of(key: str) -> str:
 
 
 def is_latin(s: str) -> bool:
-    """Au moins une lettre, et uniquement des lettres latines, chiffres, espaces et `-''.(),/`."""
+    """Au moins une lettre, et uniquement des lettres latines, chiffres, espaces et `-'’().(),/`."""
     has_letter = False
     for c in s:
         if c.isalpha():
