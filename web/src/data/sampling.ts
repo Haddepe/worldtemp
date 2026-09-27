@@ -28,21 +28,22 @@ export function heatmapUv(lon: number, lat: number, grid: Pick<Grid, "width" | "
 }
 
 /**
- * Valeur physique au point (lon, lat) : bilinéaire sur le canal R de `pixels`
- * (RGBA, nord en haut, `data/pixels.ts`), puis décodage (linéaire ou racine).
- * Mêmes coordonnées cellulaires que `heatmapUv` : lon −180 est le centre de la
- * colonne 0, lat 90 le centre de la ligne 0 ; bouclage en longitude, latitude bornée.
+ * Valeur physique au point (lon, lat) : bilinéaire sur le canal R de `pixels` (nord en haut ;
+ * RGBA avec `stride` 4, canal R seul avec `stride` 1 — échéances du lot E), puis décodage
+ * (linéaire ou racine). Mêmes coordonnées cellulaires que `heatmapUv` : lon −180 est le centre de
+ * la colonne 0, lat 90 le centre de la ligne 0 ; bouclage en longitude, latitude bornée.
  */
 export function sampleValue(
-  pixels: Uint8ClampedArray,
+  pixels: ArrayLike<number>,
   grid: Pick<Grid, "width" | "height">,
   encoding: Encoding,
   lon: number,
   lat: number,
+  stride = 4,
 ): number {
   const W = grid.width;
   const H = grid.height;
-  const at = (col: number, row: number) => pixels[(row * W + col) * 4] ?? 0;
+  const at = (col: number, row: number) => pixels[(row * W + col) * stride] ?? 0;
   let x = ((lon + 180) / 360) * W;
   x = ((x % W) + W) % W;
   const x0 = Math.floor(x);
@@ -56,4 +57,23 @@ export function sampleValue(
   const top = at(x0, y0) * (1 - fx) + at(x1, y0) * fx;
   const bottom = at(x0, y1) * (1 - fx) + at(x1, y1) * fx;
   return decode(top * (1 - fy) + bottom * fy, encoding);
+}
+
+/** Couche lue à un instant de la frise : deux échéances encadrantes et le facteur de mélange (spec lot E §6.2). */
+export interface ValueSource {
+  /** Canal R nord en haut de l'échéance A, `width × height`. */
+  a: Uint8Array;
+  /** Échéance B ; `null` ou `f = 0` : A seule. */
+  b: Uint8Array | null;
+  f: number;
+  grid: Pick<Grid, "width" | "height">;
+  encoding: Encoding;
+}
+
+/** Chaque échéance est décodée, puis mélangée linéairement : exact aussi en encodage racine. */
+export function sampleSource(s: ValueSource, lon: number, lat: number): number {
+  const va = sampleValue(s.a, s.grid, s.encoding, lon, lat, 1);
+  if (!s.b || !(s.f > 0)) return va;
+  const vb = sampleValue(s.b, s.grid, s.encoding, lon, lat, 1);
+  return va + (vb - va) * s.f;
 }

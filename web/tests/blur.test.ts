@@ -46,3 +46,15 @@ describe("blurRedChannel — adoucissement des couches à fronts raides (nuages)
     }
   });
 });
+
+describe("blurRedChannel — canal R seul (stride 1, lot E)", () => {
+  it("même résultat qu'en RGBA", () => {
+    const W = 16;
+    const H = 9;
+    const px = rgba(W, H, (x, y) => (x * 7 + y * 13) % 256);
+    const red = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) red[i] = px[i * 4]!;
+    expect(blurRedChannel(red, W, H, 1.2, false, 1)).toEqual(blurRedChannel(px, W, H, 1.2));
+    expect(blurRedChannel(red, W, H, 0, true, 1)).toEqual(blurRedChannel(px, W, H, 0, true));
+  });
+});

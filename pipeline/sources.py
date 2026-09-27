@@ -30,7 +30,7 @@ GFS = SourceSpec(
     dir_pattern="/gfs.{ymd}/{hh}/atmos",
     file_pattern="gfs.t{hh}z.pgrb2.0p25.f{fh:03d}",
     step_hours=1, availability_delay=timedelta(hours=3, minutes=30),
-    max_forecast_hour=48, max_candidates=4, primary=True,
+    max_forecast_hour=60, max_candidates=4, primary=True,
 )
 
 GEFS_CHEM = SourceSpec(

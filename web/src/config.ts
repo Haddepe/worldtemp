@@ -1,4 +1,4 @@
-/** Base des couches publiées par le pipeline (spec couches §7 : `layers/latest.json`, `layers/<id>.png`). */
+/** Base des couches publiées par le pipeline (spec lot E §4 : `layers/forecast.json`, `layers/<run>/<couche>_f<fh>.png`). */
 export const DATA_BASE_URL: string =
   import.meta.env.VITE_DATA_BASE_URL ??
   "https://data.globelayers.com/layers";
@@ -8,8 +8,11 @@ export const TILES_BASE_URL: string =
   import.meta.env.VITE_TILES_BASE_URL ??
   "https://data.globelayers.com/tiles/v1";
 
-/** Période de relecture de `latest.json` (spec §3). */
+/** Période de relecture de `forecast.json`. */
 export const REFRESH_MS = 15 * 60 * 1000;
 
-/** Au-delà, la couche est affichée avec le statut « Données anciennes » (spec §5). */
-export const STALE_AFTER_MS = 6 * 3600 * 1000;
+/** Au-delà, statut « Données anciennes » : âge du run GFS (spec lot E §6.4 ; en service normal ≤ ~10 h). */
+export const STALE_RUN_AFTER_MS = 12 * 3600 * 1000;
+
+/** Pendant la lecture, valeurs des étiquettes rafraîchies au plus toutes les 250 ms (spec lot E §6.2). */
+export const LABELS_REFRESH_MS = 250;

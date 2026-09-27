@@ -85,4 +85,12 @@ describe("WindController — spec vent §8", () => {
     expect(view.cameraPosition.length()).toBeCloseTo(1.1, 9);
     expect(view.viewportHeight).toBe(800);
   });
+  it("remplacer un champ par un autre ne réamorce pas l'horloge (lecture de la frise)", () => {
+    const { ctl, sim } = make();
+    ctl.setField(FIELD);
+    ctl.frame(0);
+    ctl.setField({ ...FIELD });
+    expect(ctl.frame(40)).toBe(true);
+    expect(sim.step).toHaveBeenCalledTimes(1);
+  });
 });

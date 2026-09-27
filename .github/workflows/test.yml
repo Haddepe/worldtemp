@@ -30,7 +30,7 @@ jobs:
         run: python tools/history_check.py
       - name: Dry-run contre NOMADS réel
         if: ${{ !cancelled() }}
-        run: python -m pipeline.main --dry-run
+        run: python -m pipeline.main --dry-run --max-frames 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

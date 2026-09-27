@@ -76,11 +76,15 @@ export function spawnOnScreen(pick: PickFn, rng: () => number, target: THREE.Vec
 
 /**
  * Champ de vent prêt pour le tick : **un seul** tableau d'octets entrelacé `[u0, v0, u1, v1, …]`
- * (rangée par rangée, nord en haut, même cellule que le canal R des PNG — `wind/loader.ts`).
+ * (rangée par rangée, nord en haut, même cellule que le canal R des PNG — `data/frames.ts::loadWindFrame`).
  * 2 Mo au lieu de 8 Mo, et les deux composantes d'un pixel sur la même ligne de cache.
  */
 export interface WindField {
   uv: Uint8Array;
+  /** Échéance suivante (lot E §6.3) ; absente, `null` ou `f = 0` : champ `uv` seul. */
+  uvB?: Uint8Array | null;
+  /** Mélange vers `uvB`, dans [0, 1] ; modifié en place à chaque image pendant la lecture. */
+  f?: number;
   grid: Pick<Grid, "width" | "height">;
   encU: Encoding;
   encV: Encoding;
@@ -118,14 +122,21 @@ export function sampleUV(field: WindField, lon: number, lat: number, out: { u: n
   const e = (r1 + x1) * 2;
   const gx = 1 - fx;
   const gy = 1 - fy;
-  const topU = uv[a]! * gx + uv[b]! * fx;
-  const botU = uv[c]! * gx + uv[e]! * fx;
-  const topV = uv[a + 1]! * gx + uv[b + 1]! * fx;
-  const botV = uv[c + 1]! * gx + uv[e + 1]! * fx;
+  let su = (uv[a]! * gx + uv[b]! * fx) * gy + (uv[c]! * gx + uv[e]! * fx) * fy;
+  let sv = (uv[a + 1]! * gx + uv[b + 1]! * fx) * gy + (uv[c + 1]! * gx + uv[e + 1]! * fx) * fy;
+  const nb = field.uvB;
+  const f = field.f ?? 0;
+  if (nb && f > 0) {
+    // encodages linéaires : mélanger les octets revient à mélanger les m/s
+    const bu = (nb[a]! * gx + nb[b]! * fx) * gy + (nb[c]! * gx + nb[e]! * fx) * fy;
+    const bv = (nb[a + 1]! * gx + nb[b + 1]! * fx) * gy + (nb[c + 1]! * gx + nb[e + 1]! * fx) * fy;
+    su += (bu - su) * f;
+    sv += (bv - sv) * f;
+  }
   const encU = field.encU;
   const encV = field.encV;
-  out.u = encU.min + (encU.max - encU.min) * ((topU * gy + botU * fy) / 255);
-  out.v = encV.min + (encV.max - encV.min) * ((topV * gy + botV * fy) / 255);
+  out.u = encU.min + (encU.max - encU.min) * (su / 255);
+  out.v = encV.min + (encV.max - encV.min) * (sv / 255);
 }
 
 const tmp = new THREE.Vector3();

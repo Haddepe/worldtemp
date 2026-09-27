@@ -3,9 +3,7 @@
  * projetée à chaque rendu. Entrée souris (hover) ou tap (pin) ; même code de rendu.
  */
 import * as THREE from "three";
-import type { Encoding } from "../data/encoding";
-import type { Grid } from "../data/manifest";
-import { sampleValue } from "../data/sampling";
+import { sampleSource, type ValueSource } from "../data/sampling";
 import type { LayerDef } from "../layers/registry";
 import { projectToScreen } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
@@ -20,11 +18,9 @@ export interface Reading {
   name?: string;
 }
 
-export interface TooltipData {
+/** Couche affichée à l'instant du curseur (spec lot E §6.2). */
+export interface TooltipData extends ValueSource {
   def: LayerDef;
-  pixels: Uint8ClampedArray;
-  grid: Pick<Grid, "width" | "height">;
-  encoding: Encoding;
 }
 
 export type TapInput = { type: "down" | "move" | "up" | "cancel"; id: number; x: number; y: number; t: number };
@@ -154,7 +150,7 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
   const refreshText = () => {
     if (!reading) return;
     const values: string[] = [];
-    if (data) values.push(formatReading(data.def, sampleValue(data.pixels, data.grid, data.encoding, reading.lon, reading.lat)));
+    if (data) values.push(formatReading(data.def, sampleSource(data, reading.lon, reading.lat)));
     if (wind) {
       sampleUV(wind, reading.lon, reading.lat, windSample);
       values.push(formatWind(windSample.u, windSample.v));
@@ -174,7 +170,8 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     },
     setData(d) {
       // ignore un tampon incohérent : sinon noUncheckedIndexedAccess dans sampleValue retombe silencieusement sur min
-      data = d && d.pixels.length === d.grid.width * d.grid.height * 4 ? d : null;
+      const n = d ? d.grid.width * d.grid.height : 0;
+      data = d && d.a.length === n && (d.b === null || d.b.length === n) ? d : null;
       refreshText();
     },
     setWind(f) {

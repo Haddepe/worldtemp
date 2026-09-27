@@ -6,7 +6,9 @@ uniform float uHasSat;
 uniform sampler2D uMap;          // R ombrage, G terre, B frontière : données (NoColorSpace)
 uniform vec4 uMapRect;
 uniform float uHasMap;           // 0 = océan connu ou tuile pas encore arrivée
-uniform sampler2D uLayer;        // PNG 8 bits de la couche active, NoColorSpace
+uniform sampler2D uLayerA;       // échéance A de la couche active (R8, NoColorSpace)
+uniform sampler2D uLayerB;       // échéance B (spec lot E §6.1) ; = A quand uMix = 0
+uniform float uMix;              // mélange de A vers B ; 0 = A seule, seconde série de lectures sautée
 uniform vec2 uGridSize;          // (1440, 721) depuis le manifeste grid
 uniform sampler2D uLut;          // 256×1 RGBA, sRGB décodée par le GPU ; alpha = transparence de la couche
 uniform float uHasLayer;         // 1 = une couche est active
@@ -77,7 +79,10 @@ void main() {
 
   vec3 color;
   if (uHasLayer > 0.5) {
-    float t = catmullRom(uLayer, hm, uGridSize).r;
+    // Fondu entre échéances (spec lot E §6.1) : octets mélangés avant la LUT, palette et isobares justes.
+    // Branche sur uniform (cohérente pour tout le draw) : à l'arrêt sur une échéance, coût inchangé.
+    float t = catmullRom(uLayerA, hm, uGridSize).r;
+    if (uMix > 0.0) t = mix(t, catmullRom(uLayerB, hm, uGridSize).r, uMix);
     vec4 heat = texture2D(uLut, vec2(t, 0.5));
     vec3 layer = heat.rgb * mix(1.0, tone, land);           // relief conservé sur la couche
     layer *= 0.85 + 0.15 * lambert;

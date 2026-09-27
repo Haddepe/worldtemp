@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decode, type Encoding } from "../src/data/encoding";
-import { heatmapUv, sampleValue } from "../src/data/sampling";
+import { heatmapUv, sampleSource, sampleValue } from "../src/data/sampling";
 
 const grid = { width: 1440, height: 721 };
 const EPS = 1e-12;
@@ -72,5 +72,35 @@ describe("sampleValue — spec navigation §5 généralisée (spec couches §11)
     // milieu de 0 et 51 → octet 25,5 → 50·(25,5/255)² = 0,5 mm/h
     expect(sampleValue(px, G, SQRT, -135, 90)).toBeCloseTo(50 * (25.5 / 255) ** 2, 9);
     expect(sampleValue(px, G, SQRT, -90, 0)).toBeCloseTo(50, 9);
+  });
+});
+
+describe("canal R seul et interpolation temporelle (spec lot E §6.2)", () => {
+  const W = 4;
+  const H = 3;
+  const grid = { width: W, height: H };
+  const LIN = { bits: 8 as const, min: 0, max: 255, scale: "linear" as const };
+  const SQ = { bits: 8 as const, min: 0, max: 50, scale: "sqrt" as const };
+  const red = (v: (i: number) => number) => Uint8Array.from({ length: W * H }, (_, i) => v(i));
+
+  it("stride 1 lit le même champ que le RGBA", () => {
+    const r = red((i) => (i * 37) % 256);
+    const px = new Uint8ClampedArray(W * H * 4);
+    r.forEach((v, i) => (px[i * 4] = v));
+    for (const [lon, lat] of [[-180, 90], [-100, 30], [45, -60]] as const) {
+      expect(sampleValue(r, grid, LIN, lon, lat, 1)).toBeCloseTo(sampleValue(px, grid, LIN, lon, lat), 9);
+    }
+  });
+  it("sampleSource : b nul ou f = 0 → A seule", () => {
+    const a = red(() => 100);
+    expect(sampleSource({ a, b: null, f: 0.5, grid, encoding: LIN }, 0, 0)).toBeCloseTo(100, 9);
+    expect(sampleSource({ a, b: red(() => 200), f: 0, grid, encoding: LIN }, 0, 0)).toBeCloseTo(100, 9);
+  });
+  it("sampleSource : chaque échéance décodée, puis mélange linéaire", () => {
+    const a = red(() => 0);
+    const b = red(() => 255);
+    expect(sampleSource({ a, b, f: 0.25, grid, encoding: LIN }, 0, 0)).toBeCloseTo(63.75, 9);
+    // en racine, on mélange les valeurs physiques (0 et 50), pas les octets
+    expect(sampleSource({ a, b, f: 0.5, grid, encoding: SQ }, 0, 0)).toBeCloseTo(25, 9);
   });
 });

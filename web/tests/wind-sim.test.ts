@@ -323,3 +323,21 @@ describe("WindSim.step — respawn", () => {
     expect(0.2 * 0.2 + 0.2 * 0.2).toBeLessThan(MIN_SPEED * MIN_SPEED);
   });
 });
+
+describe("sampleUV — deux échéances (spec lot E §6.3)", () => {
+  const grid = { width: 4, height: 3 };
+  const enc = { bits: 8 as const, min: -60, max: 60, scale: "linear" as const };
+  const uvOf = (u: number, v: number) => Uint8Array.from({ length: 24 }, (_, i) => (i % 2 === 0 ? u : v));
+  it("mélange linéaire des composantes selon f ; f absent ou uvB nul = champ A", () => {
+    const out = { u: 0, v: 0 };
+    const field = { uv: uvOf(0, 255), uvB: uvOf(255, 0), f: 0.5, grid, encU: enc, encV: enc };
+    sampleUV(field, 10, 20, out);
+    expect(out.u).toBeCloseTo(0, 9);
+    expect(out.v).toBeCloseTo(0, 9);
+    sampleUV({ ...field, f: 0.25 }, 10, 20, out);
+    expect(out.u).toBeCloseTo(-30, 9);
+    sampleUV({ uv: uvOf(0, 255), grid, encU: enc, encV: enc }, 10, 20, out);
+    expect(out.u).toBeCloseTo(-60, 9);
+    expect(out.v).toBeCloseTo(60, 9);
+  });
+});

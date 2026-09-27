@@ -70,9 +70,7 @@ const SET_WITH_COUNTRY = buildLabelSet(
 );
 
 function temp(byte: number): TooltipData {
-  const pixels = new Uint8ClampedArray(2 * 2 * 4);
-  for (let i = 0; i < pixels.length; i += 4) pixels[i] = byte;
-  return { def: layerDef("temp")!, pixels, grid: { width: 2, height: 2 }, encoding: { bits: 8, min: -50, max: 50, scale: "linear" } };
+  return { def: layerDef("temp")!, a: new Uint8Array(4).fill(byte), b: null, f: 0, grid: { width: 2, height: 2 }, encoding: { bits: 8, min: -50, max: 50, scale: "linear" } };
 }
 
 describe("LabelsController (spec repères §4)", () => {

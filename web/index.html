@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>GlobeLayers — Live 3D Weather Globe</title>
-    <meta name="description" content="Interactive 3D weather globe: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data updated hourly." />
+    <meta name="description" content="Interactive 3D weather globe with a 48-hour forecast: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data." />
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#000000" />
     <link rel="canonical" href="https://globelayers.com/" />
@@ -16,14 +16,14 @@
     <meta property="og:locale" content="en_US" />
     <meta property="og:url" content="https://globelayers.com/" />
     <meta property="og:title" content="GlobeLayers — Live 3D Weather Globe" />
-    <meta property="og:description" content="Explore today's weather on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta property="og:description" content="Explore the weather and the next 48 hours on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
     <meta property="og:image" content="https://globelayers.com/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="GlobeLayers — Live 3D Weather Globe" />
-    <meta name="twitter:description" content="Explore today's weather on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta name="twitter:description" content="Explore the weather and the next 48 hours on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
     <meta name="twitter:image" content="https://globelayers.com/og.jpg" />
     <meta name="twitter:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
     <script type="application/ld+json">
@@ -32,7 +32,7 @@
         "@type": "WebApplication",
         "name": "GlobeLayers",
         "url": "https://globelayers.com/",
-        "description": "Interactive 3D weather globe: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data updated hourly.",
+        "description": "Interactive 3D weather globe with a 48-hour forecast: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data.",
         "applicationCategory": "WeatherApplication",
         "operatingSystem": "Any",
         "browserRequirements": "Requires WebGL",
@@ -53,7 +53,7 @@
         <button id="search-open" type="button" aria-label="Search for a city" aria-expanded="false" aria-controls="search">🔍</button>
         <button id="locate" type="button" aria-label="Go to my location">📍</button>
         <button id="about-open" type="button" aria-label="About GlobeLayers" aria-haspopup="dialog">?</button>
-        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls" aria-label="Collapse or expand panels">▾</button>
+        <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls timeline" aria-label="Collapse or expand panels">▾</button>
       </header>
       <div id="search" class="panel" hidden>
         <input id="search-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="City name" placeholder="Search a city" autocomplete="off" spellcheck="false" />
@@ -68,6 +68,12 @@
         <button id="labels-toggle" type="button" role="switch" aria-checked="false">Labels</button>
         <button id="rivers-toggle" type="button" role="switch" aria-checked="false">Rivers</button>
       </aside>
+      <div id="timeline" class="panel" role="group" aria-label="Forecast time" hidden>
+        <button id="timeline-play" type="button" aria-label="Play forecast">▶</button>
+        <input id="timeline-range" type="range" min="0" max="48" step="1" value="0" aria-label="Forecast time" />
+        <span id="timeline-label" aria-hidden="true"></span>
+        <button id="timeline-now" type="button" aria-label="Back to now" hidden>Now</button>
+      </div>
       <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · GeoNames · NOAA GFS · GEFS-Aerosols</p>
       <div id="ad-slot" hidden></div>
     </div>
@@ -87,9 +93,10 @@
           <li><strong>PM2.5</strong> and <strong>Dust</strong> — fine particles and desert dust near the surface, in µg/m³.</li>
           <li><strong>Labels</strong> and <strong>Rivers</strong> — cities with the value of the active layer, countries, and major rivers.</li>
           <li><strong>Search</strong> and <strong>My location</strong> — find any town of more than 1,000 inhabitants, or fly to where you are.</li>
+          <li><strong>Timeline</strong> — the forecast for the next 48 hours: drag the slider or press play.</li>
         </ul>
         <h2>Data &amp; freshness</h2>
-        <p>Weather layers come from the NOAA GFS model at 0.25° resolution and are refreshed every hour; air quality comes from NOAA GEFS-Aerosols, refreshed every 3 hours. The globe shows the forecast valid for the current hour, taken from the latest available model run; the banner always shows the run and valid time.</p>
+        <p>Weather layers come from the NOAA GFS model at 0.25° resolution; air quality comes from NOAA GEFS-Aerosols. Four times a day, each new model run brings a 48-hour forecast in 3-hour steps, and the globe blends smoothly between steps. The banner shows the model run; the timeline shows the time you are looking at.</p>
         <h2>Sources &amp; credits</h2>
         <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth · GeoNames (CC BY 4.0).</p>
         <h2>Privacy</h2>
