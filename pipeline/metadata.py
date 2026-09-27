@@ -1,4 +1,4 @@
-"""Manifeste `layers/latest.json` v2 — contrat avec le globe (spec couches §7). Pur."""
+"""Manifeste `layers/forecast.json` v3 — contrat avec le globe (spec lot E §4). Pur."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import numpy as np
 
 from pipeline import config
 from pipeline.layers import LAYERS, LayerSpec
-from pipeline.run_selection import Candidate
 from pipeline.sources import SourceSpec
 
 GRID = {
@@ -22,33 +21,6 @@ GRID = {
 
 def iso_utc(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def layer_entry(spec: LayerSpec, source: SourceSpec, c: Candidate, converted: np.ndarray, generated_at: datetime) -> dict:
-    e = spec.encoding
-    return {
-        "model": source.model,
-        "variable": spec.variable,
-        "unit": spec.unit,
-        "run": iso_utc(c.run),
-        "forecast_hour": c.forecast_hour,
-        "valid_time_utc": iso_utc(c.valid_time),
-        "generated_at": iso_utc(generated_at),
-        "texture": f"{spec.id}.png",
-        "encoding": {"bits": 8, "min": e.min, "max": e.max, "scale": e.scale},
-        "stats": {"min": round(float(converted.min()), 1), "max": round(float(converted.max()), 1)},
-    }
-
-
-def build_manifest(entries: Mapping[str, dict], generated_at: datetime) -> dict:
-    """Couches dans l'ordre du registre ; les ids inconnus sont ignorés."""
-    ordered = {s.id: entries[s.id] for s in LAYERS if s.id in entries}
-    return {
-        "schema_version": config.SCHEMA_VERSION,
-        "generated_at": iso_utc(generated_at),
-        "grid": dict(GRID),
-        "layers": ordered,
-    }
 
 
 def run_dir(run: datetime) -> str:

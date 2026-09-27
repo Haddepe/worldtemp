@@ -74,31 +74,6 @@ def _client(cfg: R2Config):
 ClientFactory = Callable[[R2Config], object]
 
 
-def read_current(cfg: R2Config, key: str = config.MANIFEST_KEY, client_factory: ClientFactory = _client) -> dict | None:
-    """Manifeste actuellement publié, ou None s'il est absent ou illisible.
-    L'idempotence et le report chem sont un confort, pas une garde : toute erreur → None."""
-    try:
-        obj = client_factory(cfg).get_object(Bucket=cfg.bucket, Key=key)
-        return json.loads(obj["Body"].read())
-    except Exception as exc:  # NoSuchKey, réseau, droits, JSON cassé
-        log.warning("%s non lu sur R2 (%s) : on continue", key, exc)
-        return None
-
-
-def upload_r2(cfg: R2Config, objects: Sequence[Object], client_factory: ClientFactory = _client) -> None:
-    """Dans l'ordre reçu ; main.py met le manifeste en dernier (spec §8) : la seule
-    incohérence possible est « PNG neuf + manifeste ancien », invisible côté front."""
-    client = client_factory(cfg)
-    for o in objects:
-        try:
-            client.put_object(
-                Bucket=cfg.bucket, Key=o.key, Body=o.body,
-                ContentType=o.content_type, CacheControl=o.cache_control,
-            )
-        except Exception as exc:
-            raise PublishError(f"{o.key} : {exc}") from exc
-
-
 RUN_DIR = re.compile(r"^\d{8}T\d{2}Z$")
 
 

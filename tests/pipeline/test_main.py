@@ -1,19 +1,22 @@
+import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
-from pipeline import nomads, texture
+from pipeline import config, nomads, texture
 from pipeline.grib_adapter import DecodeError, Field
-from pipeline.layers import LAYERS, by_source, get
-from pipeline.main import EXIT_DATA, EXIT_OK, EXIT_PUBLISH, EXIT_SOURCE, run
-from pipeline.publish import PublishError
+from pipeline.layers import LAYERS, get
+from pipeline.main import EXIT_DATA, EXIT_OK, EXIT_PUBLISH, EXIT_SOURCE, main, run
+from pipeline.publish import RUN_DIR, PublishError
 
-NOW = datetime(2026, 9, 12, 14, 40, tzinfo=timezone.utc)
-GFS_RUN, GFS_FH = "2026-09-12T06:00:00Z", 8      # cible 14:00, délai 3 h 30 → run 06z
-CHEM_RUN, CHEM_FH = "2026-09-12T06:00:00Z", 6    # cible 12:00 (pas 3 h), délai 5 h → run 06z
+NOW = datetime(2026, 9, 12, 14, 40, tzinfo=timezone.utc)  # GFS : 11:10 → run 06z ; chem : 09:40 → run 06z
+HOURS = (3, 6)                                            # frise courte : les tests restent rapides
+R06, R00 = "2026-09-12T06:00:00Z", "2026-09-12T00:00:00Z"
+D06, D00 = "20260912T06Z", "20260912T00Z"
 GFS_IDS = ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v"]
 CHEM_IDS = ["pm25", "dust"]
 
@@ -30,15 +33,48 @@ def good_decode(data, specs):
     return {s.id: field(RAW[s.id]) for s in specs}
 
 
+class FakeStore:
+    """Store en mémoire, même contrat que publish.R2Store."""
+
+    def __init__(self, fail_on: str | None = None):
+        self.objects: dict[str, bytes] = {}
+        self.cache: dict[str, str] = {}
+        self.puts: list[list[str]] = []
+        self.deleted: list[str] = []
+        self.fail_on = fail_on
+
+    def get_json(self, key):
+        body = self.objects.get(key)
+        return json.loads(body) if body is not None else None
+
+    def put(self, objects):
+        self.puts.append([o.key for o in objects])
+        for o in objects:
+            if o.key == self.fail_on:
+                raise PublishError(f"{o.key} : boom")
+            self.objects[o.key] = o.body
+            self.cache[o.key] = o.cache_control
+
+    def list_run_dirs(self):
+        return sorted({k.split("/")[1] for k in self.objects if k.count("/") == 2 and RUN_DIR.match(k.split("/")[1])})
+
+    def delete_run_dirs(self, names):
+        doomed = [k for k in self.objects if k.count("/") == 2 and k.split("/")[1] in names]
+        for k in doomed:
+            del self.objects[k]
+        self.deleted.extend(names)
+        return len(doomed)
+
+
 class Recorder:
     def __init__(self):
         self.downloads: list[str] = []
-        self.uploads: list[list] = []
         self.sleeps: list[float] = []
 
 
-def make_run(tmp_path: Path, *, download=None, decode=None, upload=None, current=None, upload_none=False):
+def make_run(tmp_path: Path, *, download=None, decode=None, store=None, hours=HOURS):
     rec = Recorder()
+    store = store if store is not None else FakeStore()
 
     def _download(url):
         rec.downloads.append(url)
@@ -47,69 +83,89 @@ def make_run(tmp_path: Path, *, download=None, decode=None, upload=None, current
     def _decode(data, specs):
         return good_decode(data, specs) if decode is None else decode(data, specs)
 
-    def _upload(objects):
-        rec.uploads.append(list(objects))
-        if upload is not None:
-            upload(objects)
-
-    code = run(
-        NOW, download=_download, decode=_decode, upload=None if upload_none else _upload,
-        read_current=lambda: current, out_dir=tmp_path, sleep=rec.sleeps.append,
-    )
-    return code, rec
+    code = run(NOW, download=_download, decode=_decode, store=store, out_dir=tmp_path, hours=hours, sleep=rec.sleeps.append)
+    return code, rec, store
 
 
-def manifest_of(rec):
-    keys = [o.key for o in rec.uploads[-1]]
-    assert keys[-1] == "layers/latest.json"
-    return json.loads(rec.uploads[-1][-1].body)
+def not_found_when(*parts):
+    """NOMADS répond 404 aux URL qui contiennent toutes les `parts`."""
+    def download(url, n):
+        if all(p in url for p in parts):
+            raise nomads.NotFound(url)
+        return b"GRIB"
+    return download
 
 
-def current_manifest(gfs=(GFS_RUN, GFS_FH), chem=(CHEM_RUN, CHEM_FH), with_chem=True):
-    layers = {}
-    for lid in GFS_IDS:
-        layers[lid] = {"run": gfs[0], "forecast_hour": gfs[1], "texture": f"{lid}.png", "generated_at": "2026-09-12T14:12:40Z",
-                       "valid_time_utc": "2026-09-12T14:00:00Z", "model": "gfs_0p25", "variable": get(lid).variable, "unit": get(lid).unit,
-                       "encoding": {"bits": 8, "min": get(lid).encoding.min, "max": get(lid).encoding.max, "scale": get(lid).encoding.scale},
-                       "stats": {"min": 0.0, "max": 1.0}}
+def manifest_of(store):
+    return json.loads(store.objects[config.FORECAST_KEY])
+
+
+def published(gfs_run=R06, chem_run=R06, hours=HOURS, with_chem=True) -> dict:
+    """Manifeste v3 déjà publié, frises complètes."""
+    def entry(lid, model, run_iso):
+        d = f"{run_iso[:4]}{run_iso[5:7]}{run_iso[8:10]}T{run_iso[11:13]}Z"
+        enc = get(lid).encoding
+        return {"model": model, "variable": get(lid).variable, "unit": get(lid).unit, "run": run_iso,
+                "generated_at": "2026-09-12T12:12:00Z",
+                "encoding": {"bits": 8, "min": enc.min, "max": enc.max, "scale": enc.scale},
+                "frames": [{"forecast_hour": fh, "valid_time_utc": "2026-09-12T12:00:00Z",
+                            "texture": f"{d}/{lid}_f{fh:03d}.png", "stats": {"min": 0.0, "max": 1.0}} for fh in hours]}
+    layers = {lid: entry(lid, "gfs_0p25", gfs_run) for lid in GFS_IDS}
     if with_chem:
-        for lid in CHEM_IDS:
-            layers[lid] = {"run": chem[0], "forecast_hour": chem[1], "texture": f"{lid}.png", "generated_at": "2026-09-12T12:12:07Z",
-                           "valid_time_utc": "2026-09-12T12:00:00Z", "model": "gefs_chem_0p25", "variable": get(lid).variable, "unit": get(lid).unit,
-                           "encoding": {"bits": 8, "min": 0, "max": get(lid).encoding.max, "scale": "sqrt"}, "stats": {"min": 0.0, "max": 9.0}}
-    return {"schema_version": 2, "generated_at": "2026-09-12T14:12:40Z", "grid": {}, "layers": layers}
+        layers.update({lid: entry(lid, "gefs_chem_0p25", chem_run) for lid in CHEM_IDS})
+    return {"schema_version": 3, "generated_at": "2026-09-12T12:12:00Z", "grid": {}, "layers": layers}
+
+
+def store_with(manifest=None, extra=()) -> FakeStore:
+    s = FakeStore()
+    if manifest is not None:
+        s.objects[config.FORECAST_KEY] = json.dumps(manifest).encode()
+    for k in extra:
+        s.objects[k] = b"x"
+    return s
 
 
 # --- chemin nominal -----------------------------------------------------------
 
-def test_happy_path_publishes_seven_layers_and_manifest_last(tmp_path):
-    code, rec = make_run(tmp_path)
+def test_happy_path_publishes_every_frame_then_manifest_last(tmp_path):
+    code, rec, store = make_run(tmp_path)
     assert code == EXIT_OK
-    assert len(rec.downloads) == 2
-    assert "filter_gfs_0p25_1hr" in rec.downloads[0] and "f008" in rec.downloads[0]
-    assert "filter_gefs_chem_0p25" in rec.downloads[1] and "f006" in rec.downloads[1]
-    keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + [f"layers/{i}.png" for i in CHEM_IDS] + ["layers/latest.json"]
-    m = manifest_of(rec)
-    assert m["schema_version"] == 2 and list(m["layers"]) == [s.id for s in LAYERS]
-    assert m["layers"]["temp"]["run"] == GFS_RUN and m["layers"]["temp"]["forecast_hour"] == GFS_FH
-    assert m["layers"]["pm25"]["run"] == CHEM_RUN and m["layers"]["pm25"]["forecast_hour"] == CHEM_FH
-    assert m["layers"]["temp"]["stats"] == {"min": 15.0, "max": 15.0}
-    assert m["layers"]["rain"]["stats"] == {"min": 3.6, "max": 3.6}
-    assert m["layers"]["wind_u"]["stats"] == {"min": -3.5, "max": -3.5}
-    assert m["layers"]["wind_v"]["encoding"] == {"bits": 8, "min": -60, "max": 60, "scale": "linear"}
-    for o in rec.uploads[0]:
-        assert (tmp_path / o.key).read_bytes() == o.body
-    assert not (tmp_path / "gfs").exists()
+    assert len(rec.downloads) == 4
+    assert "filter_gfs_0p25_1hr" in rec.downloads[0] and "f003" in rec.downloads[0] and "f006" in rec.downloads[1]
+    assert "filter_gefs_chem_0p25" in rec.downloads[2] and "f003" in rec.downloads[2] and "f006" in rec.downloads[3]
+    assert store.puts[0] == [f"layers/{D06}/{i}_f003.png" for i in GFS_IDS] + [f"layers/{D06}/gfs.json"]
+    assert store.puts[-1] == [config.FORECAST_KEY]
+    assert all(store.cache[k] == config.CACHE_IMMUTABLE for k in store.objects if k.endswith(".png"))
+    assert store.cache[config.FORECAST_KEY] == config.CACHE_CONTROL
+    m = manifest_of(store)
+    assert m["schema_version"] == 3 and list(m["layers"]) == [s.id for s in LAYERS]
+    temp = m["layers"]["temp"]
+    assert temp["run"] == R06 and temp["model"] == "gfs_0p25" and temp["generated_at"] == "2026-09-12T14:40:00Z"
+    assert temp["encoding"] == {"bits": 8, "min": -90, "max": 60, "scale": "linear"}
+    assert temp["frames"] == [
+        {"forecast_hour": 3, "valid_time_utc": "2026-09-12T09:00:00Z", "texture": f"{D06}/temp_f003.png", "stats": {"min": 15.0, "max": 15.0}},
+        {"forecast_hour": 6, "valid_time_utc": "2026-09-12T12:00:00Z", "texture": f"{D06}/temp_f006.png", "stats": {"min": 15.0, "max": 15.0}},
+    ]
+    assert m["layers"]["rain"]["frames"][0]["stats"] == {"min": 3.6, "max": 3.6}
+    assert m["layers"]["pm25"]["run"] == R06 and m["layers"]["pm25"]["encoding"]["scale"] == "sqrt"
+    assert (tmp_path / config.FORECAST_KEY).read_bytes() == store.objects[config.FORECAST_KEY]
 
 
-def test_no_legacy_object_is_ever_published(tmp_path):
-    code, rec = make_run(tmp_path)
-    assert code == EXIT_OK
-    assert all(not o.key.startswith("gfs/") for o in rec.uploads[0])
+def test_progress_file_records_stats_of_each_published_frame(tmp_path):
+    _, _, store = make_run(tmp_path)
+    p = json.loads(store.objects[f"layers/{D06}/gfs.json"])
+    assert p["run"] == R06 and p["source"] == "gfs"
+    assert sorted(p["stats"]) == ["3", "6"] and p["stats"]["6"]["temp"] == {"min": 15.0, "max": 15.0}
+    assert sorted(json.loads(store.objects[f"layers/{D06}/gefs_chem.json"])["stats"]["3"]) == ["dust", "pm25"]
 
 
-def test_run_applies_longitude_roll_on_each_layer(tmp_path):
+def test_never_writes_legacy_keys(tmp_path):
+    _, _, store = make_run(tmp_path)
+    assert "layers/latest.json" not in store.objects
+    assert not any(k == f"layers/{i}.png" for i in GFS_IDS + CHEM_IDS for k in store.objects)
+
+
+def test_each_frame_applies_longitude_roll(tmp_path):
     ramp_row = 273.15 + np.arange(1440, dtype=np.float32) / 1440 * 50
     values = np.tile(ramp_row, (721, 1)).astype(np.float32)
 
@@ -119,53 +175,71 @@ def test_run_applies_longitude_roll_on_each_layer(tmp_path):
             out["temp"] = Field(values, np.linspace(90, -90, 721), np.arange(0, 360, 0.25))
         return out
 
-    code, rec = make_run(tmp_path, decode=decode)
+    code, _, store = make_run(tmp_path, decode=decode)
     assert code == EXIT_OK
-    pixels = np.array(Image.open(tmp_path / "layers/temp.png"))
+    pixels = np.array(Image.open(io.BytesIO(store.objects[f"layers/{D06}/temp_f003.png"])))
     enc = get("temp").encoding
-    # Le pipeline convertit en float64 avant de soustraire 273.15 (layer_pixels) ;
-    # on reproduit ce chemin ici pour ne pas comparer à un calcul float32 (NEP 50).
+    # Même chemin float64 que layer_pixels (NEP 50), voir l'ancien test de roulis.
     assert pixels[0, 720] == texture.quantize(ramp_row[0:1].astype(np.float64) - 273.15, enc)[0]
     assert pixels[0, 0] == texture.quantize(ramp_row[720:721].astype(np.float64) - 273.15, enc)[0]
 
 
-# --- source primaire : comportement inchangé -----------------------------------
+# --- reprise et bascule -------------------------------------------------------
 
-def test_gfs_404_moves_to_next_candidate(tmp_path):
-    def download(url, n):
-        if n == 1:
-            raise nomads.NotFound(url)
-        return b"GRIB"
+def test_resume_downloads_only_missing_frames(tmp_path):
+    store = FakeStore()
+    code, _, _ = make_run(tmp_path, store=store, download=not_found_when("filter_gfs", "t06z", "f006"))
+    assert code == EXIT_OK and manifest_of(store)["layers"]["temp"]["run"] == R00  # 1er déploiement : 06z incomplet → 00z
+    assert f"layers/{D06}/temp_f003.png" in store.objects                          # f003 de 06z attend la reprise
+    code, rec, _ = make_run(tmp_path, store=store)
+    gfs = [u for u in rec.downloads if "filter_gfs" in u]
+    assert code == EXIT_OK and len(gfs) == 1 and "t06z" in gfs[0] and "f006" in gfs[0]
+    assert manifest_of(store)["layers"]["temp"]["run"] == R06
 
-    code, rec = make_run(tmp_path, download=download)
+
+def test_incomplete_new_run_keeps_published_run(tmp_path):
+    store = store_with(published(gfs_run=R00))
+    code, rec, _ = make_run(tmp_path, store=store, download=not_found_when("filter_gfs", "t06z", "f003"))
     assert code == EXIT_OK
-    assert "f008" in rec.downloads[0] and "f014" in rec.downloads[1] and "gefs_chem" in rec.downloads[2]
-    assert rec.sleeps == []
+    assert len(rec.downloads) == 1 and "t06z" in rec.downloads[0]  # pas de repli sur un run plus ancien
+    assert all(config.FORECAST_KEY not in put for put in store.puts)  # chem déjà à jour : rien de neuf
 
 
-def test_gfs_transient_error_retries_once_after_delay_then_next(tmp_path):
+def test_everything_already_published_is_noop(tmp_path):
+    store = store_with(published())
+    code, rec, _ = make_run(tmp_path, store=store)
+    assert code == EXIT_OK and rec.downloads == [] and store.puts == []
+
+
+def test_no_complete_run_anywhere_is_exit_2_and_chem_not_tried(tmp_path):
+    code, rec, store = make_run(tmp_path, download=not_found_when("filter_gfs"))
+    assert code == EXIT_SOURCE
+    assert len(rec.downloads) == 4 and all("filter_gfs" in u and "f003" in u for u in rec.downloads)
+    assert store.puts == []
+
+
+def test_transient_errors_twice_count_as_absent(tmp_path):
     def download(url, n):
         if n <= 2:
             raise nomads.TransientError("503")
         return b"GRIB"
 
-    code, rec = make_run(tmp_path, download=download)
-    assert code == EXIT_OK
-    assert rec.downloads[0] == rec.downloads[1] and "f014" in rec.downloads[2]
-    assert rec.sleeps == [30]
+    code, rec, store = make_run(tmp_path, download=download)
+    assert code == EXIT_OK and rec.sleeps == [30]
+    assert rec.downloads[0] == rec.downloads[1] and "t06z" in rec.downloads[0]
+    assert manifest_of(store)["layers"]["temp"]["run"] == R00  # 06z abandonné pour ce passage, 00z complet
 
 
-def test_gfs_all_candidates_exhausted_is_exit_2_and_chem_not_even_tried(tmp_path):
-    def download(url, n):
-        raise nomads.NotFound(url)
-
-    code, rec = make_run(tmp_path, download=download)
-    assert code == EXIT_SOURCE
-    assert len(rec.downloads) == 4 and all("filter_gfs" in u for u in rec.downloads)
-    assert rec.uploads == [] and not (tmp_path / "layers").exists()
+def test_v2_manifest_is_ignored(tmp_path):
+    store = FakeStore()
+    store.objects[config.FORECAST_KEY] = json.dumps({"schema_version": 2, "layers": {}}).encode()
+    code, rec, _ = make_run(tmp_path, store=store)
+    assert code == EXIT_OK and len(rec.downloads) == 4
 
 
-def test_gfs_invalid_field_is_exit_3_without_upload(tmp_path):
+# --- données et publication en échec --------------------------------------------
+
+def test_invalid_field_is_exit_3_and_nothing_published(tmp_path):
     def decode(data, specs):
         out = good_decode(data, specs)
         if "clouds" in out:
@@ -174,110 +248,72 @@ def test_gfs_invalid_field_is_exit_3_without_upload(tmp_path):
             out["clouds"] = Field(v, np.linspace(90, -90, 721), np.arange(0, 360, 0.25))
         return out
 
-    code, rec = make_run(tmp_path, decode=decode)
-    assert code == EXIT_DATA
-    assert rec.uploads == [] and not (tmp_path / "layers").exists()
+    code, rec, store = make_run(tmp_path, decode=decode)
+    assert code == EXIT_DATA and store.puts == [] and len(rec.downloads) == 1
 
 
-def test_gfs_decode_error_is_exit_3(tmp_path):
+def test_decode_error_is_exit_3(tmp_path):
     def decode(data, specs):
         raise DecodeError("champs absents du fichier : ['clouds']")
 
-    code, rec = make_run(tmp_path, decode=decode)
-    assert code == EXIT_DATA
-    assert len(rec.downloads) == 1
+    code, rec, _ = make_run(tmp_path, decode=decode)
+    assert code == EXIT_DATA and len(rec.downloads) == 1
 
 
-def test_upload_failure_is_exit_4_but_local_files_exist(tmp_path):
-    def upload(objects):
-        raise PublishError("boom")
+def test_frame_upload_failure_is_exit_4(tmp_path):
+    code, _, store = make_run(tmp_path, store=FakeStore(fail_on=f"layers/{D06}/temp_f003.png"))
+    assert code == EXIT_PUBLISH and config.FORECAST_KEY not in store.objects
 
-    code, rec = make_run(tmp_path, upload=upload)
+
+def test_progress_upload_failure_leaves_frame_to_redo(tmp_path):
+    store = FakeStore(fail_on=f"layers/{D06}/gfs.json")
+    code, _, _ = make_run(tmp_path, store=store)
     assert code == EXIT_PUBLISH
-    assert (tmp_path / "layers/latest.json").exists()
-
-
-# --- source secondaire : tolérance -------------------------------------------
-
-def test_chem_failure_carries_over_previous_entries(tmp_path):
-    def download(url, n):
-        if "gefs_chem" in url:
-            raise nomads.NotFound(url)
-        return b"GRIB"
-
-    # GFS et chem périmés : GFS retéléchargé avec succès, chem retenté puis reporté.
-    cur = current_manifest(gfs=("2026-09-12T00:00:00Z", 14), chem=("2026-09-12T00:00:00Z", 12))
-    code, rec = make_run(tmp_path, download=download, current=cur)
+    assert f"layers/{D06}/temp_f003.png" in store.objects and f"layers/{D06}/gfs.json" not in store.objects
+    store.fail_on = None
+    code, rec, _ = make_run(tmp_path, store=store)
     assert code == EXIT_OK
-    keys = [o.key for o in rec.uploads[0]]
-    assert "layers/pm25.png" not in keys and "layers/dust.png" not in keys
-    m = manifest_of(rec)
-    assert m["layers"]["pm25"] == cur["layers"]["pm25"] and m["layers"]["dust"] == cur["layers"]["dust"]
-    assert m["layers"]["temp"]["run"] == GFS_RUN
-    assert sum("gefs_chem" in u for u in rec.downloads) == 4  # 4 candidats épuisés, puis report
+    assert sum("filter_gfs" in u and "f003" in u for u in rec.downloads) == 1  # la progression ne citait pas f003
 
 
-def test_chem_decode_error_carries_over_too(tmp_path):
+def test_manifest_upload_failure_is_exit_4_with_local_copy(tmp_path):
+    code, _, _ = make_run(tmp_path, store=FakeStore(fail_on=config.FORECAST_KEY))
+    assert code == EXIT_PUBLISH and (tmp_path / config.FORECAST_KEY).exists()
+
+
+# --- source secondaire : tolérance ----------------------------------------------
+
+def test_chem_absent_keeps_published_chem_run(tmp_path):
+    store = store_with(published(gfs_run=R00, chem_run=R00))
+    code, rec, _ = make_run(tmp_path, store=store, download=not_found_when("gefs_chem"))
+    m = manifest_of(store)
+    assert code == EXIT_OK and m["layers"]["temp"]["run"] == R06 and m["layers"]["pm25"]["run"] == R00
+    assert sum("gefs_chem" in u for u in rec.downloads) == 1
+
+
+def test_chem_decode_error_carries_over(tmp_path):
+    before = published(gfs_run=R00, chem_run=R00)
+
     def decode(data, specs):
         if specs and specs[0].source == "gefs_chem":
             raise DecodeError("pm25 : plusieurs messages correspondent")
         return good_decode(data, specs)
 
-    cur = current_manifest(gfs=("2026-09-12T00:00:00Z", 14))
-    code, rec = make_run(tmp_path, decode=decode, current=cur)
-    assert code == EXIT_OK
-    assert manifest_of(rec)["layers"]["dust"] == cur["layers"]["dust"]
+    code, _, store = make_run(tmp_path, store=store_with(before), decode=decode)
+    assert code == EXIT_OK and manifest_of(store)["layers"]["dust"] == before["layers"]["dust"]
 
 
-def test_chem_failure_without_current_manifest_omits_chem_layers(tmp_path):
-    def download(url, n):
-        if "gefs_chem" in url:
-            raise nomads.TransientError("503")
-        return b"GRIB"
-
-    code, rec = make_run(tmp_path, download=download, current=None)
-    assert code == EXIT_OK
-    assert list(manifest_of(rec)["layers"]) == GFS_IDS
-    assert rec.sleeps == [30] * 4  # un retry par candidat chem
+def test_chem_failure_without_manifest_omits_chem_layers(tmp_path):
+    code, rec, store = make_run(tmp_path, download=not_found_when("gefs_chem"))
+    assert code == EXIT_OK and list(manifest_of(store)["layers"]) == GFS_IDS
+    assert sum("gefs_chem" in u for u in rec.downloads) == 4  # chaque run candidat essayé, rien à reporter
 
 
-# --- idempotence par source ----------------------------------------------------
+# --- CLI ------------------------------------------------------------------------
 
-def test_everything_already_published_is_noop(tmp_path):
-    code, rec = make_run(tmp_path, current=current_manifest())
-    assert code == EXIT_OK
-    assert rec.downloads == [] and rec.uploads == []
-
-
-def test_only_gfs_stale_republishes_gfs_and_reuses_chem_entries(tmp_path):
-    cur = current_manifest(gfs=("2026-09-12T06:00:00Z", 7))
-    code, rec = make_run(tmp_path, current=cur)
-    assert code == EXIT_OK
-    assert len(rec.downloads) == 1 and "filter_gfs" in rec.downloads[0]
-    keys = [o.key for o in rec.uploads[0]]
-    assert keys == [f"layers/{i}.png" for i in GFS_IDS] + ["layers/latest.json"]
-    assert manifest_of(rec)["layers"]["pm25"] == cur["layers"]["pm25"]
-
-
-def test_only_chem_stale_republishes_chem_only(tmp_path):
-    cur = current_manifest(chem=("2026-09-12T00:00:00Z", 12))
-    code, rec = make_run(tmp_path, current=cur)
-    assert code == EXIT_OK
-    assert len(rec.downloads) == 1 and "gefs_chem" in rec.downloads[0]
-    keys = [o.key for o in rec.uploads[0]]
-    assert keys == ["layers/pm25.png", "layers/dust.png", "layers/latest.json"]
-    assert manifest_of(rec)["layers"]["temp"] == cur["layers"]["temp"]
-
-
-def test_partial_current_manifest_is_not_up_to_date(tmp_path):
-    cur = current_manifest()
-    del cur["layers"]["rain"]
-    code, rec = make_run(tmp_path, current=cur)
-    assert code == EXIT_OK
-    assert any("filter_gfs" in u for u in rec.downloads)
-
-
-def test_dry_run_when_upload_is_none(tmp_path):
-    code, rec = make_run(tmp_path, upload_none=True)
-    assert code == EXIT_OK
-    assert (tmp_path / "layers/latest.json").exists() and rec.uploads == []
+def test_max_frames_is_refused_outside_dry_run(monkeypatch):
+    for k in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"):
+        monkeypatch.setenv(k, "x")
+    with pytest.raises(SystemExit) as e:
+        main(["--max-frames", "1"])
+    assert e.value.code == 2
