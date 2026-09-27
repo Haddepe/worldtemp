@@ -241,7 +241,7 @@ Le seuil passe de « échéance valide il y a plus de 6 h » à « **run GFS de 
 - Lecture : **3 h par seconde** (48 h ≈ 16 s), boucle vers maintenant après **1 s** de pause en
   fin de frise ; déplacer le curseur met la lecture en pause ; aucune lecture automatique
   (`prefers-reduced-motion` respecté de fait).
-- Bandeau : affiche l'instant choisi, p. ex. « run 06Z · valid Sat 15:00 · +9 h ».
+- Bandeau : source, run et fraîcheur de la couche affichée (« NOAA GFS 0.25° · run 06:00 UTC · updated 12 min ago ») ; l'instant choisi est dans le libellé de la frise (« Sat 12 18:00 (+3 h) », « Now · Sat 12 16:40 » en live), pour ne pas l'afficher deux fois.
 - Le panneau se replie avec les autres (`#toggle-overlay`).
 
 ### 7.2 Textes
