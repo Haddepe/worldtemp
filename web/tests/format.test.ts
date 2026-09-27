@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { parseManifest } from "../src/data/manifest";
+import { parseForecast } from "../src/data/manifest";
 import { layerDef } from "../src/layers/registry";
-import { formatAgo, formatBanner, formatReading, legendTicks, sourceLabel, formatWind, windDirection, compassPoint } from "../src/ui/format";
-import { MANIFEST } from "./fixtures";
+import {
+  formatAgo, formatBanner, formatOffset, formatReading, formatWhen, legendTicks, sourceLabel, formatWind, timelineLabel,
+  windDirection, compassPoint,
+} from "../src/ui/format";
+import { FORECAST } from "./fixtures";
 
-const M = parseManifest(MANIFEST);
+const M = parseForecast(FORECAST);
 const TEMP = M.layers.temp!;
 const PM = M.layers.pm25!;
-const NOW = Date.parse("2026-09-12T14:24:40Z"); // 12 min après generated_at de temp
+const NOW = Date.parse("2026-09-12T10:24:40Z"); // 12 min après generated_at de temp
 
 describe("formatAgo", () => {
   it("minutes", () => expect(formatAgo(TEMP.generated_at, NOW)).toBe("12 min ago"));
@@ -24,16 +27,29 @@ describe("sourceLabel", () => {
   });
 });
 
-describe("formatBanner — spec couches §11", () => {
-  it("GFS : run, validité UTC et locale, fraîcheur", () => {
-    expect(formatBanner(TEMP, NOW, "Europe/Paris")).toBe(
-      "NOAA GFS 0.25° · run 06:00 UTC · valid 14:00 UTC (16:00 local) · 12 min ago",
-    );
+describe("formatBanner — spec lot E §7.1", () => {
+  it("source, run et fraîcheur de la frise de la couche affichée", () => {
+    expect(formatBanner(TEMP, NOW)).toBe("NOAA GFS 0.25° · run 06:00 UTC · updated 12 min ago");
+    expect(formatBanner(PM, NOW)).toBe("NOAA GEFS-Aerosols 0.25° · run 00:00 UTC · updated 5 h 12 min ago");
   });
-  it("GEFS-chem : libellé de sa source, sa propre échéance", () => {
-    expect(formatBanner(PM, NOW, "UTC")).toBe(
-      "NOAA GEFS-Aerosols 0.25° · run 06:00 UTC · valid 12:00 UTC · 2 h 12 min ago",
-    );
+});
+
+describe("formatWhen / formatOffset / timelineLabel — frise", () => {
+  const T = Date.parse("2026-09-12T15:00:00Z"); // samedi
+  it("jour, date et heure locale", () => {
+    expect(formatWhen(T, "UTC")).toBe("Sat 12 15:00");
+    expect(formatWhen(T, "Europe/Paris")).toBe("Sat 12 17:00");
+    expect(formatWhen(Date.parse("2026-09-14T00:30:00Z"), "UTC")).toBe("Mon 14 00:30");
+  });
+  it("écart à maintenant, en heures arrondies", () => {
+    expect(formatOffset(T, T - 3 * 3_600_000)).toBe("+3 h");
+    expect(formatOffset(T, T + 2 * 3_600_000)).toBe("−2 h");
+    expect(formatOffset(T, T - 29 * 60_000)).toBe("now");
+    expect(formatOffset(T, T - 31 * 60_000)).toBe("+1 h");
+  });
+  it("libellé live et libellé d'un instant choisi", () => {
+    expect(timelineLabel(T, T, true, "UTC")).toBe("Now · Sat 12 15:00");
+    expect(timelineLabel(T + 3 * 3_600_000, T, false, "UTC")).toBe("Sat 12 18:00 (+3 h)");
   });
 });
 

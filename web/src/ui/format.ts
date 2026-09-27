@@ -1,7 +1,7 @@
 import { encode, type Encoding } from "../data/encoding";
-import type { LayerEntry } from "../data/manifest";
 import type { LayerDef } from "../layers/registry";
 import { STRINGS } from "../i18n";
+import { HOUR_MS } from "../time/timeline";
 
 function hhmm(isoUtc: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(
@@ -23,17 +23,30 @@ export function sourceLabel(model: string): string {
   return SOURCE_LABELS[model] ?? model;
 }
 
-/** Bandeau (spec couches §11) : source de la couche active, son run, sa validité, sa fraîcheur. */
-export function formatBanner(
-  entry: LayerEntry,
-  nowMs: number,
-  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
-): string {
-  const run = hhmm(entry.run, "UTC");
-  const validUtc = hhmm(entry.valid_time_utc, "UTC");
-  const validLocal = hhmm(entry.valid_time_utc, timeZone);
-  const local = validLocal === validUtc ? "" : ` (${validLocal} ${STRINGS.banner.local})`;
-  return `${sourceLabel(entry.model)} · run ${run} UTC · ${STRINGS.banner.valid} ${validUtc} UTC${local} · ${formatAgo(entry.generated_at, nowMs)}`;
+/** Bandeau (spec lot E §7.1) : source de la couche affichée, son run et la fraîcheur de sa frise ; l'instant choisi est dans la frise. */
+export function formatBanner(entry: { model: string; run: string; generated_at: string }, nowMs: number): string {
+  return `${sourceLabel(entry.model)} · run ${hhmm(entry.run, "UTC")} UTC · ${STRINGS.banner.updated} ${formatAgo(entry.generated_at, nowMs)}`;
+}
+
+/** Instant de la frise, heure locale du navigateur : « Sat 12 17:00 ». */
+export function formatWhen(t: number, timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone,
+  }).formatToParts(new Date(t));
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("weekday")} ${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+/** Écart à maintenant en heures arrondies : « +3 h », « −2 h », « now » à moins d'une demi-heure. */
+export function formatOffset(t: number, nowMs: number): string {
+  const h = Math.round((t - nowMs) / HOUR_MS);
+  if (h === 0) return STRINGS.timeline.nowShort;
+  return h > 0 ? `+${h} h` : `−${-h} h`;
+}
+
+/** Libellé de la frise : « Now · Sat 12 16:40 » en live, « Sat 12 18:00 (+3 h) » sinon. */
+export function timelineLabel(t: number, nowMs: number, live: boolean, timeZone?: string): string {
+  return live ? `${STRINGS.timeline.now} · ${formatWhen(t, timeZone)}` : `${formatWhen(t, timeZone)} (${formatOffset(t, nowMs)})`;
 }
 
 /** Libellé court d'une graduation : entier si entier, sinon une décimale. */

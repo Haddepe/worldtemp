@@ -20,6 +20,8 @@ describe("référencement — <head> (spec site public §4)", () => {
     const description = metaContent(html, "description")!;
     expect(description.length).toBeGreaterThan(80);
     expect(description.length).toBeLessThanOrEqual(160);
+    expect(description).toContain("48-hour forecast");
+    expect(html).not.toContain("updated hourly");
   });
 
   it("canonical, robots, theme-color", () => {

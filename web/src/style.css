@@ -70,7 +70,8 @@ html, body {
 }
 #toggle-overlay[aria-expanded="false"] { transform: rotate(180deg); }
 #overlay.collapsed #legend,
-#overlay.collapsed #controls { display: none; }
+#overlay.collapsed #controls,
+#overlay.collapsed #timeline { display: none; }
 /* Rangée fixe (et non plus déduite du placement automatique) : #status reste sous le bandeau et
    la recherche que celle-ci soit ouverte ou fermée (correctif tour 1, T10). */
 #status { grid-row: 3; grid-column: 1 / -1; justify-self: center; align-self: start; color: #ffd166; }
@@ -109,6 +110,28 @@ html, body {
   text-shadow: 0 0 4px #000;
 }
 #attribution a { color: inherit; pointer-events: auto; }
+
+/* Frise temporelle (spec lot E §7.1) : en bas au centre, au-dessus des crédits. */
+#timeline {
+  grid-row: 4; grid-column: 1 / -1; justify-self: center; align-self: end;
+  margin-bottom: 1.5rem; box-sizing: border-box; width: min(30rem, calc(100vw - 38rem)); min-width: 14rem;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+#timeline[hidden] { display: none; }
+#timeline-range { flex: 1; min-width: 6rem; accent-color: #ffd166; }
+#timeline-label { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.85rem; }
+#timeline-play, #timeline-now {
+  background: none; border: 1px solid currentColor; border-radius: 999px; color: inherit; font: inherit;
+  cursor: pointer; min-width: 2rem; min-height: 2rem; padding: 0 0.6rem; line-height: 1;
+}
+#timeline-play:focus-visible, #timeline-now:focus-visible, #timeline-range:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Largeur intermédiaire : la frise prend sa propre rangée au-dessus de la légende et des couches. */
+@media (min-width: 601px) and (max-width: 900px) {
+  #overlay { grid-template-rows: auto auto 1fr auto auto; }
+  #timeline { width: min(30rem, 100%); margin-bottom: 0; }
+  #legend, #controls, #attribution { grid-row: 5; }
+}
 
 /* Étiquettes villes/pays (spec repères §4) : décoratives, ne captent jamais le pointeur. */
 #labels { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
@@ -211,18 +234,21 @@ html, body {
 @media (max-width: 600px) {
   /* Même rangée dédiée à #search qu'en pleine largeur (voir #overlay ci-dessus) : +1 sur les
      rangées explicites de #legend/#controls/#attribution (correctif tour 1, T10). */
-  #overlay { grid-template-rows: auto auto 1fr auto auto auto; }
+  #overlay { grid-template-rows: auto auto 1fr auto auto auto auto; }
   /* border-box : sans lui le padding s'ajoute aux 100vw − 1.5rem, la légende déborde de 11 px et
      élargit toute la grille (bandeau et contrôles collés au bord droit). */
-  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 4; grid-column: 1 / -1; }
+  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 5; grid-column: 1 / -1; }
   #controls {
-    grid-row: 5; grid-column: 1 / -1; justify-self: stretch;
+    grid-row: 6; grid-column: 1 / -1; justify-self: stretch;
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;
     -webkit-overflow-scrolling: touch;
   }
   #controls [role="radio"], #controls [role="switch"] { scroll-snap-align: start; min-height: 44px; flex: 0 0 auto; }
   #wind-toggle { margin-top: 0; }
-  #attribution { grid-row: 6; }
+  #attribution { grid-row: 7; }
+  #timeline { width: calc(100vw - 1.5rem); min-width: 0; margin-bottom: 0; }
+  #timeline-play, #timeline-now { min-width: 44px; min-height: 44px; }
+  #timeline-range { min-height: 44px; }
 }
 
 /* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */

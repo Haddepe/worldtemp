@@ -29,6 +29,9 @@ export const STRINGS = {
     layerUnavailable: "Layer unavailable",
     windUnavailable: "Wind unavailable",
     locationUnavailable: "Location unavailable",
+    forecastEnds: (time: string) => `No forecast after ${time} for this layer`,
+    framesFailed: "Some forecast hours failed to load",
+    buffering: "Loading forecast\u2026",
   },
   fatal: {
     noWebgl: "This browser does not support WebGL, which the 3D globe requires.",
@@ -37,11 +40,18 @@ export const STRINGS = {
     reload: "Reload",
   },
   banner: {
-    valid: "valid",
-    local: "local",
+    updated: "updated",
     justNow: "just now",
     minutesAgo: (minutes: number) => `${minutes} min ago`,
     hoursAgo: (hours: number, minutes: number) => `${hours} h ${String(minutes).padStart(2, "0")} min ago`,
+  },
+  timeline: {
+    label: "Forecast time",
+    play: "Play forecast",
+    pause: "Pause forecast",
+    now: "Now",
+    nowShort: "now",
+    backToNow: "Back to now",
   },
   wind: {
     label: "Wind",
