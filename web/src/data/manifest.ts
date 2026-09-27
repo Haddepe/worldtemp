@@ -1,5 +1,5 @@
 /**
- * Contrat `layers/latest.json` — spec couches §7, schema_version 2.
+ * Contrat `layers/forecast.json` — spec lot E §4.2, schema_version 3.
  * Le front ne recopie aucune constante : `encoding` et `grid` viennent d'ici.
  */
 import type { Encoding } from "./encoding";
@@ -13,26 +13,6 @@ export interface Grid {
   lat_max: number;
   lon_step: number;
   lat_step: number;
-}
-
-export interface LayerEntry {
-  model: string;
-  variable: string;
-  unit: string;
-  run: string;
-  forecast_hour: number;
-  valid_time_utc: string;
-  generated_at: string;
-  texture: string;
-  encoding: Encoding;
-  stats: { min: number; max: number };
-}
-
-export interface Manifest {
-  schema_version: 2;
-  generated_at: string;
-  grid: Grid;
-  layers: Record<string, LayerEntry>;
 }
 
 export class MetadataError extends Error {
@@ -105,36 +85,6 @@ function parseEncoding(raw: unknown, field: string): Encoding {
   const scale = e.scale;
   if (scale !== "linear" && scale !== "sqrt") throw new MetadataError(`${field}.scale`, 'expected "linear" or "sqrt"');
   return { bits, min, max, scale };
-}
-
-function parseEntry(raw: unknown, field: string): LayerEntry {
-  const o = record(raw, field);
-  const st = record(o.stats, `${field}.stats`);
-  return {
-    model: str(o, "model", `${field}.model`),
-    variable: str(o, "variable", `${field}.variable`),
-    unit: str(o, "unit", `${field}.unit`),
-    run: isoUtc(o, "run", `${field}.run`),
-    forecast_hour: num(o, "forecast_hour", `${field}.forecast_hour`),
-    valid_time_utc: isoUtc(o, "valid_time_utc", `${field}.valid_time_utc`),
-    generated_at: isoUtc(o, "generated_at", `${field}.generated_at`),
-    texture: str(o, "texture", `${field}.texture`),
-    encoding: parseEncoding(o.encoding, `${field}.encoding`),
-    stats: { min: num(st, "min", `${field}.stats.min`), max: num(st, "max", `${field}.stats.max`) },
-  };
-}
-
-export function parseManifest(raw: unknown): Manifest {
-  const o = record(raw, "latest.json");
-  if (o.schema_version !== 2) {
-    throw new MetadataError("schema_version", `unknown version (${String(o.schema_version)}), expected 2`);
-  }
-  const grid = parseGrid(o.grid);
-  const rawLayers = record(o.layers, "layers");
-  const layers: Record<string, LayerEntry> = {};
-  for (const id of Object.keys(rawLayers)) layers[id] = parseEntry(rawLayers[id], `layers.${id}`);
-  if (Object.keys(layers).length === 0) throw new MetadataError("layers", "no layer");
-  return { schema_version: 2, generated_at: isoUtc(o, "generated_at", "generated_at"), grid, layers };
 }
 
 /** Une échéance de la frise (spec lot E §4.2). */

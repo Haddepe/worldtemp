@@ -73,11 +73,12 @@ export function createOverlay(): Overlay {
       for (const cb of layoutListeners) cb();
     },
     setBanner(text) {
-      bannerText.textContent = text;
+      if (bannerText.textContent !== text) bannerText.textContent = text; // appelé à chaque image pendant la lecture
     },
     setStatus(text) {
-      status.hidden = text === null;
-      status.textContent = text ?? "";
+      const hidden = text === null;
+      if (status.hidden !== hidden) status.hidden = hidden;
+      if (status.textContent !== (text ?? "")) status.textContent = text ?? "";
     },
     setLegend(def, enc, stats) {
       const ticks = legendTicks(def, enc)

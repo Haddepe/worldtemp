@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseManifest } from "../src/data/manifest";
+import { parseForecast } from "../src/data/manifest";
 import { LAYERS } from "../src/layers/registry";
 import { DEFAULT_LAYER, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
-import { MANIFEST } from "./fixtures";
+import { FORECAST } from "./fixtures";
 
-const M = parseManifest(MANIFEST);
+const M = parseForecast(FORECAST);
 
 describe("orderedLayers", () => {
   it("ordre du registre, filtré par le manifeste", () => {

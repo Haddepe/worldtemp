@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS, TILES_BASE_URL } from "./config";
-import { redChannel } from "./data/frames";
-import { LayerLoader, ManifestLoader, isStale, type LoadedLayer } from "./data/loader";
-import type { Manifest } from "./data/manifest";
+import { DATA_BASE_URL, LABELS_REFRESH_MS, REFRESH_MS, STALE_RUN_AFTER_MS, TILES_BASE_URL } from "./config";
+import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, loadScalarFrame, loadWindFrame, type ScalarFrame } from "./data/frames";
+import { ManifestLoader, browserDeps, isRunStale } from "./data/loader";
+import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
 import { withView } from "./geo/params";
 import { setupGeo } from "./geo/wiring";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
@@ -12,6 +12,7 @@ import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
 import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
+import { FrameTextures } from "./render/frame-textures";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
@@ -23,17 +24,19 @@ import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
+import { TimeCursor } from "./time/cursor";
+import { framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
 import { createAbout } from "./ui/about";
-import { formatBanner } from "./ui/format";
+import { formatBanner, formatWhen } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { locate } from "./ui/locate";
 import { byId, createOverlay } from "./ui/overlay";
-import { TapDetector, createTooltip, mouseInput, type Reading } from "./ui/tooltip";
+import { createTimeline } from "./ui/timeline";
+import { TapDetector, createTooltip, mouseInput, type Reading, type TooltipData } from "./ui/tooltip";
 import { createToggle } from "./ui/toggle";
 import { WindController } from "./wind/controller";
-import { WindLoader } from "./wind/loader";
 import { parseWindParam, withWindParam } from "./wind/select";
-import { WIND_PROFILE, WindSim } from "./wind/sim";
+import { WIND_PROFILE, WindSim, type WindField } from "./wind/sim";
 
 /** Manifeste vide : aucune tuile demandée (mode repli, spec tuiles §8). */
 const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "jpg", maxLevel: -1 }, map: { ext: "png", maxLevel: -1, index: "" } };
@@ -197,27 +200,57 @@ async function boot(): Promise<void> {
   await loadTiles();
 
   const manifests = new ManifestLoader(DATA_BASE_URL);
-  const cache = new LayerCache<LayerLoader>(2, (id) => new LayerLoader(id, DATA_BASE_URL, undefined, layerDef(id)?.soften));
+  const limiter = new Limiter(FRAME_CONCURRENCY);
+  const gridOf = (): Grid => manifests.manifest!.grid; // les échéances ne se chargent qu'avec un manifeste
+  /** Une échéance vient d'arriver : la paire voulue est peut-être devenue affichable (spec lot E §5.4). */
+  const onFrameReady = (): void => applyTime();
+  const layerSets = new LayerCache<FrameSet<ScalarFrame>>(CACHED_LAYERS[decision.tier], (id) =>
+    new FrameSet<ScalarFrame>((frame) => loadScalarFrame(browserDeps, DATA_BASE_URL, frame, gridOf(), layerDef(id)?.soften ?? 0), limiter, onFrameReady),
+  );
+  const windSet = new FrameSet<Uint8Array>(
+    (frame, i) => {
+      const v = manifests.manifest?.layers["wind_v"]?.frames[i];
+      return v ? loadWindFrame(browserDeps, DATA_BASE_URL, frame, v, gridOf()) : Promise.reject(new Error("wind_v frame missing"));
+    },
+    limiter,
+    onFrameReady,
+    Date.now,
+    1, // priorité : après la couche affichée
+  );
+  let textures: FrameTextures | null = null;
+  const texturesFor = (grid: Grid): FrameTextures => {
+    if (!textures || textures.width !== grid.width || textures.height !== grid.height) {
+      textures?.dispose();
+      textures = new FrameTextures(grid.width, grid.height);
+    }
+    return textures;
+  };
   const menu = createLayersMenu(ui.layersMenu, (id) => void activate(id, true));
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
   let hadManifest = false;
-  let active: LoadedLayer | null = null;
-  /** Id dont la texture est actuellement liée à `uLayer` (spec couches §10) — distinct de
-   * `activeId` pendant un chargement : protège cette entrée contre l'éviction du cache. */
-  let activeShownId: string | null = null;
+  /** Couche liée au globe (spec lot E §5.3) — distincte de `activeId` pendant un chargement :
+   * protège son jeu d'échéances contre l'éviction du cache. */
+  let shownId: string | null = null;
+  let shownSet: FrameSet<ScalarFrame> | null = null;
+  /** Échéance dont la légende affiche les min/max ; −1 = à recalculer. */
+  let legendIndex = -1;
+  let lastLabelsPush = 0;
   let updateFailed = false;
   /** Statut d'échec de couche (spec §13), prioritaire sur les autres statuts tant que non nul. */
   let layerNotice: string | null = null;
+  /** Statuts posés par `applyTime` : fin de frise de la couche, échéances en échec. */
+  let clampNotice: string | null = null;
+  let framesNotice: string | null = null;
   /** id → generated_at de l'entrée qui a échoué ; un generated_at différent au manifeste
    * suivant rend la couche retentable (M1). */
   const failed = new Map<string, string>();
 
-  const windLoader = new WindLoader(DATA_BASE_URL);
   let windOn = parseWindParam(location.search, decision.tier, matchMedia("(prefers-reduced-motion: reduce)").matches);
+  /** Vent demandé et disponible : ses échéances sont voulues et son champ suit le curseur. */
+  let windActive = false;
   let windUnsub: (() => void) | null = null;
-  /** generated_at de l'entrée wind_u qui a échoué ; retentable quand il change (spec vent §11). */
-  let windFailedAt: string | null = null;
+  let windField: WindField | null = null;
   /** Statut « Vent indisponible », après layerNotice dans l'ordre de priorité. */
   let windNotice: string | null = null;
   /** Retour d'une action de l'utilisateur (« Location unavailable »), prioritaire, effacé après 5 s. */
@@ -229,16 +262,12 @@ async function boot(): Promise<void> {
     void applyWind();
   }, STRINGS.toggles.windUnavailable);
   windToggle.setOn(windOn);
-  // Crochet de validation (T11, critères 2, 3, 8) : dev seulement, comme `__worldtemp`.
-  if (import.meta.env.DEV) {
-    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, loader: windLoader, layer: windLayer };
-  }
 
   // Repères géographiques (spec repères §6) : étiquettes et fleuves, câblés dans `geo/wiring.ts`.
   const geo = setupGeo({ ui, scene: sceneHandle, canvas, tier: decision.tier });
 
-  const lutFor = (def: LayerDef, manifest: Manifest): THREE.DataTexture => {
-    const enc = manifest.layers[def.id]!.encoding;
+  const lutFor = (def: LayerDef, entry: ForecastEntry): THREE.DataTexture => {
+    const enc = entry.encoding;
     const key = `${enc.min}/${enc.max}/${enc.scale}`;
     const cached = luts.get(def.id);
     if (cached && cached.key === key) return cached.lut;
@@ -248,32 +277,141 @@ async function boot(): Promise<void> {
     return lut;
   };
 
-  const refreshBanner = () => {
-    if (manifests.manifest === null) {
+  // Frise temporelle (spec lot E §5, §7).
+  const cursor = new TimeCursor(timelineRange([], Date.now()), Date.now());
+  /** Premier contact avec la frise : on précharge toutes les échéances utiles (spec lot E §5.4). */
+  let prefetchAll = false;
+  let playUnsub: (() => void) | null = null;
+  let timelineVisible = false;
+  const timeline = createTimeline(
+    {
+      root: byId<HTMLElement>("timeline"),
+      play: byId<HTMLButtonElement>("timeline-play"),
+      range: byId<HTMLInputElement>("timeline-range"),
+      label: byId<HTMLElement>("timeline-label"),
+      now: byId<HTMLButtonElement>("timeline-now"),
+    },
+    {
+      seek: (t) => {
+        cursor.seek(t);
+        prefetch();
+        applyTime();
+      },
+      toggle: () => {
+        if (cursor.state.playing) {
+          cursor.pause();
+        } else {
+          prefetch();
+          cursor.play();
+          startPlayback();
+        }
+        applyTime();
+      },
+      goLive: () => {
+        cursor.goLive(Date.now());
+        applyTime();
+      },
+      interact: () => prefetch(),
+    },
+  );
+  // Crochets de validation (T13) : dev seulement, comme `__worldtemp`.
+  if (import.meta.env.DEV) {
+    (window as unknown as { __worldtempWind: unknown }).__worldtempWind = { sim: windSim, controller: windCtl, frames: windSet, layer: windLayer };
+    (window as unknown as { __worldtempTime: unknown }).__worldtempTime = { cursor, layerSets, windSet, limiter };
+  }
+
+  const renderTimeline = (): void => {
+    const s = cursor.state;
+    timeline.render({ t: s.t, start: s.range.start, end: s.range.end, playing: s.playing, live: s.mode === "live", nowMs: Date.now() });
+  };
+
+  /** Nouvelle plage du curseur : manifeste neuf, ou minute qui passe (le mode live suit l'heure). */
+  const updateRange = (): void => {
+    const m = manifests.manifest;
+    if (!m) return;
+    const lasts = Object.values(m.layers).map((e) => e.frames[e.frames.length - 1]!.valid_ms);
+    const now = Date.now();
+    cursor.setRange(timelineRange(lasts, now), now);
+    const { range } = cursor.state;
+    const visible = range.end > range.start;
+    if (visible !== timelineVisible) {
+      timelineVisible = visible;
+      timeline.setVisible(visible);
+      ui.notifyLayout(); // les étiquettes évitent la frise
+    }
+  };
+
+  /** Échéances voulues : la paire autour de t, ou toute la frise utile après le premier contact (spec lot E §5.4). */
+  const wantFrames = (): void => {
+    const m = manifests.manifest;
+    if (!m) return;
+    const { t, range } = cursor.state;
+    const order = (e: ForecastEntry): number[] => {
+      if (prefetchAll) return loadOrder(e.frames, t, range.start);
+      const p = framePair(e.frames, t);
+      return p.f > 0 ? [p.a, p.b] : [p.a];
+    };
+    const entry = shownId ? m.layers[shownId] : undefined;
+    if (shownSet && entry) shownSet.want(order(entry));
+    const wu = m.layers["wind_u"];
+    windSet.want(windActive && wu ? order(wu) : []);
+  };
+
+  const prefetch = (): void => {
+    if (prefetchAll) return;
+    prefetchAll = true;
+    wantFrames();
+  };
+
+  /** Échéances nécessaires à `t` prêtes ou en échec (repli) : la lecture peut avancer. */
+  const settledAt = (t: number): boolean => {
+    const m = manifests.manifest;
+    if (!m) return true;
+    const ok = (set: { isSettled(i: number): boolean }, e: ForecastEntry | undefined): boolean => {
+      if (!e) return true;
+      const p = framePair(e.frames, t);
+      return set.isSettled(p.a) && (p.f === 0 || set.isSettled(p.b));
+    };
+    return (!shownSet || !shownId || ok(shownSet, m.layers[shownId])) && (!windActive || ok(windSet, m.layers["wind_u"]));
+  };
+
+  const startPlayback = (): void => {
+    if (playUnsub) return;
+    playUnsub = sceneHandle.onFrame((now) => {
+      if (cursor.tick(now, settledAt)) {
+        applyTime();
+      } else {
+        renderTimeline();
+        refreshBanner(); // statut « Loading forecast… » pendant l'attente
+      }
+      if (!cursor.state.playing) {
+        playUnsub?.();
+        playUnsub = null;
+      }
+      return false; // applyTime demande lui-même le rendu
+    });
+  };
+
+  const refreshBanner = (): void => {
+    const m = manifests.manifest;
+    if (m === null) {
       ui.setBanner("GlobeLayers");
       ui.setStatus(userNotice ?? STRINGS.status.noData);
       return;
     }
-    const def = activeId ? layerDef(activeId) : undefined;
-    if (!def || !active) {
-      ui.setBanner("GlobeLayers");
-      ui.setStatus(
-        userNotice ?? layerNotice ?? windNotice ?? (updateFailed ? STRINGS.status.updateFailed : tilesReady ? null : STRINGS.status.noMapDetail),
-      );
-      return;
-    }
-    ui.setBanner(formatBanner(active.entry, Date.now()));
+    const entry = shownId ? m.layers[shownId] : undefined;
+    ui.setBanner(entry ? formatBanner(entry, Date.now()) : "GlobeLayers");
+    // Fraîcheur jugée sur le run GFS, quelle que soit la couche affichée (spec lot E §6.4)
+    const gfs = Object.values(m.layers).find((e) => e.model === "gfs_0p25");
     ui.setStatus(
       userNotice ??
         layerNotice ??
         windNotice ??
         (updateFailed
           ? STRINGS.status.updateFailed
-          : isStale(active.entry, Date.now(), STALE_AFTER_MS)
+          : gfs && isRunStale(gfs, Date.now(), STALE_RUN_AFTER_MS)
             ? STRINGS.status.outdated
-            : tilesReady
-              ? null
-              : STRINGS.status.noMapDetail),
+            : (clampNotice ?? framesNotice ?? (cursor.state.buffering ? STRINGS.status.buffering : tilesReady ? null : STRINGS.status.noMapDetail))),
     );
   };
 
@@ -335,7 +473,71 @@ async function boot(): Promise<void> {
     );
   });
 
-  /** Applique la couche `id` (null = Aucune) : charge si besoin, pose texture, LUT, isolignes, légende, tooltip, URL. */
+  /** Champ de vent à l'instant t (spec lot E §6.3) : même paire, seul le mélange avance, sans réamorcer la simulation. */
+  const applyWindTime = (m: Forecast, t: number): void => {
+    const wu = m.layers["wind_u"];
+    const wv = m.layers["wind_v"];
+    if (!windActive || !wu || !wv) return;
+    const p = resolvePair(framePair(wu.frames, t), (i) => windSet.isReady(i), wu.frames.length);
+    if (!p) return; // rien de prêt : l'ancien champ continue (ou rien, au premier chargement)
+    const uv = windSet.get(p.a)!;
+    const uvB = p.f > 0 ? windSet.get(p.b) : null;
+    const f = uvB ? p.f : 0;
+    if (windField && windField.uv === uv && (windField.uvB ?? null) === uvB) {
+      windField.f = f;
+    } else {
+      windField = { uv, uvB, f, grid: { width: m.grid.width, height: m.grid.height }, encU: wu.encoding, encV: wv.encoding };
+      windCtl.setField(windField);
+    }
+    tooltip.setWind(windField);
+    windLayer.object.visible = true;
+  };
+
+  /** Applique l'instant du curseur (spec lot E §6) : paire d'échéances, fondu, valeurs, légende, vent. */
+  const applyTime = (): void => {
+    renderTimeline();
+    const m = manifests.manifest;
+    if (!m) return;
+    wantFrames();
+    const s = cursor.state;
+    const def = shownId ? layerDef(shownId) : undefined;
+    const entry = shownId ? m.layers[shownId] : undefined;
+    const set = shownSet;
+    clampNotice = null;
+    framesNotice = null;
+    if (def && entry && set) {
+      const want = framePair(entry.frames, s.t);
+      const p = resolvePair(want, (i) => set.isReady(i), entry.frames.length);
+      if (p) {
+        const fa = set.get(p.a)!;
+        const fb = p.f > 0 ? set.get(p.b) : null;
+        const f = fb ? p.f : 0;
+        const key = (i: number): string => `${def.id}|${entry.run}|${entry.frames[i]!.forecast_hour}`;
+        const tex = texturesFor(m.grid).show({ key: key(p.a), data: fa.render }, fb ? { key: key(p.b), data: fb.render } : null);
+        globe.setLayer(tex.a, m.grid.width, m.grid.height, tex.b, f);
+        const data: TooltipData = { def, a: fa.values, b: fb?.values ?? null, f, grid: m.grid, encoding: entry.encoding };
+        tooltip.setData(data);
+        const now = performance.now();
+        if (!s.playing || now - lastLabelsPush >= LABELS_REFRESH_MS) {
+          geo.setValueSource(data, true);
+          lastLabelsPush = now;
+        }
+        const n = nearestFrame(p);
+        if (n !== legendIndex) {
+          ui.setLegend(def, entry.encoding, entry.frames[n]!.stats);
+          legendIndex = n;
+        }
+      } // rien de prêt : l'affichage précédent reste (nouveau run en cours de chargement)
+      const last = entry.frames[entry.frames.length - 1]!;
+      if (want.clamped && s.t > last.valid_ms) clampNotice = STRINGS.status.forecastEnds(formatWhen(last.valid_ms));
+      if (set.stateOf(want.a) === "failed" || (want.f > 0 && set.stateOf(want.b) === "failed")) framesNotice = STRINGS.status.framesFailed;
+    }
+    applyWindTime(m, s.t);
+    refreshBanner();
+    sceneHandle.requestRender();
+  };
+
+  /** Applique la couche `id` (null = Aucune) : charge la paire autour de t, pose LUT, isolignes, légende ; `applyTime` fait le reste. */
   const activate = async (id: string | null, fromUser: boolean): Promise<void> => {
     const manifest = manifests.manifest;
     const previous = activeId;
@@ -345,21 +547,25 @@ async function boot(): Promise<void> {
     const def = id ? layerDef(id) : undefined;
     const entry = id && manifest ? manifest.layers[id] : undefined;
     if (!def || !entry || !manifest) {
-      active = null;
-      activeShownId = null;
+      shownSet?.want([]);
+      shownSet = null;
+      shownId = null;
+      legendIndex = -1;
       globe.setLayer(null, 1440, 721);
       globe.setIsoStep(0);
       ui.setLegendVisible(false);
       tooltip.setData(null);
       geo.setValueSource(null);
-      sceneHandle.requestRender();
-      refreshBanner();
+      applyTime();
       return;
     }
-    const layerLoader = cache.get(id!, activeShownId);
+    const set = layerSets.get(id!, shownId);
+    set.setFrames(`${entry.run}|${entry.generated_at}`, entry.frames);
+    const p = framePair(entry.frames, cursor.state.t);
     try {
-      await layerLoader.load(entry, manifest.grid);
+      await set.ensure(p.f > 0 ? [p.a, p.b] : [p.a]);
     } catch (e) {
+      if (manifests.manifest !== manifest) return; // frise remplacée pendant le chargement : l'appel suivant reprend
       console.warn(`[worldtemp] layer ${id} unavailable:`, e);
       failed.set(id!, entry.generated_at);
       menu.setDisabled(id!, true);
@@ -372,67 +578,59 @@ async function boot(): Promise<void> {
       return;
     }
     if (activeId !== id) return; // l'utilisateur a changé d'avis pendant le chargement
-    active = layerLoader.data;
-    if (!active) return;
-    const enc = entry.encoding;
-    globe.setLut(lutFor(def, manifest));
-    globe.setLayer(active.texture, manifest.grid.width, manifest.grid.height);
-    activeShownId = id;
+    if (shownSet && shownSet !== set) shownSet.want([]);
+    shownSet = set;
+    shownId = id;
+    legendIndex = -1;
     layerNotice = null;
+    const enc = entry.encoding;
+    globe.setLut(lutFor(def, entry));
     globe.setIsoStep(def.isoStep !== null ? def.isoStep / (enc.max - enc.min) : 0);
-    ui.setLegend(def, enc, entry.stats);
     ui.setLegendVisible(true);
-    const tooltipData = active.pixels ? { def, a: redChannel(active.pixels), b: null, f: 0, grid: manifest.grid, encoding: enc } : null;
-    tooltip.setData(tooltipData);
-    geo.setValueSource(tooltipData, true); // couche affichée, même si ses pixels sont illisibles
-    sceneHandle.requestRender();
-    refreshBanner();
-    console.info(`[worldtemp] layer ${id} ${entry.run} f${entry.forecast_hour}, valid ${entry.valid_time_utc}`);
+    applyTime();
+    console.info(`[worldtemp] layer ${id} run ${entry.run}, ${entry.frames.length} frames`);
   };
 
   stopWind = () => {
+    windActive = false;
     windUnsub?.();
     windUnsub = null;
+    windField = null;
     windCtl.setField(null);
     tooltip.setWind(null);
     windLayer.object.visible = false;
+    windSet.want([]);
     sceneHandle.requestRender();
   };
 
-  /** Active/désactive le vent selon `windOn` et le manifeste courant ; charge U/V si besoin (spec vent §8, §11). */
+  /** Active/désactive le vent selon `windOn` et le manifeste (spec vent §8, lot E §6.3). */
   const applyWind = async (): Promise<void> => {
-    const manifest = manifests.manifest;
-    const entryU = manifest?.layers["wind_u"];
-    const entryV = manifest?.layers["wind_v"];
-    const present = !!manifest && !!entryU && !!entryV;
-    // On ne retente qu'au prochain `generated_at` : `windFailedAt` gèle le téléchargement d'ici là.
-    if (present && windOn && windFailedAt !== entryU!.generated_at) {
-      try {
-        await windLoader.load(entryU!, entryV!, manifest!.grid);
-      } catch (e) {
-        console.warn("[worldtemp] wind unavailable:", e);
-        windFailedAt = entryU!.generated_at;
-      }
-    }
-    // État recalculé après l'attente : `windOn` a pu basculer pendant le chargement.
-    const windFailedNow = present && windFailedAt === entryU!.generated_at;
-    const field = windLoader.field;
-    // Échec sans ancien champ = rien à animer ; échec avec ancien champ = il continue de tourner.
-    // L'interrupteur reste actif dans ce dernier cas : le désactiver piégerait une animation en cours.
-    const usable = present && !(windFailedNow && field === null);
+    const m = manifests.manifest;
+    const wu = m?.layers["wind_u"];
+    const wv = m?.layers["wind_v"];
+    // `sampleUV` décode en ligne, en linéaire ; U et V doivent partager la même frise
+    const usable = !!wu && !!wv && wu.encoding.scale === "linear" && wv.encoding.scale === "linear" &&
+      wu.run === wv.run && wu.frames.length === wv.frames.length;
     windToggle.setDisabled(!usable);
-    if (windOn && usable) {
-      windCtl.setField(field);
-      tooltip.setWind(field);
-      windLayer.object.visible = true;
-      if (!windUnsub) windUnsub = sceneHandle.onFrame((t) => windCtl.frame(t));
-    } else {
+    if (!usable || !windOn) {
+      windNotice = null;
       stopWind();
+      refreshBanner();
+      return;
     }
-    // Spec §11 : statut affiché dès qu'un chargement a échoué, que l'ancien champ survive ou non ;
-    // effacé à l'extinction, au succès et à l'arrivée d'un `generated_at` neuf (retentable).
-    windNotice = windOn && windFailedNow ? STRINGS.status.windUnavailable : null;
-    refreshBanner();
+    windSet.setFrames(`${wu!.run}|${wu!.generated_at}`, wu!.frames);
+    windActive = true;
+    if (!windUnsub) windUnsub = sceneHandle.onFrame((now) => windCtl.frame(now));
+    const p = framePair(wu!.frames, cursor.state.t);
+    try {
+      await windSet.ensure(p.f > 0 ? [p.a, p.b] : [p.a]);
+      windNotice = null;
+    } catch (e) {
+      if (!windOn || manifests.manifest !== m) return; // éteint ou frise remplacée pendant l'attente
+      console.warn("[worldtemp] wind unavailable:", e);
+      windNotice = STRINGS.status.windUnavailable;
+    }
+    if (windOn) applyTime();
   };
 
   const applyData = async () => {
@@ -456,9 +654,8 @@ async function boot(): Promise<void> {
           : activeId !== null && !available.includes(activeId)
             ? parseLayerParam("", available)
             : activeId;
+        updateRange();
         await activate(target, false);
-      } else if (activeId && manifests.manifest) {
-        await activate(activeId, false); // même manifeste : recharge seulement si generated_at a changé (LayerLoader)
       }
       await applyWind();
       refreshBanner();
@@ -473,7 +670,11 @@ async function boot(): Promise<void> {
   await applyData();
   geo.start();
   setInterval(applyData, REFRESH_MS);
-  setInterval(refreshBanner, 60_000);
+  // Chaque minute : le mode live suit l'heure, le bandeau vieillit (« updated … ago »).
+  setInterval(() => {
+    updateRange();
+    applyTime();
+  }, 60_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void applyData();
   });

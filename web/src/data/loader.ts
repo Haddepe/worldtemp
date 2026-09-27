@@ -1,6 +1,4 @@
-import * as THREE from "three";
-import { type Grid, type LayerEntry, type Manifest, parseManifest } from "./manifest";
-import { blurRedChannel } from "./blur";
+import { type Forecast, parseForecast } from "./manifest";
 import { bitmapPixels } from "./pixels";
 
 export class TextureError extends Error {
@@ -13,66 +11,13 @@ export class TextureError extends Error {
 export interface LoaderDeps {
   fetchJson(url: string): Promise<unknown>;
   fetchBitmap(url: string): Promise<ImageBitmap>;
-  /** Lecture CPU des pixels (tooltip). `null` = tooltip indisponible, rendu inchangé. */
+  /** Lecture CPU des pixels (RGBA nord en haut) ; `null` si illisible. */
   bitmapPixels(bitmap: ImageBitmap): Uint8ClampedArray | null;
 }
 
-export interface LoadedLayer {
-  entry: LayerEntry;
-  texture: THREE.Texture;
-  pixels: Uint8ClampedArray | null;
-}
-
-/** URL du PNG d'une couche avec cache-busting `?v=<generated_at de la couche>` (spec couches §7). */
-export function textureUrl(base: string, entry: LayerEntry): string {
-  return `${base}/${entry.texture}?v=${encodeURIComponent(entry.generated_at)}`;
-}
-
-export function needsTextureFetch(prev: LayerEntry | null, next: LayerEntry): boolean {
-  return prev === null || prev.generated_at !== next.generated_at;
-}
-
-export function isStale(entry: LayerEntry, nowMs: number, staleAfterMs: number): boolean {
-  return nowMs - Date.parse(entry.valid_time_utc) > staleAfterMs;
-}
-
-/**
- * Texture « donnée » : aucune conversion de couleur, filtrage linéaire, bouclage
- * en u seulement. `flipY = false` car l'orientation d'un ImageBitmap est fixée à
- * sa création (`imageOrientation: "flipY"` dans `browserDeps`).
- */
-export function bitmapToTexture(bitmap: ImageBitmap, grid: Pick<Grid, "width" | "height">): THREE.Texture {
-  if (bitmap.width !== grid.width || bitmap.height !== grid.height) {
-    if (typeof bitmap.close === "function") bitmap.close();
-    throw new TextureError(`texture ${bitmap.width}×${bitmap.height}, expected grid ${grid.width}×${grid.height}`);
-  }
-  return asDataTexture(new THREE.Texture(bitmap));
-}
-
-function asDataTexture<T extends THREE.Texture>(texture: T): T {
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.flipY = false;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-/**
- * Variante adoucie (`LayerDef.soften`) : canal R flouté sur CPU (`data/blur.ts`), rangées sud
- * en premier comme l'ImageBitmap `flipY`, même filtrage et même bouclage que `bitmapToTexture`.
- * Le shader ne lit que `.r` : une texture `RedFormat` lui suffit (1 Mo au lieu de 4).
- */
-export function softenedTexture(
-  pixels: Uint8ClampedArray, grid: Pick<Grid, "width" | "height">, sigma: number,
-): THREE.DataTexture {
-  const data = blurRedChannel(pixels, grid.width, grid.height, sigma, true);
-  const texture = new THREE.DataTexture(data, grid.width, grid.height, THREE.RedFormat, THREE.UnsignedByteType);
-  texture.unpackAlignment = 1; // 1440 est multiple de 4, mais le contrat ne l'impose pas
-  return asDataTexture(texture);
+/** Run plus vieux que `afterMs` : statut « données anciennes » (spec lot E §6.4). */
+export function isRunStale(entry: { run: string }, nowMs: number, afterMs: number): boolean {
+  return nowMs - Date.parse(entry.run) > afterMs;
 }
 
 export const browserDeps: LoaderDeps = {
@@ -90,24 +35,24 @@ export const browserDeps: LoaderDeps = {
   bitmapPixels,
 };
 
-/** Relit `layers/latest.json`. Non réentrant. Renvoie le manifeste s'il a changé, `null` sinon. */
+/** Relit `layers/forecast.json`. Non réentrant. Renvoie le manifeste s'il a changé, `null` sinon. */
 export class ManifestLoader {
-  private current: Manifest | null = null;
-  private inflight: Promise<Manifest | null> | null = null;
+  private current: Forecast | null = null;
+  private inflight: Promise<Forecast | null> | null = null;
 
   constructor(
     private readonly baseUrl: string,
     private readonly deps: LoaderDeps = browserDeps,
   ) {}
 
-  get manifest(): Manifest | null {
+  get manifest(): Forecast | null {
     return this.current;
   }
 
-  refresh(): Promise<Manifest | null> {
+  refresh(): Promise<Forecast | null> {
     if (this.inflight) return this.inflight;
-    const run = async (): Promise<Manifest | null> => {
-      const m = parseManifest(await this.deps.fetchJson(`${this.baseUrl}/latest.json`));
+    const run = async (): Promise<Forecast | null> => {
+      const m = parseForecast(await this.deps.fetchJson(`${this.baseUrl}/forecast.json`));
       if (this.current && this.current.generated_at === m.generated_at) return null;
       this.current = m;
       return m;
@@ -116,73 +61,5 @@ export class ManifestLoader {
       this.inflight = null;
     });
     return this.inflight;
-  }
-}
-
-/** PNG d'une couche : texture GPU + pixels CPU. Non réentrant. Recharge seulement si `generated_at` a changé. */
-export class LayerLoader {
-  private current: LoadedLayer | null = null;
-  private inflight: Promise<LoadedLayer | null> | null = null;
-  /** Posé par `dispose()` : un chargement en vol libère son résultat au lieu de le stocker
-   * (cache LRU §10 — un loader évincé pendant son chargement ne doit pas fuir). */
-  private disposed = false;
-
-  constructor(
-    readonly id: string,
-    private readonly baseUrl: string,
-    private readonly deps: LoaderDeps = browserDeps,
-    /** σ du flou en cellules (`LayerDef.soften`) ; 0 = texture brute. */
-    private readonly soften = 0,
-  ) {}
-
-  get data(): LoadedLayer | null {
-    return this.current;
-  }
-
-  load(entry: LayerEntry, grid: Pick<Grid, "width" | "height">): Promise<LoadedLayer | null> {
-    if (this.inflight) return this.inflight;
-    const run = async (): Promise<LoadedLayer | null> => {
-      if (!needsTextureFetch(this.current?.entry ?? null, entry)) return null;
-      const bitmap = await this.deps.fetchBitmap(textureUrl(this.baseUrl, entry));
-      let texture = bitmapToTexture(bitmap, grid);
-      let pixels: Uint8ClampedArray | null = null;
-      try {
-        pixels = this.deps.bitmapPixels(bitmap);
-      } catch (e) {
-        console.warn(`[worldtemp] cannot read pixels of layer ${this.id}:`, e);
-      }
-      if (this.soften > 0 && pixels) {
-        // sans pixels lisibles, on garde la texture brute : rendu moins doux, jamais absent
-        texture.dispose();
-        if (typeof bitmap.close === "function") bitmap.close();
-        texture = softenedTexture(pixels, grid, this.soften);
-      }
-      if (this.disposed) {
-        texture.dispose();
-        if (typeof bitmap.close === "function") bitmap.close();
-        return null;
-      }
-      this.release();
-      this.current = { entry, texture, pixels };
-      return this.current;
-    };
-    this.inflight = run().finally(() => {
-      this.inflight = null;
-    });
-    return this.inflight;
-  }
-
-  private release(): void {
-    const prev = this.current;
-    if (!prev) return;
-    const img = prev.texture.image as ImageBitmap | undefined;
-    prev.texture.dispose();
-    if (img && typeof img.close === "function") img.close();
-    this.current = null;
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    this.release();
   }
 }

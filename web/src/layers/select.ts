@@ -1,5 +1,5 @@
 /** Logique pure du menu et de l'URL (spec couches §12) ; le DOM est dans ui/layers-menu.ts. */
-import type { Manifest } from "../data/manifest";
+import type { Forecast } from "../data/manifest";
 import type { LayerDef } from "./registry";
 
 export const DEFAULT_LAYER = "temp";
@@ -7,7 +7,7 @@ const PARAM = "layer";
 const NONE = "none";
 
 /** Couches affichables : ordre du registre, présentes dans le manifeste. */
-export function orderedLayers(defs: readonly LayerDef[], manifest: Manifest): LayerDef[] {
+export function orderedLayers(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">): LayerDef[] {
   return defs.filter((d) => d.id in manifest.layers);
 }
 
