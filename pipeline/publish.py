@@ -154,20 +154,39 @@ class R2Store:
         return sorted(names)
 
     def delete_run_dirs(self, names: Sequence[str]) -> int:
-        deleted = 0
+        """Tous les noms validés avant toute suppression. Par dossier, les fichiers de progression
+        (`<source>.json` directement sous le dossier) partent d'abord, dans leur propre appel : une
+        suppression interrompue ne laisse jamais une progression citant des PNG déjà supprimés."""
         for name in names:
             _check_run_dir(name)
-            keys = [o["Key"] for page in self._pages(Prefix=f"{config.LAYERS_PREFIX}/{name}/") for o in page.get("Contents") or []]
-            for i in range(0, len(keys), 1000):  # limite de DeleteObjects
-                batch = keys[i:i + 1000]
-                try:
-                    self.client.delete_objects(
-                        Bucket=self.cfg.bucket, Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
-                    )
-                except Exception as exc:
-                    raise PublishError(f"suppression de {name} : {exc}") from exc
-                deleted += len(batch)
+        deleted = 0
+        for name in names:
+            prefix = f"{config.LAYERS_PREFIX}/{name}/"
+            keys = [o["Key"] for page in self._pages(Prefix=prefix) for o in page.get("Contents") or []]
+            is_progress = [k.endswith(".json") and "/" not in k[len(prefix):] for k in keys]
+            progress = [k for k, p in zip(keys, is_progress) if p]
+            rest = [k for k, p in zip(keys, is_progress) if not p]
+            for group in (progress, rest):
+                for i in range(0, len(group), 1000):  # limite de DeleteObjects
+                    deleted += self._delete_batch(name, group[i:i + 1000])
         return deleted
+
+    def _delete_batch(self, name: str, batch: Sequence[str]) -> int:
+        """DeleteObjects répond 200 même quand des clés restent : elles sont listées dans `Errors`."""
+        try:
+            resp = self.client.delete_objects(
+                Bucket=self.cfg.bucket, Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
+            )
+        except Exception as exc:
+            raise PublishError(f"suppression de {name} : {exc}") from exc
+        errors = (resp or {}).get("Errors") or []
+        if errors:
+            first = errors[0]
+            raise PublishError(
+                f"suppression de {name} : {len(errors)} objet(s) non supprimé(s), "
+                f"ex. {first.get('Key')} ({first.get('Code')} {first.get('Message')})"
+            )
+        return len(batch)
 
 
 class LocalStore:
@@ -194,11 +213,16 @@ class LocalStore:
         return sorted(p.name for p in base.iterdir() if p.is_dir() and RUN_DIR.match(p.name))
 
     def delete_run_dirs(self, names: Sequence[str]) -> int:
-        deleted = 0
+        """Même ordre que R2Store : noms validés d'abord, progression supprimée avant le reste."""
         for name in names:
             _check_run_dir(name)
+        deleted = 0
+        for name in names:
             d = self.root / config.LAYERS_PREFIX / name
             if d.is_dir():
                 deleted += sum(1 for p in d.rglob("*") if p.is_file())
+                for p in d.glob("*.json"):
+                    if p.is_file():
+                        p.unlink()
                 shutil.rmtree(d)
         return deleted

@@ -79,7 +79,7 @@ dans l'ordre (le premier run complet l'emporte).
   Un job coupé par le délai reprend au passage suivant (§3.2).
 - Option `--max-frames N` du CLI (défaut : toutes). Le dry-run NOMADS réel de `test.yml`
   passe `--max-frames 1` pour ne pas allonger la CI.
-- Artefact `out/` : inchangé (3 jours), contient ce qui a été écrit pendant le passage.
+- Artefact `out/` (3 jours) : en mode R2, le seul `layers/forecast.json` publié par le passage ; en dry-run, tout ce qui a été écrit (PNG, progression, manifeste).
 
 ## 4. Contrat R2
 

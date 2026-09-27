@@ -65,11 +65,13 @@ class _NoSuchKey(Exception):
 class FakeS3:
     """S3 minimal en mémoire : get/put/list (pagination, délimiteur)/delete."""
 
-    def __init__(self, keys=(), page_size=1000, fail_put: str | None = None, fail_delete=False):
+    def __init__(self, keys=(), page_size=1000, fail_put: str | None = None, fail_delete=False, delete_errors=False):
         self.objects: dict[str, bytes] = {k: b"x" for k in keys}
         self.page_size = page_size
         self.fail_put = fail_put
         self.fail_delete = fail_delete
+        # DeleteObjects répond 200 même quand des clés n'ont pas été supprimées : elles sont dans `Errors`.
+        self.delete_errors = delete_errors
         self.puts: list[dict] = []
         self.deletes: list[list[str]] = []
 
@@ -104,8 +106,11 @@ class FakeS3:
             raise RuntimeError("boom")
         keys = [o["Key"] for o in Delete["Objects"]]
         self.deletes.append(keys)
+        if self.delete_errors:
+            return {"Errors": [{"Key": k, "Code": "InternalError", "Message": "boom"} for k in keys]}
         for k in keys:
             self.objects.pop(k, None)
+        return {}
 
 
 def r2(s3: FakeS3) -> R2Store:
@@ -171,6 +176,30 @@ def test_r2_delete_failure_is_publish_error():
         r2(FakeS3(["layers/20260911T12Z/a.png"], fail_delete=True)).delete_run_dirs(["20260911T12Z"])
 
 
+def test_r2_delete_run_dirs_validates_all_names_before_deleting():
+    s3 = FakeS3(["layers/20260911T12Z/a.png"])
+    with pytest.raises(ValueError):
+        r2(s3).delete_run_dirs(["20260911T12Z", "tmp"])
+    assert s3.deletes == [] and "layers/20260911T12Z/a.png" in s3.objects
+
+
+def test_r2_delete_run_dirs_deletes_progress_files_first():
+    """Une suppression partielle ne doit pas laisser une progression citant des PNG supprimés."""
+    s3 = FakeS3(["layers/20260911T12Z/gfs.json", "layers/20260911T12Z/gefs_chem.json",
+                 "layers/20260911T12Z/temp_f003.png", "layers/20260911T12Z/wind_u_f003.png"])
+    assert r2(s3).delete_run_dirs(["20260911T12Z"]) == 4
+    assert [sorted(d) for d in s3.deletes] == [
+        ["layers/20260911T12Z/gefs_chem.json", "layers/20260911T12Z/gfs.json"],
+        ["layers/20260911T12Z/temp_f003.png", "layers/20260911T12Z/wind_u_f003.png"],
+    ]
+    assert s3.objects == {}
+
+
+def test_r2_delete_errors_in_response_are_publish_error():
+    with pytest.raises(PublishError, match="20260911T12Z"):
+        r2(FakeS3(["layers/20260911T12Z/a.png"], delete_errors=True)).delete_run_dirs(["20260911T12Z"])
+
+
 def test_run_dir_pattern():
     assert RUN_DIR.match("20260912T06Z") and not RUN_DIR.match("20260912T6Z") and not RUN_DIR.match("latest.json")
 
@@ -187,6 +216,14 @@ def test_local_store_round_trip(tmp_path: Path):
     assert s.list_run_dirs() == ["20260912T06Z"]
     assert s.delete_run_dirs(["20260912T06Z"]) == 2
     assert s.list_run_dirs() == [] and (tmp_path / "layers/forecast.json").exists()
+
+
+def test_local_store_delete_validates_all_names_before_deleting(tmp_path: Path):
+    s = LocalStore(tmp_path)
+    s.put([Object("layers/20260912T06Z/temp_f003.png", b"png", "image/png")])
+    with pytest.raises(ValueError):
+        s.delete_run_dirs(["20260912T06Z", "tmp"])
+    assert s.list_run_dirs() == ["20260912T06Z"]
 
 
 def test_local_store_broken_json_is_none(tmp_path: Path):

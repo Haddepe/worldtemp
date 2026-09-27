@@ -5,7 +5,7 @@ import numpy as np
 
 from pipeline.layers import get
 from pipeline.metadata import iso_utc, to_json
-from pipeline.sources import GEFS_CHEM, GFS
+from pipeline.sources import GEFS_CHEM
 
 UTC = timezone.utc
 GEN = datetime(2026, 9, 12, 14, 12, 40, tzinfo=UTC)
