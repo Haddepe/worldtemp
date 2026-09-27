@@ -58,14 +58,18 @@ export function snapToHour(t: number): number {
   return Math.round(t / HOUR_MS) * HOUR_MS;
 }
 
-/** Ordre de préchargement (spec lot E §5.4) : de l'échéance de `t` vers l'avant, puis vers l'arrière jusqu'à celle de `fromMs`. */
-export function loadOrder(frames: readonly { valid_ms: number }[], t: number, fromMs: number): number[] {
+/**
+ * Ordre de préchargement (spec lot E §5.4) : de l'échéance de `t` vers l'avant jusqu'à celle qui
+ * encadre `toMs` (fin de plage : rien au-delà, revue finale F5), puis vers l'arrière jusqu'à celle de `fromMs`.
+ */
+export function loadOrder(frames: readonly { valid_ms: number }[], t: number, fromMs: number, toMs: number): number[] {
   const n = frames.length;
   if (n === 0) return [];
   const a = framePair(frames, t).a;
   const floor = Math.min(a, framePair(frames, fromMs).a);
+  const ceil = Math.max(a, framePair(frames, toMs).b);
   const order: number[] = [];
-  for (let i = a; i < n; i++) order.push(i);
+  for (let i = a; i <= ceil; i++) order.push(i);
   for (let i = a - 1; i >= floor; i--) order.push(i);
   return order;
 }
@@ -77,13 +81,28 @@ export function loadOrder(frames: readonly { valid_ms: number }[], t: number, fr
  */
 export function resolvePair(p: FramePair, ready: (i: number) => boolean, n: number): FramePair | null {
   if (ready(p.a) && (p.f === 0 || ready(p.b))) return p;
-  const target = nearestFrame(p);
+  const i = byDistance(nearestFrame(p), n).find(ready);
+  return i === undefined ? null : { a: i, b: i, f: 0, clamped: p.clamped };
+}
+
+/**
+ * Échéances de repli à tenter quand la paire voulue n'a pas pu être chargée (revue finale F1, spec
+ * lot E §5.4) : au plus `max`, les plus proches de la cible d'abord (même ordre que `resolvePair`),
+ * parmi celles que `usable` accepte.
+ */
+export function fallbackFrames(p: FramePair, n: number, usable: (i: number) => boolean, max: number): number[] {
+  return byDistance(nearestFrame(p), n).filter(usable).slice(0, max);
+}
+
+/** Index de la frise par distance croissante à `target` (à égalité, le plus tôt d'abord). */
+function byDistance(target: number, n: number): number[] {
+  const out: number[] = [];
   for (let d = 0; d < n; d++) {
     for (const i of d === 0 ? [target] : [target - d, target + d]) {
-      if (i >= 0 && i < n && ready(i)) return { a: i, b: i, f: 0, clamped: p.clamped };
+      if (i >= 0 && i < n) out.push(i);
     }
   }
-  return null;
+  return out;
 }
 
 /** Échéance la plus proche de l'instant (légende : min/max de cette échéance). */

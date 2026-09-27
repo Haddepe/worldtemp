@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  HORIZON_MS, HOUR_MS, clampTime, framePair, loadOrder, nearestFrame, resolvePair, snapToHour, timelineRange,
+  HORIZON_MS, HOUR_MS, clampTime, fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, snapToHour, timelineRange,
 } from "../src/time/timeline";
+import { sliderValue } from "../src/ui/timeline";
 
 const T0 = Date.parse("2026-09-12T09:00:00Z");
 /** 20 échéances au pas de 3 h, comme la frise publiée. */
@@ -56,14 +57,22 @@ describe("clampTime / snapToHour", () => {
 
 describe("loadOrder — spec lot E §5.4", () => {
   it("de t vers l'avant, puis vers l'arrière jusqu'au début de la plage", () => {
-    const order = loadOrder(FRAMES, T0 + 10 * HOUR_MS, T0 + 4 * HOUR_MS); // a = 3, début de plage dans [1, 2]
+    // fin de plage au-delà de la dernière échéance : toute la suite est chargée
+    const order = loadOrder(FRAMES, T0 + 10 * HOUR_MS, T0 + 4 * HOUR_MS, T0 + 100 * HOUR_MS); // a = 3, début de plage dans [1, 2]
     expect(order.slice(0, 3)).toEqual([3, 4, 5]);
     expect(order.at(-1)).toBe(1);
     expect(order).toHaveLength(17 + 2);
     expect(new Set(order).size).toBe(order.length);
   });
+  it("vers l'avant, s'arrête à l'échéance qui encadre la fin de plage (revue finale F5)", () => {
+    // fin de plage entre les échéances 6 (T0+18 h) et 7 (T0+21 h) : la 7 sert encore au mélange, pas la 8
+    const order = loadOrder(FRAMES, T0 + 10 * HOUR_MS, T0 + 4 * HOUR_MS, T0 + 20 * HOUR_MS);
+    expect(order).toEqual([3, 4, 5, 6, 7, 2, 1]);
+    // fin de plage sur une échéance exacte : rien après elle
+    expect(loadOrder(FRAMES, T0 + 10 * HOUR_MS, T0 + 4 * HOUR_MS, T0 + 18 * HOUR_MS)).toEqual([3, 4, 5, 6, 2, 1]);
+  });
   it("frise vide : rien", () => {
-    expect(loadOrder([], T0, T0)).toEqual([]);
+    expect(loadOrder([], T0, T0, T0)).toEqual([]);
   });
 });
 
@@ -88,5 +97,29 @@ describe("nearestFrame", () => {
   it("a sous 0,5, b au-delà", () => {
     expect(nearestFrame({ a: 3, b: 4, f: 0.4, clamped: false })).toBe(3);
     expect(nearestFrame({ a: 3, b: 4, f: 0.6, clamped: false })).toBe(4);
+  });
+});
+
+describe("sliderValue — curseur de la frise (revue finale F8)", () => {
+  const start = T0;
+  it("live : heure entamée, jamais en avance sur l'instant", () => {
+    expect(sliderValue(start + 90 * 60_000, start, true)).toBe(1); // 1 h 30 → cran 1, pas 2
+    expect(sliderValue(start + 59 * 60_000, start, true)).toBe(0);
+  });
+  it("fixe : arrondi à l'heure la plus proche (lecture)", () => {
+    expect(sliderValue(start + 90 * 60_000, start, false)).toBe(2);
+    expect(sliderValue(start + 29 * 60_000, start, false)).toBe(0);
+  });
+});
+
+describe("fallbackFrames — repli à l'activation (revue finale F1)", () => {
+  it("les plus proches de la cible d'abord, hors échéances exclues, au plus `max`", () => {
+    const want = { a: 4, b: 5, f: 0.25, clamped: false }; // cible 4
+    expect(fallbackFrames(want, 20, (i) => i !== 4, 2)).toEqual([3, 5]);
+    expect(fallbackFrames(want, 20, (i) => i !== 4 && i !== 5, 3)).toEqual([3, 2, 6]); // à égalité, le plus tôt d'abord
+  });
+  it("bornée à la frise", () => {
+    expect(fallbackFrames({ a: 0, b: 0, f: 0, clamped: false }, 3, (i) => i !== 0, 2)).toEqual([1, 2]);
+    expect(fallbackFrames({ a: 0, b: 0, f: 0, clamped: false }, 1, (i) => i !== 0, 2)).toEqual([]);
   });
 });

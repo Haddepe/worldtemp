@@ -39,13 +39,24 @@ export interface TimelineView {
   setVisible(on: boolean): void;
 }
 
+/**
+ * Cran du curseur (heures depuis le début de plage). En live, l'heure entamée (`floor`) : le curseur
+ * n'est jamais en avance sur l'instant affiché (revue finale F8) ; en mode fixe, l'heure la plus
+ * proche (la lecture avance en continu).
+ */
+export function sliderValue(t: number, start: number, live: boolean): number {
+  const h = (t - start) / HOUR_MS;
+  return live ? Math.floor(h) : Math.round(h);
+}
+
 export function createTimeline(els: TimelineEls, on: TimelineHandlers): TimelineView {
   let start = 0;
   let last = "";
   els.range.addEventListener("input", () => on.seek(start + Number(els.range.value) * HOUR_MS));
   els.play.addEventListener("click", () => on.toggle());
   els.now.addEventListener("click", () => on.goLive());
-  for (const type of ["pointerdown", "keydown", "focusin"] as const) {
+  // Pas `focusin` : traverser la frise au clavier (Tab) ne doit pas déclencher le préchargement complet (revue finale F9).
+  for (const type of ["pointerdown", "keydown"] as const) {
     els.root.addEventListener(type, () => on.interact(), { passive: true });
   }
   return {
@@ -55,7 +66,7 @@ export function createTimeline(els: TimelineEls, on: TimelineHandlers): Timeline
       const shown = s.live ? s.t : snapToHour(s.t);
       const label = timelineLabel(shown, s.nowMs, s.live, s.timeZone);
       const max = String(Math.round((s.end - s.start) / HOUR_MS));
-      const value = String(Math.round((s.t - s.start) / HOUR_MS));
+      const value = String(sliderValue(s.t, s.start, s.live));
       const signature = `${label}|${max}|${value}|${s.playing}|${s.live}`;
       if (signature === last) return;
       last = signature;

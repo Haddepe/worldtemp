@@ -344,3 +344,62 @@ describe("Task 8 — corrections revue round 1", () => {
     expect(layer.calls).toHaveLength(1);
   });
 });
+
+describe("revue finale lot E", () => {
+  it("want ne fait pas oublier les index d'un ensure en attente (F6)", async () => {
+    const lim = new Limiter(1);
+    const { calls, load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("k", FRAMES);
+    set.want([1]); // occupe la seule place
+    const done = vi.fn();
+    void set.ensure([4]).then(done);
+    set.want([0]); // nouvel ordre sans 4 : l'attente ne doit pas rester pendue
+    calls[0]!.d.resolve("f1");
+    await flush();
+    expect(calls.map((c) => c.i)).toEqual([1, 4]);
+    calls[1]!.d.resolve("f4");
+    await flush();
+    expect(done).toHaveBeenCalled();
+    expect(calls.map((c) => c.i)).toEqual([1, 4, 0]); // puis le nouvel ordre
+  });
+  it("ensure garde ses index en tête, devant ceux d'une attente plus ancienne (F6)", async () => {
+    const lim = new Limiter(1);
+    const { calls, load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("k", FRAMES);
+    set.want([1]);
+    void set.ensure([4]);
+    void set.ensure([2]);
+    calls[0]!.d.resolve("f1");
+    await flush();
+    expect(calls.map((c) => c.i)).toEqual([1, 2]);
+    calls[1]!.d.resolve("f2");
+    await flush();
+    expect(calls.map((c) => c.i)).toEqual([1, 2, 4]);
+  });
+  it("clear : données et ordre oubliés, clé gardée, résultat en vol ignoré, attentes rejetées (F7)", async () => {
+    const lim = new Limiter(1);
+    const { calls, load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("k", FRAMES);
+    set.want([0]);
+    calls[0]!.d.resolve("f0");
+    await flush();
+    expect(set.get(0)).toBe("f0");
+    const pending = set.ensure([1]);
+    set.want([1, 2, 3]);
+    set.clear();
+    await expect(pending).rejects.toThrowError(/cleared/);
+    expect(set.key).toBe("k");
+    expect(set.get(0)).toBeNull();
+    expect(set.stateOf(0)).toBe("empty");
+    expect(set.stateOf(1)).toBe("empty");
+    calls[1]!.d.resolve("f1-ancien"); // en vol avant clear : ignoré, la place est libérée
+    await flush();
+    expect(set.get(1)).toBeNull();
+    expect(calls).toHaveLength(2); // ordre voulu oublié : rien d'autre n'est chargé
+    set.want([0]);
+    expect(calls.map((c) => c.i)).toEqual([0, 1, 0]); // rechargeable ensuite
+  });
+});

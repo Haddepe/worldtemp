@@ -158,28 +158,38 @@ export class FrameSet<T> {
     return this.states[i];
   }
 
-  /** Ordre de chargement voulu, qui remplace le précédent ; une échéance en échec depuis RETRY_AFTER_MS redevient chargeable. */
+  /**
+   * Ordre de chargement voulu, qui remplace le précédent ; une échéance en échec depuis
+   * RETRY_AFTER_MS redevient chargeable. Les index des `ensure` encore en attente restent en tête
+   * (revue finale F6) : sans cela, une attente dont l'index sort de l'ordre ne se réglerait jamais.
+   */
   want(order: readonly number[]): void {
-    const now = this.now();
-    const valid: number[] = [];
-    for (const i of order) {
-      if (!Number.isInteger(i) || i < 0 || i >= this.frames.length || valid.includes(i)) continue;
-      if (this.states[i] === "failed" && now - this.failedAt[i]! >= RETRY_AFTER_MS) this.states[i] = "empty";
-      valid.push(i);
-    }
-    this.wanted = valid;
-    this.limiter.kick();
+    this.setWanted([...this.pendingIndices(), ...order]);
   }
 
   /** Met `indices` en tête de l'ordre voulu ; résolue quand ils sont prêts, rejetée si l'un échoue (ou déjà après dispose()). */
   ensure(indices: readonly number[]): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("forecast frames released"));
     const head = [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < this.frames.length);
-    this.want([...head, ...this.wanted.filter((i) => !head.includes(i))]);
+    this.setWanted([...head, ...this.pendingIndices(), ...this.wanted]);
     return new Promise<void>((resolve, reject) => {
       this.waiters.push({ indices: head, resolve, reject });
       this.settle();
     });
+  }
+
+  /**
+   * Oublie les échéances chargées et l'ordre voulu, en gardant la clé (revue finale F7 : vent
+   * éteint, sa mémoire est rendue) ; les résultats en vol sont ignorés, les attentes rejetées.
+   */
+  clear(): void {
+    if (this.disposed) return;
+    this.data = this.frames.map(() => null);
+    this.states = this.frames.map((): FrameState => "empty");
+    this.failedAt = this.frames.map(() => 0);
+    this.wanted = [];
+    this.generation++;
+    this.rejectAll(new Error("forecast frames cleared"));
   }
 
   dispose(): void {
@@ -193,6 +203,24 @@ export class FrameSet<T> {
     this.failedAt = [];
     this.wanted = [];
     this.rejectAll(new Error("forecast frames released"));
+  }
+
+  /** Index des `ensure` en attente pas encore réglés, dans l'ordre des attentes. */
+  private pendingIndices(): number[] {
+    return this.waiters.flatMap((w) => w.indices.filter((i) => this.states[i] !== "ready" && this.states[i] !== "failed"));
+  }
+
+  /** Ordre voulu dédoublonné, borné aux index valides ; relance le limiteur. */
+  private setWanted(order: readonly number[]): void {
+    const now = this.now();
+    const valid: number[] = [];
+    for (const i of order) {
+      if (!Number.isInteger(i) || i < 0 || i >= this.frames.length || valid.includes(i)) continue;
+      if (this.states[i] === "failed" && now - this.failedAt[i]! >= RETRY_AFTER_MS) this.states[i] = "empty";
+      valid.push(i);
+    }
+    this.wanted = valid;
+    this.limiter.kick();
   }
 
   private settle(): void {

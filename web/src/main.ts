@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { DATA_BASE_URL, LABELS_REFRESH_MS, REFRESH_MS, STALE_RUN_AFTER_MS, TILES_BASE_URL } from "./config";
-import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, loadScalarFrame, loadWindFrame, type ScalarFrame } from "./data/frames";
+import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, RETRY_AFTER_MS, loadScalarFrame, loadWindFrame, type ScalarFrame } from "./data/frames";
 import { ManifestLoader, browserDeps, isRunStale } from "./data/loader";
 import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
 import { withView } from "./geo/params";
@@ -25,7 +25,7 @@ import { TileIndex } from "./tiles/index";
 import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { TimeCursor } from "./time/cursor";
-import { framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
+import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
 import { createAbout } from "./ui/about";
 import { formatBanner, formatWhen } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
@@ -245,9 +245,9 @@ async function boot(): Promise<void> {
   /** Statuts posés par `applyTime` : fin de frise de la couche, échéances en échec. */
   let clampNotice: string | null = null;
   let framesNotice: string | null = null;
-  /** id → generated_at de l'entrée qui a échoué ; un generated_at différent au manifeste
-   * suivant rend la couche retentable (M1). */
-  const failed = new Map<string, string>();
+  /** id → generated_at de l'entrée qui a échoué et instant de l'échec ; un generated_at différent
+   * (M1) ou un échec plus vieux que RETRY_AFTER_MS (revue finale F1) rend la couche retentable. */
+  const failed = new Map<string, { generatedAt: string; at: number }>();
 
   let windOn = parseWindParam(location.search, decision.tier, matchMedia("(prefers-reduced-motion: reduce)").matches);
   /** Vent demandé et disponible : ses échéances sont voulues et son champ suit le curseur. */
@@ -350,7 +350,7 @@ async function boot(): Promise<void> {
     if (!m) return;
     const { t, range } = cursor.state;
     const order = (e: ForecastEntry): number[] => {
-      if (prefetchAll) return loadOrder(e.frames, t, range.start);
+      if (prefetchAll) return loadOrder(e.frames, t, range.start, range.end);
       const p = framePair(e.frames, t);
       return p.f > 0 ? [p.a, p.b] : [p.a];
     };
@@ -498,6 +498,7 @@ async function boot(): Promise<void> {
       windField = { uv, uvB, f, grid: { width: m.grid.width, height: m.grid.height }, encU: wu.encoding, encV: wv.encoding };
       windCtl.setField(windField);
     }
+    windNotice = null; // un champ est affiché : « Wind unavailable » ne survit pas à un réessai réussi (revue finale F2)
     tooltip.setWind(windField);
     windLayer.object.visible = true;
   };
@@ -573,15 +574,30 @@ async function boot(): Promise<void> {
     const set = layerSets.get(id!, shownId);
     set.setFrames(framesKey(entry), entry.frames);
     const p = framePair(entry.frames, cursor.state.t);
-    try {
-      await set.ensure(p.f > 0 ? [p.a, p.b] : [p.a]);
-    } catch (e) {
-      // Frise remplacée pendant le chargement (l'appel suivant reprend), ou l'utilisateur a changé
-      // d'avis (couche suivante cliquée avant que celle-ci arrive — son éviction du cache LRU rejette
-      // alors `ensure`, revue T12 round 1 finding 1) : ne pas pénaliser une couche qui n'est plus visée.
-      if (manifests.manifest !== manifest || activeId !== id) return;
-      console.warn(`[worldtemp] layer ${id} unavailable:`, e);
-      failed.set(id!, entry.generated_at);
+    // Frise remplacée pendant le chargement (l'appel suivant reprend), ou l'utilisateur a changé
+    // d'avis (couche suivante cliquée avant que celle-ci arrive — son éviction du cache LRU rejette
+    // alors `ensure`, revue T12 round 1 finding 1) : ne pas pénaliser une couche qui n'est plus visée.
+    const superseded = (): boolean => manifests.manifest !== manifest || activeId !== id;
+    let lastError: unknown = null;
+    const load = (indices: number[]): Promise<boolean> =>
+      set.ensure(indices).then(() => true, (e: unknown) => {
+        lastError = e;
+        return false;
+      });
+    let ok = await load(p.f > 0 ? [p.a, p.b] : [p.a]);
+    // Repli (spec lot E §5.4, revue finale F1) : une échéance en échec ne grise pas la couche. On
+    // tente, une à une, au plus 2 autres échéances, les plus proches du curseur d'abord ; la première
+    // chargée est affichée par `applyTime` (repli de `resolvePair`, « Some forecast hours failed to load »).
+    if (!ok && !superseded()) {
+      for (const i of fallbackFrames(p, entry.frames.length, (j) => set.stateOf(j) !== "failed", 2)) {
+        ok = await load([i]);
+        if (ok || superseded()) break;
+      }
+    }
+    if (!ok) {
+      if (superseded()) return;
+      console.warn(`[worldtemp] layer ${id} unavailable:`, lastError);
+      failed.set(id!, { generatedAt: entry.generated_at, at: Date.now() });
       menu.setDisabled(id!, true);
       const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
       await activate(fallback, fromUser);
@@ -611,7 +627,7 @@ async function boot(): Promise<void> {
     windCtl.setField(null);
     tooltip.setWind(null);
     windLayer.object.visible = false;
-    windSet.want([]);
+    windSet.clear(); // vent éteint : ses échéances sont rendues à la mémoire (revue finale F7)
     sceneHandle.requestRender();
   };
 
@@ -645,16 +661,34 @@ async function boot(): Promise<void> {
     if (windOn) applyTime();
   };
 
+  /** Couches en échec redevenues retentables : entrée changée (M1) ou échec plus vieux que
+   * RETRY_AFTER_MS (revue finale F1) — leur bouton est réactivé. */
+  const expireFailed = (): void => {
+    const m = manifests.manifest;
+    const now = Date.now();
+    for (const [id, f] of failed) {
+      const entry = m?.layers[id];
+      if (now - f.at < RETRY_AFTER_MS && (!entry || entry.generated_at === f.generatedAt)) continue;
+      failed.delete(id);
+      menu.setDisabled(id, false);
+    }
+  };
+
   const applyData = async () => {
     if (!tilesReady) await loadTiles();
     try {
       const fresh = await manifests.refresh();
       updateFailed = false;
+      expireFailed();
       if (fresh) {
-        for (const [id, failedAt] of failed) {
-          const entry = fresh.layers[id];
-          if (entry && entry.generated_at !== failedAt) failed.delete(id); // retentable (M1)
-        }
+        // Nouveau run de la couche affichée ou du vent (revue finale F3) : le préchargement complet
+        // n'est réarmé qu'au prochain contact avec la frise — un onglet oublié ne retélécharge pas
+        // toute la frise à chaque run. En lecture, on le garde : elle a besoin des échéances à venir.
+        const shownEntry = shownId ? fresh.layers[shownId] : undefined;
+        const freshWind = fresh.layers["wind_u"];
+        const runChanged = (shownSet !== null && shownEntry !== undefined && shownSet.key !== framesKey(shownEntry)) ||
+          (windActive && freshWind !== undefined && windSet.key !== framesKey(freshWind));
+        if (runChanged && !cursor.state.playing) prefetchAll = false;
         // Réamorçage synchrone (revue T12 round 1, finding 2), avant tout `await` : une échéance en
         // vol de l'ancien run peut arriver (`onFrameReady`) pendant que `manifests.manifest` pointe déjà
         // ici sur le manifeste neuf ; sans ceci, `wantFrames`/`applyTime` liraient ses index contre les
@@ -683,6 +717,7 @@ async function boot(): Promise<void> {
     } catch (e) {
       console.warn("[worldtemp] manifest unavailable:", e);
       updateFailed = manifests.manifest !== null;
+      expireFailed();
       await applyWind(); // manifeste absent → switch désactivé
       refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)
     }
