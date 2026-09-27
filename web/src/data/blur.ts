@@ -16,12 +16,13 @@ function kernel(sigma: number): Float32Array {
 }
 
 /**
- * `pixels` : RGBA `width × height × 4`, nord en haut (`data/pixels.ts`). Renvoie le canal R
- * flouté, `width × height`. `flipRows` livre les rangées sud en premier, ordre attendu par une
- * texture `flipY = false` alignée sur les ImageBitmap `flipY` du loader. `sigma` en cellules.
+ * `pixels` : canal R lu tous les `stride` octets (4 pour du RGBA, 1 pour un canal R seul — lot E),
+ * `width × height`, nord en haut. Renvoie le canal R flouté, `width × height`. `flipRows` livre les
+ * rangées sud en premier, ordre attendu par une texture `flipY = false` alignée sur les ImageBitmap
+ * `flipY` du loader. `sigma` en cellules.
  */
 export function blurRedChannel(
-  pixels: Uint8ClampedArray, width: number, height: number, sigma: number, flipRows = false,
+  pixels: ArrayLike<number>, width: number, height: number, sigma: number, flipRows = false, stride = 4,
 ): Uint8Array {
   const W = width;
   const H = height;
@@ -29,7 +30,7 @@ export function blurRedChannel(
   if (!(sigma > 0)) {
     for (let y = 0; y < H; y++) {
       const o = (flipRows ? H - 1 - y : y) * W;
-      for (let x = 0; x < W; x++) out[o + x] = pixels[(y * W + x) * 4]!;
+      for (let x = 0; x < W; x++) out[o + x] = pixels[(y * W + x) * stride]!;
     }
     return out;
   }
@@ -40,7 +41,7 @@ export function blurRedChannel(
     const row = y * W;
     for (let x = 0; x < W; x++) {
       let acc = 0;
-      for (let i = -r; i <= r; i++) acc += k[i + r]! * pixels[(row + ((((x + i) % W) + W) % W)) * 4]!;
+      for (let i = -r; i <= r; i++) acc += k[i + r]! * pixels[(row + ((((x + i) % W) + W) % W)) * stride]!;
       tmp[row + x] = acc;
     }
   }
