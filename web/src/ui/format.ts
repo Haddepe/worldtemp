@@ -41,6 +41,16 @@ export function formatBanner(entry: { model: string; run: string; generated_at: 
   return `${sourceLabel(entry.model)} · run ${hhmm(entry.run, "UTC")} UTC · ${STRINGS.banner.updated} ${formatAgo(entry.generated_at, nowMs)}`;
 }
 
+let cachedLocalZone: string | null = null;
+
+/** Fuseau du navigateur, résolu une fois puis mis en cache (revue T12 round 2, finding 4) :
+ * `formatWhen(t)` sans fuseau explicite est appelé à chaque image pendant la lecture
+ * (`ui/timeline.ts::timelineLabel`), et `Intl.DateTimeFormat().resolvedOptions()` est coûteux. */
+function localZone(): string {
+  if (cachedLocalZone === null) cachedLocalZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return cachedLocalZone;
+}
+
 const whenFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function whenFormatter(timeZone: string): Intl.DateTimeFormat {
@@ -55,7 +65,7 @@ function whenFormatter(timeZone: string): Intl.DateTimeFormat {
 }
 
 /** Instant de la frise, heure locale du navigateur : « Sat 12 17:00 ». */
-export function formatWhen(t: number, timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
+export function formatWhen(t: number, timeZone: string = localZone()): string {
   const parts = whenFormatter(timeZone).formatToParts(new Date(t));
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("weekday")} ${get("day")} ${get("hour")}:${get("minute")}`;
