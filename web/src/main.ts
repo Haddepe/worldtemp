@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { DATA_BASE_URL, REFRESH_MS, STALE_AFTER_MS, TILES_BASE_URL } from "./config";
+import { redChannel } from "./data/frames";
 import { LayerLoader, ManifestLoader, isStale, type LoadedLayer } from "./data/loader";
 import type { Manifest } from "./data/manifest";
 import { withView } from "./geo/params";
@@ -381,7 +382,7 @@ async function boot(): Promise<void> {
     globe.setIsoStep(def.isoStep !== null ? def.isoStep / (enc.max - enc.min) : 0);
     ui.setLegend(def, enc, entry.stats);
     ui.setLegendVisible(true);
-    const tooltipData = active.pixels ? { def, pixels: active.pixels, grid: manifest.grid, encoding: enc } : null;
+    const tooltipData = active.pixels ? { def, a: redChannel(active.pixels), b: null, f: 0, grid: manifest.grid, encoding: enc } : null;
     tooltip.setData(tooltipData);
     geo.setValueSource(tooltipData, true); // couche affichée, même si ses pixels sont illisibles
     sceneHandle.requestRender();

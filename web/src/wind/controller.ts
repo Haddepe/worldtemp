@@ -26,10 +26,14 @@ export class WindController {
     return this.current;
   }
 
+  /** Pendant la lecture de la frise la paire d'échéances change chaque seconde : l'horloge n'est
+   * réamorcée qu'en sortant de l'arrêt (champ `null`), sinon un tick sauterait à chaque échange. */
   setField(f: WindField | null): void {
+    if (f === null || this.current === null) {
+      this.last = null;
+      this.acc = 0;
+    }
     this.current = f;
-    this.last = null;
-    this.acc = 0;
   }
 
   /** Callback de `SceneHandle.onFrame` : `true` si un tick a eu lieu (rendu nécessaire). */
