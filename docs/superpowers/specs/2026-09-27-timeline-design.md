@@ -44,13 +44,14 @@ Pour chaque source, primaire (GFS) d'abord :
 
 1. Si le manifeste courant cite déjà ce run **complet** pour toutes les couches de la source →
    rien à faire (sortie en quelques secondes, cas de 5 heures sur 6).
-2. Sinon, lister sur R2 le préfixe `layers/<run>/` (nouvelle fonction `publish.list_keys`) ;
-   pour chaque échéance dont **une couche au moins manque**, télécharger le GRIB (une requête
-   NOMADS par échéance, toutes variables de la source, filtre existant), décoder, valider,
-   encoder, et **envoyer immédiatement** ses PNG sur R2 sous
-   `layers/<run>/<couche>_f<fh>.png` (`<run>` au format `YYYYMMDDTHHZ`, `<fh>` sur 3 chiffres).
+2. Sinon, relire le **fichier de progression** `layers/<run>/<source>.json` (stats des
+   échéances déjà publiées pour ce run) ; pour chaque échéance qu'il ne cite pas, télécharger le
+   GRIB (une requête NOMADS par échéance, toutes variables de la source, filtre existant),
+   décoder, valider, encoder, et **envoyer immédiatement** ses PNG sur R2 sous
+   `layers/<run>/<couche>_f<fh>.png` (`<run>` au format `YYYYMMDDTHHZ`, `<fh>` sur 3 chiffres),
+   puis le fichier de progression mis à jour : il ne cite jamais un PNG absent.
    Téléchargements **séquentiels** (courtoisie NOMADS), reprise d'une erreur transitoire comme
-   aujourd'hui (2 tentatives, `RETRY_DELAY_S`).
+   aujourd'hui (2 tentatives, `RETRY_DELAY_S`) ; deux erreurs transitoires valent une absence.
 3. Une échéance **absente** (404 : run pas encore entièrement publié) arrête la source pour ce
    passage, sans erreur : les images déjà envoyées restent, le passage horaire suivant reprend
    là où il s'est arrêté.
@@ -88,6 +89,7 @@ dans l'ordre (le premier run complet l'emporte).
 |---|---|---|
 | `layers/forecast.json` | Manifeste v3 (§4.2) | `public, max-age=300` (comme aujourd'hui) |
 | `layers/<run>/<couche>_f<fh>.png` | PNG 1440×721 niveaux de gris 8 bits, encodage inchangé | `public, max-age=31536000, immutable` |
+| `layers/<run>/<source>.json` | Progression de la frise d'une source (stats par échéance) | `public, max-age=300` |
 
 ### 4.2 Manifeste v3
 
@@ -124,15 +126,18 @@ dans l'ordre (le premier run complet l'emporte).
 
 ### 4.3 Rétention
 
-À chaque publication d'un manifeste, supprimer les dossiers `layers/<run>/` dont le run est
-**strictement plus ancien que le plus ancien run cité par le manifeste précédent** (celui lu en
-début de passage). Restent ainsi : le run courant, le run précédent (visiteurs dont le CDN sert
-encore l'ancien manifeste pendant ≤ 300 s), et tout run en cours de téléchargement (plus récent,
-cité nulle part). La rétention **ne touche que** les clés de la forme `layers/<run>/…` ; les
+À chaque publication d'un manifeste, supprimer les dossiers `layers/<run>/` cités **ni par le
+manifeste précédent** (celui lu en début de passage) **ni par le nouveau**, et plus anciens que
+le plus récent run cité par le nouveau. Restent ainsi : les runs cités (GFS et GEFS-chem), ceux
+du manifeste précédent (visiteurs dont le CDN le sert encore pendant ≤ 300 s), et tout run en
+cours de téléchargement (plus récent). Une règle fondée sur le seul plus ancien run cité
+laisserait s'accumuler les runs GFS tant que GEFS-chem reste en échec. Un échec de la rétention
+ne bloque pas la publication (réessai au manifeste suivant). La rétention **ne touche que** les clés de la forme `layers/<run>/…` ; les
 clés héritées (`layers/latest.json`, `layers/<couche>.png`) sont supprimées **à la main une
 semaine après le déploiement** (à noter dans HISTORY §9).
 
-Volume : au plus 3 runs × 20 échéances × 9 couches × ~250 Ko ≈ **135 Mo** (R2 : 4,5 Go / 10).
+Volume : au plus ~5 dossiers (2 cités, 2 du manifeste précédent, 1 en cours) × 20 échéances × 9
+couches × ~250 Ko ≈ **200 Mo** (R2 : 4,5 Go / 10).
 Opérations : ~180 écritures par run × 4 runs/jour ≈ 22 000/mois (quota gratuit classe A : 1 M).
 
 ## 5. Front : données et temps
@@ -143,7 +148,7 @@ Opérations : ~180 écritures par run × 4 runs/jour ≈ 22 000/mois (quota grat
   **`fixed`** (choisi par l'utilisateur).
 - `framePair(frames, t)` → `{ a, b, f }` : les deux échéances qui encadrent `t` et le facteur
   `f ∈ [0, 1]`. Hors de la plage d'une couche : première ou dernière échéance, `f = 0`, et un
-  indicateur `clamped` (le statut dit « No forecast beyond <heure> for this layer », cas typique
+  indicateur `clamped` (le statut dit « No forecast after <heure> for this layer », cas typique
   de GEFS-chem avec un run de retard).
 - Plage de la frise : de **maintenant** (arrondi à l'heure inférieure) à la **dernière échéance
   GFS**, bornée à maintenant + 48 h. Les échéances antérieures à maintenant ne sont pas
@@ -304,7 +309,7 @@ Le seuil passe de « échéance valide il y a plus de 6 h » à « **run GFS de 
 
 1. `forecast.json` v3 publié, 20 échéances f003–f060 par couche, images `immutable`.
 2. Un run incomplet ne remplace jamais un run complet ; un passage coupé reprend au suivant.
-3. Au plus 3 dossiers de run sur R2 ; clés héritées intactes jusqu'à suppression manuelle.
+3. Au plus ~5 dossiers de run sur R2 ; clés héritées intactes jusqu'à suppression manuelle.
 4. Premier affichage : 2 images de couche chargées, pas davantage.
 5. Curseur de maintenant à +48 h au pas de 1 h ; lecture 3 h/s en boucle ; fondu continu.
 6. Mémoire GPU des couches constante (2 textures R8) ; CPU ≤ ~80 Mo en profil `high`.
