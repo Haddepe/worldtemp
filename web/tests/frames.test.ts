@@ -239,3 +239,95 @@ describe("chargeurs d'échéances", () => {
     expect(bu.close).toHaveBeenCalled();
   });
 });
+
+describe("Task 8 — corrections revue round 1", () => {
+  it("dispose : rejette les ensure() en attente avec /released/", async () => {
+    const lim = new Limiter(1);
+    const { load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("k", FRAMES);
+    const pending = set.ensure([0, 1]);
+    set.dispose();
+    await expect(pending).rejects.toThrowError(/released/);
+  });
+  it("ensure après dispose : rejetée immédiatement", async () => {
+    const lim = new Limiter(1);
+    const { load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("k", FRAMES);
+    set.dispose();
+    await expect(set.ensure([0])).rejects.toThrowError(/released/);
+  });
+  it("isReady(i) redevient faux après dispose", async () => {
+    const lim = new Limiter(1);
+    const set = new FrameSet(async (_f, i) => `f${i}`, lim);
+    set.setFrames("k", FRAMES);
+    set.want([0]);
+    await flush();
+    expect(set.isReady(0)).toBe(true);
+    set.dispose();
+    expect(set.isReady(0)).toBe(false);
+  });
+  it("erreur d'une tâche (onReady qui lève) : journalisée, la place libérée profite à l'échéance suivante", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const lim = new Limiter(1);
+    let calls = 0;
+    const onReady = vi.fn(() => {
+      calls++;
+      if (calls === 1) throw new Error("boom");
+    });
+    const set = new FrameSet(async (_f, i) => `f${i}`, lim, onReady);
+    set.setFrames("k", FRAMES);
+    set.want([0]);
+    await flush();
+    expect(error).toHaveBeenCalledWith("[worldtemp] forecast frame task failed:", expect.any(Error));
+    expect(lim.running).toBe(0);
+    expect(set.isReady(0)).toBe(true);
+    set.want([0, 1]);
+    await flush();
+    expect(set.isReady(1)).toBe(true); // l'échéance suivante démarre normalement malgré l'erreur précédente
+    error.mockRestore();
+  });
+  it("échéance en échec : la place limiteur est libérée", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const lim = new Limiter(1);
+    const set = new FrameSet(async () => {
+      throw new Error("HTTP 500");
+    }, lim);
+    set.setFrames("k", FRAMES);
+    set.want([0]);
+    await flush();
+    expect(set.stateOf(0)).toBe("failed");
+    expect(lim.running).toBe(0);
+    warn.mockRestore();
+  });
+  it("setFrames pendant un chargement en vol : la place limiteur est libérée quand il se règle", async () => {
+    const lim = new Limiter(1);
+    const { calls, load } = controlled();
+    const set = new FrameSet(load, lim);
+    set.setFrames("run1", FRAMES);
+    set.want([0]);
+    expect(lim.running).toBe(1);
+    set.setFrames("run2", FRAMES); // change de génération pendant que l'échéance 0 est en vol
+    calls[0]!.d.resolve("stale");
+    await flush();
+    expect(lim.running).toBe(0);
+  });
+  it("répartition par rang : le vent passe avant la suite du préchargement de la couche (rang, pas seulement priorité)", async () => {
+    const lim = new Limiter(1);
+    const layer = controlled();
+    const wind = controlled();
+    const l = new FrameSet(layer.load, lim); // priorité par défaut (0)
+    const w = new FrameSet(wind.load, lim, () => {}, Date.now, 1); // priorité 1 (après la couche)
+    l.setFrames("l", FRAMES);
+    w.setFrames("w", FRAMES);
+    l.want([0, 1, 2, 3, 4, 5]); // préchargement complet de la couche
+    expect(layer.calls).toHaveLength(1);
+    w.want([0]);
+    expect(wind.calls).toHaveLength(0); // la seule place est prise par la couche
+    layer.calls[0]!.d.resolve("l0");
+    await flush();
+    expect(wind.calls).toHaveLength(1); // le vent (rang 0) passe avant l'échéance 1 de la couche (rang 1)
+    expect(layer.calls).toHaveLength(1);
+  });
+});

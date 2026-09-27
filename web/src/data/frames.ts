@@ -17,13 +17,26 @@ export const RETRY_AFTER_MS = 30_000;
 export type Task = () => Promise<void>;
 
 /**
+ * Source de tâches auprès de laquelle le limiteur tire : `peek()` donne le rang, dans l'ordre
+ * voulu courant de la source, du premier index chargeable (`null` si aucun) ; `take()` démarre
+ * effectivement ce chargement.
+ */
+interface Source {
+  peek(): number | null;
+  take(): Task | null;
+}
+
+/**
  * Au plus `max` tâches en vol. Les tâches sont **tirées** auprès des sources quand une place se
- * libère, par priorité croissante puis ordre d'inscription : un changement d'ordre voulu prend
- * effet immédiatement, sans file interne à réordonner.
+ * libère : on choisit la source au rang le plus petit (position du prochain index chargeable dans
+ * son propre ordre voulu — la couche 0 d'une frise en préchargement complet ne doit pas affamer le
+ * vent d'une autre couche), à égalité la priorité la plus basse l'emporte, puis l'ordre
+ * d'inscription. Un changement d'ordre voulu prend effet immédiatement, sans file interne à
+ * réordonner.
  */
 export class Limiter {
   private active = 0;
-  private sources: { pull: () => Task | null; priority: number }[] = [];
+  private sources: { source: Source; priority: number }[] = [];
 
   constructor(readonly max: number) {
     if (!(max >= 1)) throw new Error("expected max ≥ 1");
@@ -33,9 +46,9 @@ export class Limiter {
     return this.active;
   }
 
-  add(pull: () => Task | null, priority = 0): () => void {
-    const s = { pull, priority };
-    this.sources = [...this.sources, s].sort((x, y) => x.priority - y.priority); // tri stable
+  add(source: Source, priority = 0): () => void {
+    const s = { source, priority };
+    this.sources = [...this.sources, s].sort((x, y) => x.priority - y.priority); // tri stable : priorité puis inscription
     return () => {
       this.sources = this.sources.filter((x) => x !== s);
     };
@@ -43,15 +56,26 @@ export class Limiter {
 
   kick(): void {
     while (this.active < this.max) {
-      let task: Task | null = null;
+      let chosen: Source | null = null;
+      let bestRank = Infinity;
       for (const s of this.sources) {
-        task = s.pull();
-        if (task) break;
+        const rank = s.source.peek();
+        if (rank === null || rank >= bestRank) continue; // `>=` : à rang égal, la première trouvée (priorité puis inscription) gagne
+        bestRank = rank;
+        chosen = s.source;
       }
-      if (!task) return;
+      if (!chosen) return;
+      const task = chosen.take();
+      if (!task) return; // ne devrait pas arriver : peek() et take() lisent le même état, sans mutation entre les deux
       this.active++;
-      task()
-        .catch(() => {}) // les tâches gèrent leurs erreurs ; la file ne doit jamais se bloquer
+      let result: Promise<void>;
+      try {
+        result = task(); // appel synchrone : une source démarre son chargement dès que la place se libère
+      } catch (e) {
+        result = Promise.reject(e); // tâche non conforme au contrat (jette avant de renvoyer sa promesse) : la place ne doit pas fuir
+      }
+      result
+        .catch((e) => console.error("[worldtemp] forecast frame task failed:", e))
         .finally(() => {
           this.active--;
           this.kick();
@@ -88,11 +112,12 @@ export class FrameSet<T> {
     private readonly now: () => number = Date.now,
     priority = 0,
   ) {
-    this.unregister = limiter.add(() => this.next(), priority);
+    this.unregister = limiter.add({ peek: () => this.peek(), take: () => this.take() }, priority);
   }
 
-  /** Frise courante ; une autre clé (run, generated_at) oublie toutes les échéances chargées. */
+  /** Frise courante ; une autre clé (run, generated_at) oublie toutes les échéances chargées. Ignoré après dispose(). */
   setFrames(key: string, frames: readonly Frame[]): void {
+    if (this.disposed) return;
     if (key === this.key) return;
     this.key = key;
     this.frames = frames;
@@ -139,8 +164,9 @@ export class FrameSet<T> {
     this.limiter.kick();
   }
 
-  /** Met `indices` en tête de l'ordre voulu ; résolue quand ils sont prêts, rejetée si l'un échoue. */
+  /** Met `indices` en tête de l'ordre voulu ; résolue quand ils sont prêts, rejetée si l'un échoue (ou déjà après dispose()). */
   ensure(indices: readonly number[]): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("forecast frames released"));
     const head = [...new Set(indices)].filter((i) => Number.isInteger(i) && i >= 0 && i < this.frames.length);
     this.want([...head, ...this.wanted.filter((i) => !head.includes(i))]);
     return new Promise<void>((resolve, reject) => {
@@ -153,7 +179,10 @@ export class FrameSet<T> {
     if (this.disposed) return;
     this.disposed = true;
     this.unregister();
+    this.frames = [];
     this.data = [];
+    this.states = [];
+    this.failedAt = [];
     this.wanted = [];
     this.rejectAll(new Error("forecast frames released"));
   }
@@ -178,7 +207,14 @@ export class FrameSet<T> {
     for (const w of waiters) w.reject(e);
   }
 
-  private next(): Task | null {
+  /** Rang, dans l'ordre voulu courant, du premier index chargeable ; `null` si aucun (ou après dispose()). */
+  private peek(): number | null {
+    if (this.disposed) return null;
+    const idx = this.wanted.findIndex((j) => this.states[j] === "empty");
+    return idx === -1 ? null : idx;
+  }
+
+  private take(): Task | null {
     if (this.disposed) return null;
     const i = this.wanted.find((j) => this.states[j] === "empty");
     if (i === undefined) return null;
