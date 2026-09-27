@@ -201,6 +201,9 @@ async function boot(): Promise<void> {
 
   const manifests = new ManifestLoader(DATA_BASE_URL);
   const limiter = new Limiter(FRAME_CONCURRENCY);
+  /** Clé d'un `FrameSet` pour une entrée du manifeste (revue T12 round 1, finding 2) : sert à
+   * détecter une frise pas encore réamorcée sur le manifeste courant (concurrence avec `applyData`). */
+  const framesKey = (e: ForecastEntry): string => `${e.run}|${e.generated_at}`;
   const gridOf = (): Grid => manifests.manifest!.grid; // les échéances ne se chargent qu'avec un manifeste
   /** Une échéance vient d'arriver : la paire voulue est peut-être devenue affichable (spec lot E §5.4). */
   const onFrameReady = (): void => applyTime();
@@ -352,9 +355,12 @@ async function boot(): Promise<void> {
       return p.f > 0 ? [p.a, p.b] : [p.a];
     };
     const entry = shownId ? m.layers[shownId] : undefined;
-    if (shownSet && entry) shownSet.want(order(entry));
+    // Clé pas encore à jour (concurrence avec `applyData`, finding 2) : rien à demander tant que le
+    // jeu n'est pas réamorcé sur ce manifeste — ses index ne correspondraient pas à `entry.frames`.
+    if (shownSet && entry && shownSet.key === framesKey(entry)) shownSet.want(order(entry));
     const wu = m.layers["wind_u"];
-    windSet.want(windActive && wu ? order(wu) : []);
+    if (!windActive || !wu) windSet.want([]);
+    else if (windSet.key === framesKey(wu)) windSet.want(order(wu));
   };
 
   const prefetch = (): void => {
@@ -367,8 +373,9 @@ async function boot(): Promise<void> {
   const settledAt = (t: number): boolean => {
     const m = manifests.manifest;
     if (!m) return true;
-    const ok = (set: { isSettled(i: number): boolean }, e: ForecastEntry | undefined): boolean => {
-      if (!e) return true;
+    const ok = (set: { isSettled(i: number): boolean; key: string | null }, e: ForecastEntry | undefined): boolean => {
+      // Clé pas encore à jour (finding 2) : cette frise ne doit pas bloquer la lecture, elle va être réamorcée.
+      if (!e || set.key !== framesKey(e)) return true;
       const p = framePair(e.frames, t);
       return set.isSettled(p.a) && (p.f === 0 || set.isSettled(p.b));
     };
@@ -477,7 +484,9 @@ async function boot(): Promise<void> {
   const applyWindTime = (m: Forecast, t: number): void => {
     const wu = m.layers["wind_u"];
     const wv = m.layers["wind_v"];
-    if (!windActive || !wu || !wv) return;
+    // Clé pas encore à jour (finding 2) : rien de prêt tant que `windSet` n'est pas réamorcé sur ce
+    // manifeste — l'ancien champ continue (assigné ci-dessous, sans le toucher ici).
+    if (!windActive || !wu || !wv || windSet.key !== framesKey(wu)) return;
     const p = resolvePair(framePair(wu.frames, t), (i) => windSet.isReady(i), wu.frames.length);
     if (!p) return; // rien de prêt : l'ancien champ continue (ou rien, au premier chargement)
     const uv = windSet.get(p.a)!;
@@ -505,7 +514,9 @@ async function boot(): Promise<void> {
     const set = shownSet;
     clampNotice = null;
     framesNotice = null;
-    if (def && entry && set) {
+    // Clé pas encore à jour (finding 2) : rien de prêt tant que `set` n'est pas réamorcé sur ce
+    // manifeste — ses états ne correspondraient pas à `entry.frames`. L'affichage précédent reste.
+    if (def && entry && set && set.key === framesKey(entry)) {
       const want = framePair(entry.frames, s.t);
       const p = resolvePair(want, (i) => set.isReady(i), entry.frames.length);
       if (p) {
@@ -560,21 +571,22 @@ async function boot(): Promise<void> {
       return;
     }
     const set = layerSets.get(id!, shownId);
-    set.setFrames(`${entry.run}|${entry.generated_at}`, entry.frames);
+    set.setFrames(framesKey(entry), entry.frames);
     const p = framePair(entry.frames, cursor.state.t);
     try {
       await set.ensure(p.f > 0 ? [p.a, p.b] : [p.a]);
     } catch (e) {
-      if (manifests.manifest !== manifest) return; // frise remplacée pendant le chargement : l'appel suivant reprend
+      // Frise remplacée pendant le chargement (l'appel suivant reprend), ou l'utilisateur a changé
+      // d'avis (couche suivante cliquée avant que celle-ci arrive — son éviction du cache LRU rejette
+      // alors `ensure`, revue T12 round 1 finding 1) : ne pas pénaliser une couche qui n'est plus visée.
+      if (manifests.manifest !== manifest || activeId !== id) return;
       console.warn(`[worldtemp] layer ${id} unavailable:`, e);
       failed.set(id!, entry.generated_at);
       menu.setDisabled(id!, true);
-      if (activeId === id) {
-        const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
-        await activate(fallback, fromUser);
-        layerNotice = STRINGS.status.layerUnavailable;
-        refreshBanner();
-      }
+      const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
+      await activate(fallback, fromUser);
+      layerNotice = STRINGS.status.layerUnavailable;
+      refreshBanner();
       return;
     }
     if (activeId !== id) return; // l'utilisateur a changé d'avis pendant le chargement
@@ -618,7 +630,7 @@ async function boot(): Promise<void> {
       refreshBanner();
       return;
     }
-    windSet.setFrames(`${wu!.run}|${wu!.generated_at}`, wu!.frames);
+    windSet.setFrames(framesKey(wu!), wu!.frames);
     windActive = true;
     if (!windUnsub) windUnsub = sceneHandle.onFrame((now) => windCtl.frame(now));
     const p = framePair(wu!.frames, cursor.state.t);
@@ -642,6 +654,15 @@ async function boot(): Promise<void> {
         for (const [id, failedAt] of failed) {
           const entry = fresh.layers[id];
           if (entry && entry.generated_at !== failedAt) failed.delete(id); // retentable (M1)
+        }
+        // Réamorçage synchrone (revue T12 round 1, finding 2), avant tout `await` : une échéance en
+        // vol de l'ancien run peut arriver (`onFrameReady`) pendant que `manifests.manifest` pointe déjà
+        // ici sur le manifeste neuf ; sans ceci, `wantFrames`/`applyTime` liraient ses index contre les
+        // échéances de l'ancien run. `activate`/`applyWind` ci-dessous réamorceront à nouveau (no-op si
+        // la clé n'a pas changé) une fois la couche/le vent effectivement résolus.
+        if (shownSet && shownId && fresh.layers[shownId]) shownSet.setFrames(framesKey(fresh.layers[shownId]!), fresh.layers[shownId]!.frames);
+        if (windActive && fresh.layers["wind_u"] && fresh.layers["wind_v"]) {
+          windSet.setFrames(framesKey(fresh.layers["wind_u"]!), fresh.layers["wind_u"]!.frames);
         }
         const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
         menu.setLayers(defs);

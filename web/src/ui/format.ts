@@ -3,10 +3,23 @@ import type { LayerDef } from "../layers/registry";
 import { STRINGS } from "../i18n";
 import { HOUR_MS } from "../time/timeline";
 
+/** Formateurs mis en cache par fuseau (revue T12 round 1, finding 4) : `formatBanner`/`formatWhen`
+ * sont appelés à chaque image pendant la lecture, et construire un `Intl.DateTimeFormat` par appel
+ * est coûteux. Un `Map` par format (leurs options diffèrent) suffit, le nombre de fuseaux vus est
+ * minuscule (celui du navigateur, éventuellement « UTC » pour le run). */
+const hhmmFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function hhmmFormatter(timeZone: string): Intl.DateTimeFormat {
+  let f = hhmmFormatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+    hhmmFormatters.set(timeZone, f);
+  }
+  return f;
+}
+
 function hhmm(isoUtc: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(
-    new Date(isoUtc),
-  );
+  return hhmmFormatter(timeZone).format(new Date(isoUtc));
 }
 
 export function formatAgo(isoUtc: string, nowMs: number): string {
@@ -28,11 +41,22 @@ export function formatBanner(entry: { model: string; run: string; generated_at: 
   return `${sourceLabel(entry.model)} · run ${hhmm(entry.run, "UTC")} UTC · ${STRINGS.banner.updated} ${formatAgo(entry.generated_at, nowMs)}`;
 }
 
+const whenFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function whenFormatter(timeZone: string): Intl.DateTimeFormat {
+  let f = whenFormatters.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", {
+      weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone,
+    });
+    whenFormatters.set(timeZone, f);
+  }
+  return f;
+}
+
 /** Instant de la frise, heure locale du navigateur : « Sat 12 17:00 ». */
 export function formatWhen(t: number, timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone,
-  }).formatToParts(new Date(t));
+  const parts = whenFormatter(timeZone).formatToParts(new Date(t));
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("weekday")} ${get("day")} ${get("hour")}:${get("minute")}`;
 }

@@ -27,7 +27,8 @@ export const browserDeps: LoaderDeps = {
     return r.json();
   },
   async fetchBitmap(url) {
-    const r = await fetch(url);
+    // Délai maximal : une requête bloquée ne doit pas geler indéfiniment une place du limiteur (revue T12 round 1, finding 3).
+    const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     const blob = await r.blob();
     return createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });

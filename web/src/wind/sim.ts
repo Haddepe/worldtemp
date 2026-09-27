@@ -76,7 +76,7 @@ export function spawnOnScreen(pick: PickFn, rng: () => number, target: THREE.Vec
 
 /**
  * Champ de vent prêt pour le tick : **un seul** tableau d'octets entrelacé `[u0, v0, u1, v1, …]`
- * (rangée par rangée, nord en haut, même cellule que le canal R des PNG — `wind/loader.ts`).
+ * (rangée par rangée, nord en haut, même cellule que le canal R des PNG — `data/frames.ts::loadWindFrame`).
  * 2 Mo au lieu de 8 Mo, et les deux composantes d'un pixel sur la même ligne de cache.
  */
 export interface WindField {

@@ -94,7 +94,7 @@ interface Waiter {
 
 /** Échéances d'une couche (ou du vent) pour un run donné. */
 export class FrameSet<T> {
-  private key: string | null = null;
+  private currentKey: string | null = null;
   private frames: readonly Frame[] = [];
   private data: (T | null)[] = [];
   private states: FrameState[] = [];
@@ -115,11 +115,18 @@ export class FrameSet<T> {
     this.unregister = limiter.add({ peek: () => this.peek(), take: () => this.take() }, priority);
   }
 
+  /** Clé passée au dernier `setFrames` (run, generated_at) ; `null` avant le premier appel ou après
+   * `dispose()` — permet à l'appelant (revue T12 round 1, finding 2) de détecter une frise dont la
+   * clé n'a pas encore été mise à jour pour le manifeste courant, et de ne pas s'y fier entre-temps. */
+  get key(): string | null {
+    return this.currentKey;
+  }
+
   /** Frise courante ; une autre clé (run, generated_at) oublie toutes les échéances chargées. Ignoré après dispose(). */
   setFrames(key: string, frames: readonly Frame[]): void {
     if (this.disposed) return;
-    if (key === this.key) return;
-    this.key = key;
+    if (key === this.currentKey) return;
+    this.currentKey = key;
     this.frames = frames;
     this.data = frames.map(() => null);
     this.states = frames.map((): FrameState => "empty");
@@ -179,6 +186,7 @@ export class FrameSet<T> {
     if (this.disposed) return;
     this.disposed = true;
     this.unregister();
+    this.currentKey = null;
     this.frames = [];
     this.data = [];
     this.states = [];

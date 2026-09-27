@@ -313,6 +313,19 @@ describe("Task 8 — corrections revue round 1", () => {
     await flush();
     expect(lim.running).toBe(0);
   });
+  it("key : null avant setFrames, clé du dernier setFrames, de nouveau null après dispose (revue T12 round 1)", async () => {
+    const lim = new Limiter(1);
+    const set = new FrameSet(async (_f, i) => `f${i}`, lim);
+    expect(set.key).toBeNull();
+    set.setFrames("run1|2026-09-12T10:12:40Z", FRAMES);
+    expect(set.key).toBe("run1|2026-09-12T10:12:40Z");
+    set.setFrames("run1|2026-09-12T10:12:40Z", FRAMES); // même clé : inchangé
+    expect(set.key).toBe("run1|2026-09-12T10:12:40Z");
+    set.setFrames("run2|2026-09-12T13:12:40Z", FRAMES);
+    expect(set.key).toBe("run2|2026-09-12T13:12:40Z");
+    set.dispose();
+    expect(set.key).toBeNull();
+  });
   it("répartition par rang : le vent passe avant la suite du préchargement de la couche (rang, pas seulement priorité)", async () => {
     const lim = new Limiter(1);
     const layer = controlled();
