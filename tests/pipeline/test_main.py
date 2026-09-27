@@ -317,3 +317,38 @@ def test_max_frames_is_refused_outside_dry_run(monkeypatch):
     with pytest.raises(SystemExit) as e:
         main(["--max-frames", "1"])
     assert e.value.code == 2
+
+
+# --- rétention (spec lot E §4.3) -------------------------------------------------
+
+def test_retention_deletes_runs_neither_cited_nor_newer(tmp_path):
+    extra = [f"layers/{d}/temp_f003.png" for d in ("20260911T12Z", "20260911T18Z", D00, "20260912T12Z")]
+    store = store_with(published(gfs_run=R00, chem_run=R00), extra)
+    code, _, _ = make_run(tmp_path, store=store)
+    assert code == EXIT_OK and manifest_of(store)["layers"]["temp"]["run"] == R06
+    assert store.deleted == ["20260911T12Z", "20260911T18Z"]
+    assert f"layers/{D00}/temp_f003.png" in store.objects           # cité par l'ancien manifeste (CDN ≤ 300 s)
+    assert "layers/20260912T12Z/temp_f003.png" in store.objects     # plus récent : run en cours de téléchargement
+
+
+def test_retention_never_touches_legacy_keys(tmp_path):
+    store = store_with(published(gfs_run=R00, chem_run=R00), ["layers/latest.json", "layers/temp.png"])
+    make_run(tmp_path, store=store)
+    assert "layers/latest.json" in store.objects and "layers/temp.png" in store.objects
+
+
+def test_retention_failure_is_not_fatal(tmp_path):
+    store = store_with(published(gfs_run=R00, chem_run=R00))
+
+    def boom():
+        raise RuntimeError("list en échec")
+
+    store.list_run_dirs = boom
+    code, _, _ = make_run(tmp_path, store=store)
+    assert code == EXIT_OK and manifest_of(store)["layers"]["temp"]["run"] == R06
+
+
+def test_no_retention_without_publication(tmp_path):
+    store = store_with(published(), ["layers/20260911T12Z/temp_f003.png"])
+    make_run(tmp_path, store=store)
+    assert store.deleted == []

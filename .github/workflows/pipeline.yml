@@ -20,7 +20,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30   # run neuf : ~40 téléchargements ; un passage coupé reprend au suivant (spec lot E §3.4)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

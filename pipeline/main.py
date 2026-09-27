@@ -15,7 +15,7 @@ from pathlib import Path
 from pipeline import config, nomads, publish, texture
 from pipeline.grib_adapter import Field
 from pipeline.layers import LayerSpec, by_source
-from pipeline.metadata import build_forecast, forecast_entry, frame_entry, frame_key, iso_utc, progress_key, stats_of, to_json
+from pipeline.metadata import build_forecast, cited_runs, forecast_entry, frame_entry, frame_key, iso_utc, progress_key, stats_of, to_json
 from pipeline.publish import Object, Store
 from pipeline.run_selection import Candidate, frame_hours, runs_for
 from pipeline.sources import SOURCES, SourceSpec
@@ -142,6 +142,24 @@ def _process_source(
     raise SourceFailure(EXIT_SOURCE, f"{source.id} : aucun run complet parmi {len(candidates)} candidats")
 
 
+def _retain(store: Store, previous: Mapping | None, manifest: Mapping) -> None:
+    """Rétention (spec lot E §4.3) : supprime les dossiers de run cités ni par l'ancien manifeste
+    (encore servi par le CDN ≤ 300 s) ni par le nouveau, et plus anciens que le plus récent run
+    cité (un run plus récent est en cours de téléchargement). Clés hors dossiers de run jamais
+    touchées. Un échec n'empêche pas la publication : réessai au prochain manifeste."""
+    keep = cited_runs(previous) | cited_runs(manifest)
+    newest = max(cited_runs(manifest), default=None)
+    if newest is None:
+        return
+    try:
+        doomed = [d for d in store.list_run_dirs() if d not in keep and d < newest]
+        if doomed:
+            n = store.delete_run_dirs(doomed)
+            log.info("rétention : %d objets supprimés (%s)", n, ", ".join(doomed))
+    except Exception as exc:
+        log.warning("rétention en échec (%s) : réessai au prochain manifeste publié", exc)
+
+
 def run(
     now: datetime,
     *,
@@ -186,6 +204,7 @@ def run(
         log.error("publication en échec : %s", exc)
         return EXIT_PUBLISH
     log.info("publié : %s", ", ".join(f"{i} {e['run']}" for i, e in entries.items()))
+    _retain(store, current, manifest)
     return EXIT_OK
 
 
