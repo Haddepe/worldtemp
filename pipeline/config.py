@@ -30,3 +30,7 @@ CACHE_CONTROL = "public, max-age=300"
 CACHE_IMMUTABLE = "public, max-age=31536000, immutable"  # PNG d'échéance : son URL n'est jamais réécrite
 
 SCHEMA_VERSION = 2
+
+# Manifeste v3 (spec lot E §4) : nouvelle clé, pour ne pas casser le parseur v2 des onglets ouverts.
+FORECAST_KEY = "layers/forecast.json"
+FORECAST_SCHEMA_VERSION = 3
