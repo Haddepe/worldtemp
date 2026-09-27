@@ -15,8 +15,11 @@ export const TIER_PROFILE: Record<Tier, { maxLevel: number; segments: number; bu
 
 export interface TiledGlobe {
   group: THREE.Group;
-  /** Texture 8 bits de la couche active ; `null` = mode « Aucune » (satellite/carte seuls). */
-  setLayer(texture: THREE.Texture | null, width: number, height: number): void;
+  /**
+   * Échéances de la couche active (spec lot E §6.1) : A, et B mélangée à `mix` ∈ [0, 1] ; `a` nul =
+   * mode « Aucune » (satellite/carte seuls). Sans `b`, pas de mélange (seconde série de lectures sautée).
+   */
+  setLayer(a: THREE.Texture | null, width: number, height: number, b?: THREE.Texture | null, mix?: number): void;
   setLut(lut: THREE.DataTexture): void;
   /** Pas des isolignes en unités de `t` (octet/255) ; 0 = désactivé. */
   setIsoStep(step: number): void;
@@ -56,7 +59,9 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uMap: { value: null as THREE.Texture | null },
     uMapRect: { value: ZERO_RECT.clone() },
     uHasMap: { value: 0 },
-    uLayer: { value: null as THREE.Texture | null },
+    uLayerA: { value: null as THREE.Texture | null },
+    uLayerB: { value: null as THREE.Texture | null },
+    uMix: { value: 0 },
     uGridSize: { value: new THREE.Vector2(1440, 721) },
     uLut: { value: null as THREE.DataTexture | null },
     uHasLayer: { value: 0 },
@@ -119,10 +124,12 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
 
   return {
     group,
-    setLayer(texture, width, height) {
-      uniforms.uLayer.value = texture;
+    setLayer(a, width, height, b = null, mix = 0) {
+      uniforms.uLayerA.value = a;
+      uniforms.uLayerB.value = b ?? a; // toujours un sampler valide, même quand uMix = 0
+      uniforms.uMix.value = a && b ? Math.min(1, Math.max(0, mix)) : 0;
       uniforms.uGridSize.value.set(width, height);
-      uniforms.uHasLayer.value = texture ? 1 : 0;
+      uniforms.uHasLayer.value = a ? 1 : 0;
     },
     setLut(lut) {
       uniforms.uLut.value = lut;

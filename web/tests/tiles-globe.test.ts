@@ -79,8 +79,16 @@ describe("createTiledGlobe", () => {
     expect(u.uIsoStep!.value).toBe(0);
     const tex = new THREE.Texture();
     globe.setLayer(tex, 1440, 721);
-    expect(u.uLayer!.value).toBe(tex);
+    expect(u.uLayerA!.value).toBe(tex);
+    expect(u.uLayerB!.value).toBe(tex);
+    expect(u.uMix!.value).toBe(0);
     expect(u.uHasLayer!.value).toBe(1);
+    const next = new THREE.Texture();
+    globe.setLayer(tex, 1440, 721, next, 0.25);
+    expect(u.uLayerB!.value).toBe(next);
+    expect(u.uMix!.value).toBe(0.25);
+    globe.setLayer(tex, 1440, 721, null, 0.25);
+    expect(u.uMix!.value).toBe(0); // pas de B : pas de mélange
     expect((u.uGridSize!.value as THREE.Vector2).x).toBe(1440);
     globe.setIsoStep(4 / 120);
     expect(u.uIsoStep!.value).toBeCloseTo(1 / 30, 12);
@@ -89,9 +97,11 @@ describe("createTiledGlobe", () => {
     expect(u.uLut!.value).toBe(lut);
     globe.setLayer(null, 1440, 721);
     expect(u.uHasLayer!.value).toBe(0);
-    expect(u.uLayer!.value).toBeNull();
+    expect(u.uLayerA!.value).toBeNull();
     expect(material.fragmentShader).toContain("uIsoStep");
     expect(material.fragmentShader).not.toContain("uFilter");
+    expect(material.fragmentShader).toContain("uMix");
+    expect(material.fragmentShader).not.toContain("uLayer;");
     // `step` est une fonction native GLSL : la masquer en paramètre casse la compilation sur certains pilotes.
     expect(material.fragmentShader).toContain("float isoline(float t, float spacing)");
   });
