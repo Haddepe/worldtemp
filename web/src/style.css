@@ -126,11 +126,13 @@ html, body {
 }
 #timeline-play:focus-visible, #timeline-now:focus-visible, #timeline-range:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* Largeur intermédiaire : la frise prend sa propre rangée au-dessus de la légende et des couches. */
+/* Largeur intermédiaire : la colonne des couches est haute ; la frise prend sa propre rangée
+   sous la légende et les couches, au-dessus des crédits (sinon elle flottait au milieu du globe). */
 @media (min-width: 601px) and (max-width: 900px) {
-  #overlay { grid-template-rows: auto auto 1fr auto auto; }
-  #timeline { width: min(30rem, 100%); margin-bottom: 0; }
-  #legend, #controls, #attribution { grid-row: 5; }
+  #overlay { grid-template-rows: auto auto 1fr auto auto auto; }
+  #legend, #controls { grid-row: 4; }
+  #timeline { grid-row: 5; width: min(30rem, 100%); margin-bottom: 0; }
+  #attribution { grid-row: 6; }
 }
 
 /* Étiquettes villes/pays (spec repères §4) : décoratives, ne captent jamais le pointeur. */
