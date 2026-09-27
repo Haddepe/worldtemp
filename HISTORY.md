@@ -25,13 +25,15 @@
 
 Site web public, **https://globelayers.com**, en **anglais** : un **globe 3D interactif** de la
 météo mondiale, vu depuis l'espace (ciel étoilé, halo d'atmosphère). *(Résumé remis à jour le
-2026-09-19 ; le plan d'origine, `docs/PLAN.md`, prévoyait un relief en displacement map et une
+2026-09-27 ; le plan d'origine, `docs/PLAN.md`, prévoyait un relief en displacement map et une
 seule heatmap de température — voir §8 « Chantiers à venir » pour ce qui en reste.)*
 
 - **sept couches météo** au choix (température, nuages, pluie, pression avec isobares, humidité,
   PM2.5, poussière) plus le **vent animé** en surimpression, issues des modèles **GFS** et
   **GEFS-Aerosols** (NOAA), grille 0,25°, régénérées chaque heure par un pipeline automatisé
-  (GitHub Actions → Cloudflare R2) ; le globe montre la prévision valide à l'heure courante ;
+  (GitHub Actions → Cloudflare R2) ; un **curseur temporel** (lot E, 2026-09-27) parcourt une
+  frise de **48 h de prévision par pas de 3 h**, avec lecture automatique et retour à l'instant
+  courant ;
 - un **fond de carte en tuiles** (satellite de loin, carte avec relief ombré et frontières de
   près), des **étiquettes** de villes et de pays portant la valeur de la couche active, les
   **fleuves**, un tooltip au survol ou au toucher ;
@@ -46,8 +48,10 @@ deux niveaux de subdivision de sphère choisis selon le GPU détecté.
 
 Les données GFS sont du **domaine public** (NOAA), donc compatibles avec une
 monétisation par publicité. Un run GFS n'est disponible que plusieurs heures après son heure
-de référence : c'est une propriété du modèle, compensée en affichant la prévision valide à
-l'heure courante ; le bandeau montre toujours le run et l'heure de validité.
+de référence : c'est une propriété du modèle, compensée par une frise de 20 échéances (f003 à
+f060, pas de 3 h) publiée par run et parcourue par le curseur temporel (lot E) ; le bandeau
+montre toujours la source, le run et sa fraîcheur, l'instant choisi vivant dans le libellé de
+la frise elle-même.
 
 ## 2. Stack technique
 
@@ -60,10 +64,10 @@ l'heure courante ; le bandeau montre toujours le run et l'heure de validité.
 | Langue et référencement *(lot D, 2026-09-19)* | **Site en anglais seul** : chaînes d'interface dans `web/src/i18n/en.ts`, noms Natural Earth `name_en` ; **Cloudflare Web Analytics** (sans cookie, beacon injecté au build de production, jeton public dans `web/src/build/beacon.ts`) ; Google Search Console + Bing Webmaster | aucun service payant, aucune dépendance npm ajoutée (pas de `@types/node` : `web/tests/node-shims.d.ts`) ; balises, `robots.txt`, `sitemap.xml`, manifeste, `og.jpg` écrits à la main et commités |
 | Villes de détail et recherche *(lot F, 2026-09-26)* | **GeoNames** `cities1000` (> 1 000 hab.) + `admin1CodesASCII` (régions) + `countryInfo` (pays) — **CC BY 4.0**, crédit dans `#attribution` et le panneau About | téléchargés/cache dans `tools/.geo-cache/` (git-ignoré, comme Natural Earth) par `tools/geonames.py` ; transformés par `tools/build_geo.py` en tuiles de détail (`web/public/geo/cities/5/`) et index de recherche (`web/public/geo/search/`), commités avec le site (pas de R2) ; socle Natural Earth (`places.json`) inchangé |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
-| Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; `latest.json` porte aussi `encoding` et `grid` (§5) |
+| Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; manifeste v3 `layers/forecast.json` (lot E, 2026-09-27, remplace `layers/latest.json` v2) porte `encoding`, `grid` et la frise de 20 échéances par couche ; PNG sous `layers/<run>/<couche>_f<fh>.png`, cache `immutable` (§5) |
 | Hébergement | **GitHub Actions** (cron horaire, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
 | Génération des tuiles | **GDAL CLI** (`gdaldem`, `gdalwarp`, `gdal_rasterize`, `ogr2ogr` — Actions seulement, absent du venv Windows) + **rclone** (upload R2) | orchestré par `.github/workflows/tiles.yml` (`workflow_dispatch`, 9 jobs `map`/`sat` + `index`) ; sources : **GEBCO 2026** (bathymétrie/relief), **OSM land polygons** (ODbL, masque terre + lacs), **Natural Earth 10 m** (frontières), **NASA Blue Marble (BMNG) 21600×10800** (satellite) — §5 |
-| CI | `.github/workflows/test.yml` : job `test` (pytest + `history_check` + dry-run NOMADS réel, **installe GDAL** pour tester réellement `tiler/gdal_adapter.py`), job `web` (npm ci, typecheck, vitest, build), job `deploy` (`wrangler deploy`, push `master` seulement, après `test`+`web`) ; `pipeline.yml` (cron horaire) ; `tiles.yml` (génération manuelle des tuiles, doit résider sur `master` pour `workflow_dispatch`, §6) | jobs `web`/`deploy` ajoutés le 2026-09-02 ; GDAL ajouté à `test.yml` le 2026-09-05 |
+| CI | `.github/workflows/test.yml` : job `test` (pytest + `history_check` + dry-run NOMADS réel `--max-frames 1`, **installe GDAL** pour tester réellement `tiler/gdal_adapter.py`), job `web` (npm ci, typecheck, vitest, build), job `deploy` (`wrangler deploy`, push `master` seulement, après `test`+`web`) ; `pipeline.yml` (cron horaire, `timeout-minutes: 30` depuis le lot E — frise de 20 échéances, ~40 téléchargements par run neuf) ; `tiles.yml` (génération manuelle des tuiles, doit résider sur `master` pour `workflow_dispatch`, §6) | jobs `web`/`deploy` ajoutés le 2026-09-02 ; GDAL ajouté à `test.yml` le 2026-09-05 ; `pipeline.yml` passé de 15 à 30 min et `--max-frames` ajouté au dry-run le 2026-09-27 (lot E) |
 | Outillage dépôt | Python stdlib seule | `tools/history_check.py` (`CODE_ROOTS` inclut désormais `tiler`), tests `unittest` |
 
 ## 3. Structure du dépôt
@@ -99,16 +103,16 @@ tiler/                          # génération des tuiles, Actions seulement (d�
   main.py                        # orchestration blocs → tuiles → index, CLI (extract-gebco/map/sat/merge-index), build_level0
   requirements.txt               # numpy, Pillow (+ GDAL CLI, hors pip, installé par apt sur Actions)
 pipeline/
-  config.py                    # clés R2 layers/, délais par source, versions de schéma ; legacy `gfs/latest.*`/`LEGACY_SCHEMA_VERSION` retirés (spec vent, dette n° 31 résolue)
+  config.py                    # clés R2 layers/, délais par source, versions de schéma ; legacy `gfs/latest.*`/`LEGACY_SCHEMA_VERSION` retirés (spec vent, dette n° 31 résolue) ; lot E (2026-09-27) : `FRAME_FIRST/LAST/STEP_HOURS`/`FRAME_HOURS` (f003→f060 tous les 3 h, 20 échéances), `CACHE_IMMUTABLE`, `FORECAST_KEY`/`FORECAST_SCHEMA_VERSION` (v3, clé R2 `layers/forecast` en JSON) remplacent l'ancienne clé `layers/latest` (v2)
   layers.py                    # registre LayerSpec des 9 couches (spec couches 2026-09-12 + `wind_u`/`wind_v` UGRD/VGRD 10 m, spec vent 2026-09-13, `Encoding(-60, 60, "linear")`), LAYERS, by_source
   sources.py                   # NOUVEAU : SourceSpec des 2 sources NOMADS (GFS, GEFS-chem), SOURCES
-  run_selection.py             # candidates(step_hours=…), candidates_for(source, now) — deux cadences (1 h, 3 h)
+  run_selection.py             # lot E (2026-09-27) : `Candidate(run, forecast_hour)`, `runs(now, delay, max_candidates)` (runs candidats du plus récent au plus ancien, un run n'est retenu qu'après son délai de disponibilité NOMADS), `frame_hours()` (f003→f060, pas 3 h) — remplace `candidates()`/`candidates_for()`
   nomads.py                    # build_url(source, candidate, specs) multi-variables, téléchargement, retry sur 429
   grib_adapter.py              # seul module dépendant d'eccodes ; decode_fields(data, specs) par clés (bindings eccodes directs, plus de cfgrib/xarray)
   texture.py                   # validate_grid/validate_range, convert, quantize(min,max,scale) linéaire ou racine, layer_pixels
-  metadata.py                  # layer_entry, build_manifest (schéma v2, multi-couches) ; `build_legacy` (schéma v1) retiré (spec vent, dette n° 31 résolue)
-  publish.py                   # Object, upload_r2(cfg, objects) d'une liste ordonnée, read_current(cfg, key)
-  main.py                      # orchestration à deux sources (primaire GFS, secondaire GEFS-chem tolérante), report chem, manifeste v2 (publication legacy `gfs/latest.*` retirée, spec vent T1)
+  metadata.py                  # manifeste R2 `layers/forecast` v3 (lot E, 2026-09-27, remplace `build_manifest` schéma v2) : `frame_entry`, `forecast_entry`, `build_forecast`, `progress_key`, `stats_of`, `cited_runs`, `frame_key`, `run_dir` (dossier R2 `YYYYMMDDTHHZ`), `iso_utc` — pur
+  publish.py                   # Object (dont `cache_control`), interface `Store` (`R2Store`, `LocalStore`, lot E 2026-09-27) : écrit les PNG d'échéance en `immutable`, le fichier de progression par run (reprise d'un passage coupé) et le manifeste v3 ; retient les dossiers de run non cités par l'ancien ni le nouveau manifeste et plus anciens que le plus récent cité (noms validés d'abord, progression supprimée avant les PNG, erreurs de `DeleteObjects` remontées en `PublishError`)
+  main.py                      # orchestration à deux sources (primaire GFS, secondaire GEFS-chem tolérante), report chem ; lot E (2026-09-27) : sélection du run le plus récent + frise f003→f060 par source, chaque échéance publiée dès qu'elle est prête (passage interrompu reprend au suivant via le fichier de progression), manifeste v3 R2 `layers/forecast` basculé seulement à frise complète, `--max-frames` (dry-run seulement)
   requirements.txt             # Windows OK : numpy, Pillow, requests, boto3
   requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray (non référencés dans le code, dette n° 30 §8)
 tools/
@@ -144,7 +148,7 @@ HISTORY.md                     # ce document
 .gitattributes                 # LF partout, quelle que soit la config git locale
 .gitignore                    # `web/public/dev-data/` ignoré (spec vent T11a : données dry-run CI pour la validation navigateur)
 web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
-  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique ; lot D : `lang="en"`, `<head>` complet (Open Graph, Twitter, JSON-LD WebApplication, canonical, icônes), bouton `#about-open` dans le bandeau, `<dialog id="about">` avec le texte anglais indexable ; lot F : `#search-open` (🔍) et `#locate` (📍) à côté de `#about-open`, panneau `#search-panel` (champ, liste, `#search-message`), GeoNames dans `#attribution` et le texte About
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique ; lot D : `lang="en"`, `<head>` complet (Open Graph, Twitter, JSON-LD WebApplication, canonical, icônes), bouton `#about-open` dans le bandeau, `<dialog id="about">` avec le texte anglais indexable ; lot F : `#search-open` (🔍) et `#locate` (📍) à côté de `#about-open`, panneau `#search-panel` (champ, liste, `#search-message`), GeoNames dans `#attribution` et le texte About ; lot E (2026-09-27) : panneau `#timeline` (`#timeline-play`, `#timeline-range` 0–48, `#timeline-label`, `#timeline-now`), `aria-controls` du bouton de repli étendu à `timeline`, textes « 48-hour forecast » (meta description/OG/Twitter/JSON-LD, panneau About)
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
   tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler ; `allowImportingTsExtensions` (lot D : vite.config.ts importe `./src/build/*.ts` avec l'extension, exigée par le futur chargeur de config de Vite)
@@ -159,28 +163,29 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (206 pays, 6 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko) ; lot F (2026-09-26) : cities/5/{x}/{y}.json (644 tuiles de détail GeoNames, niveau 5 seul, ~138 500 villes > 1 000 hab. après filtres PPLX/sections numérotées) et search/{pp}.json (701 fichiers d'index de recherche par préfixe de 2 caractères, format v2 clés primaires/alternatives) — geo/ pèse 17,03 Mo au total (1 348 fichiers)
     textures/blue-marble-4k.jpg  # texture couleur NASA Blue Marble, domaine public (repli si les tuiles échouent)
   src/
-    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind` ; repères géographiques délégués à `geo/wiring.ts` (`setupGeo`, dette n° 42 : 495 → 411 lignes) ; `createAbout` (panneau About, lot D) ; `createStarsLayer` et `createHaloLayer` ajoutés à la scène, `halo.setView` dans `onViewChange` ; lot F (2026-09-26) : câble `search/ui.ts` (résultat choisi → `render/fly.ts` + marqueur/tooltip + `withView`), `#locate` → `ui/locate.ts` (succès → vol sans réécriture d'URL ; échec → statut 5 s), tooltip épinglé à l'arrivée protégé du survol souris
-    config.ts                  # DATA_BASE_URL (data.globelayers.com/layers, spec couches) /TILES_BASE_URL, REFRESH_MS, STALE_AFTER_MS
+    main.ts                    # bootstrap + câblage multi-couches (spec couches 2026-09-12) : ManifestLoader, LayerCache LRU, createLayersMenu, activate(id, fromUser), applyData() ; tiles loader, tier GPU, vue par URL, overlay, tooltip, crochet `window.__worldtemp` en dev ; câblage vent (spec vent §11) : `applyWind` recalcule `present`/`windFailedNow`/`usable` après l'attente réseau et conserve l'ancien champ (jamais coupé sur un second échec au même `generated_at`), `windNotice` = « Vent indisponible » posé dès que `windOn && windFailedNow` (switch laissé actif dans ce cas, déviation assumée de la spec §11) ; `let stopWind` déclaré avant le gestionnaire `webglcontextlost` (plus de TDZ) ; crochet dev `window.__worldtempWind` ; repères géographiques délégués à `geo/wiring.ts` (`setupGeo`, dette n° 42 : 495 → 411 lignes) ; `createAbout` (panneau About, lot D) ; `createStarsLayer` et `createHaloLayer` ajoutés à la scène, `halo.setView` dans `onViewChange` ; lot F (2026-09-26) : câble `search/ui.ts` (résultat choisi → `render/fly.ts` + marqueur/tooltip + `withView`), `#locate` → `ui/locate.ts` (succès → vol sans réécriture d'URL ; échec → statut 5 s), tooltip épinglé à l'arrivée protégé du survol souris ; lot E (2026-09-27) : `ManifestLoader` relit le manifeste `forecast` (v3), `TimeCursor` (live/fixed/lecture) piloté par `createTimeline` (frise DOM), `applyData`/`applyWindTime` recalent les jeux d'échéances (`FrameSet`, `Limiter`) sur la paire courante (`framePair`/`resolvePair`) et re-clés au changement de run avant tout usage (garde `FrameSet.key`), `FrameTextures` pousse `uLayerA`/`uLayerB`/`uMix` au shader, repli sur l'échéance voisine si une échéance échoue (échec expirant après `RETRY_AFTER_MS`), contrat v2 retiré (`parseManifest`, `LayerLoader`, `isStale`, `STALE_AFTER_MS`)
+    config.ts                  # DATA_BASE_URL (data.globelayers.com/layers) /TILES_BASE_URL, REFRESH_MS (relecture du manifeste `forecast`) ; lot E (2026-09-27) : `STALE_RUN_AFTER_MS` (remplace `STALE_AFTER_MS` : âge du run, pas de l'échéance), `LABELS_REFRESH_MS`
     i18n/                       # lot D : langue du site (anglais seul aujourd'hui)
       en.ts                       # `STRINGS` : toutes les chaînes d'interface (couches, interrupteurs, statuts, erreurs fatales, bandeau, vent + rose 16 points, légende, sources) ; les messages console/exception restent en ligne dans leur module ; lot F : `status.locationUnavailable`, `search.noMatches`/`search.unavailable`
       index.ts                    # `export { STRINGS } from "./en"` — ajouter une langue = un fichier + ce choix
     build/                      # lot D : modules de build, importés par vite.config.ts seulement (jamais dans le bundle)
       beacon.ts                   # `CF_BEACON_TOKEN`, `beaconTag(token)` (jeton validé 32 hex, sinon lève), `injectBeacon(html, tag)` (lève si `</body>` absent)
       glsl.ts                     # `stripGlslComments` : retire `//…` et `/*…*/` des shaders importés en `?raw`, nombre de lignes conservé (les commentaires français restent dans les sources, rien n'en part dans le bundle)
-    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9) ; lot D : panneau About (`<dialog>`, `::backdrop`), boutons du bandeau à 1,75 rem (cible tactile 24 px), légende mobile en `border-box` (elle débordait de 11 px) ; lot F : `#search-open`/`#locate` de même taille que `#about-open`, champ + liste de recherche dépliables sous le bandeau (cibles ≥ 40 px), `#search-message`/`#status` sans se déplacer l'un l'autre dans la grille
+    style.css                  # mise en page overlay (grille 4 lignes en mobile, panneaux), menu de couches (rangée défilable ≤ 600 px), attribution avec lien OSM, #tooltip/#marker fixes ; interrupteur « Vent » (spec vent §9) ; lot D : panneau About (`<dialog>`, `::backdrop`), boutons du bandeau à 1,75 rem (cible tactile 24 px), légende mobile en `border-box` (elle débordait de 11 px) ; lot F : `#search-open`/`#locate` de même taille que `#about-open`, champ + liste de recherche dépliables sous le bandeau (cibles ≥ 40 px), `#search-message`/`#status` sans se déplacer l'un l'autre dans la grille ; lot E (2026-09-27) : `#timeline` (lecture/curseur/libellé/retour à maintenant), masqué avec `#controls` au repli ; entre 601 et 900 px `#timeline` en `grid-row: 5` sous `#legend`/`#controls` (`grid-row: 4`), largeur `min(30rem, 100%)` — correctif de validation T13 (`9d84799`, la frise se dessinait au milieu du globe) ; ≤ 600 px : `#timeline` en `calc(100vw - 1.5rem)`, boutons/curseur ≥ 44 px
     controls/
       zoom.ts                    # zoom maison sur l'altitude a = d − 1 : normalizeWheel, nextAltitude, pinchAltitude, keepAnchor, anchorRotate, PinchTracker, attachZoom (OrbitControls garde la rotation)
     layers/                     # NOUVEAU (spec couches 2026-09-12) : registre et sélection de couche, indépendants du chargement réseau
       registry.ts                 # LayerDef (label, unit, format, palette RGBA, isolignes, `soften` = σ du flou de rendu — nuages 1,2 seulement) des 7 couches, ordre du menu
       select.ts                   # pur : orderedLayers, parseLayerParam, withLayerParam
-      cache.ts                    # LayerCache : LRU de 2 LayerLoader (active + précédente), dispose à l'éviction
+      cache.ts                    # LayerCache : LRU générique à capacité fixe, dispose à l'éviction, id épinglé jamais évincé ; lot E (2026-09-27) : tient des `FrameSet<ScalarFrame>` par couche (1 en `low`, 2 en `high`, `CACHED_LAYERS`) au lieu de `LayerLoader`
     data/
-      manifest.ts                # NOUVEAU, remplace l'ancien module de métadonnées v1 : parseManifest (schéma v2, multi-couches, `layers: {id: entrée}`)
-      encoding.ts                # NOUVEAU : encode/decode linéaire et racine (miroir exact de pipeline/texture.py::quantize)
-      sampling.ts                # sampleValue générique (remplace sampleTemperature) : lecture bilinéaire CPU, decode par couche
-      loader.ts                  # ManifestLoader (manifeste v2, non réentrant) + LayerLoader par couche (PNG → texture + pixels CPU, non réentrant ; `soften` > 0 → `softenedTexture` : DataTexture RedFormat floutée, pixels bruts conservés pour le tooltip)
+      manifest.ts                # contrat manifeste `layers/forecast` v3 (lot E, 2026-09-27, remplace le schéma v2) : `parseForecast`, `Frame.valid_ms`, `ForecastEntry` (frise d'échéances par couche), `Grid`
+      encoding.ts                # encode/decode linéaire et racine (miroir exact de pipeline/texture.py::quantize)
+      sampling.ts                # sampleValue générique : lecture bilinéaire CPU, decode par couche (stride 1 canal R seul ou 4 RGBA) ; lot E (2026-09-27) : `ValueSource`/`sampleSource` mélangent deux échéances (A, B, facteur `f`) après décodage séparé — exact aussi en encodage racine
+      loader.ts                  # ManifestLoader (manifeste v3, non réentrant, relit le manifeste `forecast`), `browserDeps` (délai 60 s sur `fetchBitmap`, spec lot E), `isRunStale` ; `LayerLoader` par couche retiré (lot E, remplacé par `data/frames.ts`)
       pixels.ts                  # bitmapPixels : ImageBitmap → RGBA nord en haut via canvas 2D réutilisé (null si impossible)
       blur.ts                    # blurRedChannel : flou gaussien séparable du canal R (bouclage en longitude, bornage en latitude, `flipRows` pour l’ordre texture), logique pure
+      frames.ts                  # NOUVEAU lot E (2026-09-27) : échéances de la frise, canal R seul (1 Mo/échéance au lieu de 4) — `Limiter` (3 téléchargements simultanés, tiré par rang dans l'ordre voulu de chaque source, priorité à égalité de rang : la couche n'affame pas le vent), `FrameSet<T>` (jeu d'échéances par couche, `ensure`/`want`/`clear`, échecs journalisés, réessai après `RETRY_AFTER_MS`), `loadScalarFrame`/`loadWindFrame`, `CACHED_LAYERS`
     gpu/
       tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
     tiles/                       # spec 3 : pyramide géodésique de tuiles (miroir TS de tiler/)
@@ -191,10 +196,12 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       loader.ts                  # chargeur de tuiles : priorité, concurrence par tier, tentatives, LRU par budget mémoire
       patch.ts                   # géométrie des patches (quadtree) avec jupes orientées vers l'extérieur, lonLatToVec3
     wind/                       # NOUVEAU (spec vent 2026-09-13) : simulation CPU du vent, indépendante du rendu
-      sim.ts                      # WindSim : advection U/V, tampon slot-major [K][N][xyz] glissant (copyWithin), respawn (pickSphere), WIND_PROFILE par tier (high 5000/K9, low 1500/K5, `stride` 3 : la traînée ne glisse qu’un tick sur trois, la tête suit chaque tick ; P = 3 px/s par m/s — révisé le 2026-09-18) ; WindField `{ uv: Uint8Array entrelacé [u,v], grid, encU, encV }` (2 Mo) et `sampleUV` fusionné sans allocation (revue finale + vague de correction, `e4b4d6a`) remplacent deux appels `sampleValue` par particule/tick ; seuil d'horizon `isVisible` exact au rayon 1,002 (`73b3687`)
+      sim.ts                      # WindSim : advection U/V, tampon slot-major [K][N][xyz] glissant (copyWithin), respawn (pickSphere), WIND_PROFILE par tier (high 5000/K9, low 1500/K5, `stride` 3 : la traînée ne glisse qu’un tick sur trois, la tête suit chaque tick ; P = 3 px/s par m/s — révisé le 2026-09-18) ; WindField `{ uv: Uint8Array entrelacé [u,v], grid, encU, encV }` (2 Mo) et `sampleUV` fusionné sans allocation (revue finale + vague de correction, `e4b4d6a`) remplacent deux appels `sampleValue` par particule/tick ; seuil d'horizon `isVisible` exact au rayon 1,002 (`73b3687`) ; lot E (2026-09-27) : `WindField.uvB?`/`f` (échéance B optionnelle et facteur de mélange, interpolés entre deux échéances comme les couches scalaires) ; le chargeur dédié `WindLoader` (module `wind/loader`) est retiré, les deux PNG U/V passent désormais par `data/frames.ts`
       select.ts                   # pur : parseWindParam (`?wind=1|0`, défaut par tier, reduced-motion), withWindParam
-      loader.ts                   # WindLoader : pixels CPU des deux PNG U/V fusionnés en un seul tampon entrelacé `WindField.uv` (jamais de texture GPU, plus de tampons RGBA 8 Mo conservés), remplacement atomique, garde dispose en vol, non réentrant
       controller.ts               # WindController : step cadencé à TICK_MS (30 Hz), dt borné MAX_DT_S et égal au temps réellement consommé par le tick (le reste d'accumulateur est reporté sans être recompté, `a68d44b`), inscrit sur SceneHandle.onFrame seulement quand le vent est actif
+    time/                       # NOUVEAU lot E (2026-09-27) : curseur temporel, logique pure (spec lot E §5.1)
+      timeline.ts                  # `HOUR_MS`, `HORIZON_MS` (48 h), `framePair` (recherche binaire des deux échéances encadrant un instant + facteur de mélange `f`), `TimeRange`, `clampTime`, `snapToHour`, `resolvePair`, `loadOrder`, `nearestFrame`, `fallbackFrames` (repli sur l'échéance voisine)
+      cursor.ts                    # `TimeCursor` : état live/fixed, lecture (`PLAY_RATE` 3 h de prévision par seconde réelle, `END_HOLD_MS` avant de reboucler vers le début de l'heure courante, `MAX_STEP_MS` borne l'avance par image), `buffering` si l'échéance voulue n'est pas encore chargée ; logique pure, l'heure et la disponibilité sont injectées
     geo/                        # lot C : chargement et paramètres des repères géographiques
       loader.ts                   # once (promesse mémorisée, succès comme échec), loadLabelSet (un seul des deux fichiers en échec n'empêche pas l'autre), loadRivers ; accès réseau injectés ; `GEO_VERSION` en `?v=` sur les trois URL (invalide le cache d'un jour quand les données changent)
       params.ts                   # pur : parseFlag / withFlag (`?labels=0|1`, `?rivers=0|1`, actifs par défaut) ; lot F : withView(search, lon, lat, d) réécrit `lon`/`lat`/`d` (vue partageable après un vol)
@@ -211,11 +218,12 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     render/
       scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande ; `onFrame(cb)` (spec vent) : rendu continu seulement si un abonné est actif, 0 draw call au repos conservé sinon ; boucle `loop()` isolée par callback (`try/catch`, `9458c3d`) : un tick de vent qui lève ne prive plus la frame du rendu
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
-      globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setLayer(texture|null, w, h)/setIsoStep(step) remplacent setHeatmap/setFilter (spec couches)
+      globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setIsoStep(step) (spec couches) ; lot E (2026-09-27) : `setLayer(a, w, h, b?, mix?)` fond entre deux échéances au GPU (b/mix optionnels, remplace la signature à deux textures du contrat v2)
       colormap.ts                # buildLut(def, enc)/legendGradientCss(def, enc) génériques par couche (registre `layers/registry.ts`), LUT 256×1 sRGB
       wind.ts                    # WindLayer : un Mesh de quads instanciés (un par segment de traînée, 2 px CSS + liseré), `aStart`/`aEnd` = le tampon slot-major de wind/sim.ts lu deux fois, décalé de N sommets (InstancedInterleavedBuffer, sans copie), uniforms viewport/largeur posés dans onBeforeRender, markDirty envoie le tampon entier
+      frame-textures.ts          # NOUVEAU lot E (2026-09-27) : `FrameTextures`, deux `DataTexture` R8 fixes (mémoire GPU indépendante du nombre d'échéances) — `show(a, b?)` réutilise un emplacement déjà à la bonne clé (l'ancienne B redevient A sans recopie en lecture), données nord en haut recopiées sud en premier (même ordre que les anciens `ImageBitmap` `flipY`)
       shaders/patch.vert.glsl    # vertex shader par patch (remplace l'ancien vertex shader du globe, retiré en spec 3)
-      shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches)
+      shaders/patch.frag.glsl    # fragment shader : composition satellite/carte, bicubique Catmull-Rom 9 taps, hillshade, LUT, composition alpha par couche + isolignes (`isoline(t, spacing)`, spec couches) ; lot E (2026-09-27) : `uLayerA`/`uLayerB`/`uMix` — la seconde série de lectures est sautée si `uMix = 0`
       shaders/wind.vert.glsl     # élargit chaque segment en quad dans l’espace écran (segment nul → aire nulle), alpha dérivé de gl_InstanceID (k/(K−1) → (k+1)/(K−1))
       shaders/wind.frag.glsl     # blanc (satellite) / gris foncé (carte) selon uMapStyle, liseré de teinte opposée, bords anti-crénelés (smoothstep sur la distance à l’axe)
       rivers.ts                  # lot C : RiversLayer, quads instanciés statiques ; instanceCount = préfixe des rangs admis au zoom (RIVER_TIERS interpolés), dernier rang en fondu ; renderOrder 1 (vent 2)
@@ -236,13 +244,14 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       layers-menu.ts              # NOUVEAU : createLayersMenu, radiogroup DOM des 7 couches + Aucune, tabindex roulant, disponibilité
       toggle.ts                   # lot C : createToggle générique (role="switch"), remplace l'ancien interrupteur propre au vent ; désactivé = aria-checked false + titre d'indisponibilité, titre d'origine rendu à la réactivation
       about.ts                    # lot D : createAbout(dialog, open, close) — `<dialog>` natif en modal, fermeture par bouton, fond et Échap ; le texte vit dans index.html
-      format.ts                  # lot D : formats anglais via STRINGS (`en-GB` 24 h, point décimal, `2 h 14 min ago`, `Wind 23 km/h NW`) ; formatBanner(entry, nowMs, tz) par source (sans paramètre `def`), legendTicks(def, encoding), formatTemperature déplacée dans registry ; NOUVEAU `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10)
-      overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId ; `layersMenu`/`windToggle` remplacent l'ancien `controls` unique (spec vent §9) ; `panelRects()` (rectangles des panneaux visibles, évités par les étiquettes) et `onLayoutChange(cb)` (repli/dépli)
+      format.ts                  # lot D : formats anglais via STRINGS (`en-GB` 24 h, point décimal, `2 h 14 min ago`, `Wind 23 km/h NW`) ; legendTicks(def, encoding), formatTemperature déplacée dans registry ; `formatWind(u, v)`/`windDirection`/`compassPoint` (rose 16 points, spec vent §10) ; lot E (2026-09-27) : `formatBanner(entry, nowMs)` = « source · run HH:MM UTC · updated … ago » (l'instant choisi ne vit plus dans le bandeau, écart assumé à la spec §7.1, §5), `formatWhen(t, timeZone?)` (formateurs `Intl` mis en cache par fuseau, appelé à chaque image en lecture), `formatOffset`, `timelineLabel(t, nowMs, live, tz?)` (libellé de la frise, porte l'instant choisi)
+      overlay.ts                 # createOverlay : bandeau, statut, légende par couche (plus de bouton filtre unique), repliage mobile ; exporte byId ; `layersMenu`/`windToggle` remplacent l'ancien `controls` unique (spec vent §9) ; `panelRects()` (rectangles des panneaux visibles, évités par les étiquettes) et `onLayoutChange(cb)` (repli/dépli) ; lot E (2026-09-27) : `timeline` dans `byId`, repli mobile étend `aria-controls` à `timeline`
+      timeline.ts                 # NOUVEAU lot E (2026-09-27) : frise temporelle, DOM seul (spec lot E §7.1) — `createTimeline(els, handlers)`, `render(s)` réécrit le DOM seulement si l'état a changé (pas d'écriture à chaque image sans changement), `seek`/`toggle`/`goLive`/`interact` (premier contact = déclenche le préchargement) ; validée dans le navigateur, testée sans DOM (Vitest)
       tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode ; NOUVEAU setWind(field) ajoute une 2ᵉ ligne « Vent … » (spec vent §10) ; lot F : nom du lieu affiché, tooltip épinglé à l'arrivée d'un vol non écrasé par le survol souris (un clic sur le globe lève l'épingle)
       locate.ts                   # lot F (2026-09-26) : « ma position » — `navigator.geolocation.getCurrentPosition` (`enableHighAccuracy: false`, `timeout` 10 s, `maximumAge` 10 min), position jamais envoyée ni stockée, réseau/API injectés
   tests/
-    fixtures.ts                  # SAMPLE : manifeste de test v2 (même contrat que le pipeline), réutilisées par plusieurs suites ; NOUVEAU WIND_ENTRIES (wind_u/wind_v, hors MANIFEST, spec vent)
-    manifest.test.ts             # NOUVEAU, remplace l'ancienne suite de métadonnées v1 : parseManifest v2 (strict, couches partielles, rejet v1)
+    fixtures.ts                  # lot E (2026-09-27) : FORECAST (manifeste de test v3, frise d'échéances, même contrat que le pipeline), WIND_FORECAST (vent v3, hors de FORECAST pour ne pas changer les comptes des autres suites) — remplacent l'ancien SAMPLE v2
+    manifest.test.ts             # parseForecast v3 (strict, frise d'échéances, rejet v2) — lot E (2026-09-27), remplace la suite v2
     encoding.test.ts             # NOUVEAU : encode/decode, table de cas partagée avec pytest (demi-entiers)
     registry.test.ts             # NOUVEAU : LayerDef des 7 couches, ordre du menu
     select.test.ts               # NOUVEAU : orderedLayers, parseLayerParam, withLayerParam
@@ -250,7 +259,11 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     sampling.test.ts
     colormap.test.ts
     tier.test.ts
-    loader.test.ts               # ManifestLoader + LayerLoader (non réentrance des deux, dont le correctif `b63c9d2`)
+    loader.test.ts               # ManifestLoader (non réentrance, dont le correctif `b63c9d2`), isRunStale ; `LayerLoader` retiré (lot E, 2026-09-27)
+    frames.test.ts                # NOUVEAU lot E (2026-09-27) : Limiter (tirage par rang, erreurs journalisées, running revient à 0), FrameSet (ensure/dispose, garde de réentrance, éviction prise pour un échec seulement si activeId a changé)
+    frame-textures.test.ts        # NOUVEAU lot E (2026-09-27) : FrameTextures — réutilisation d'un emplacement déjà à la bonne clé, ancienne B → A sans recopie, orientation nord en haut
+    time-cursor.test.ts           # NOUVEAU lot E (2026-09-27) : TimeCursor — live/fixed, lecture bornée par MAX_DT_S, boucle vers range.start en fin de frise, buffering
+    time-timeline.test.ts         # NOUVEAU lot E (2026-09-27) : framePair (recherche binaire, bornes clampées), snapToHour, resolvePair, loadOrder, fallbackFrames
     format.test.ts
     tiles-grid.test.ts            # miroir des nombres de contrôle de tiler/grid.py
     tiles-manifest.test.ts
@@ -266,7 +279,6 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     tooltip.test.ts               # TapDetector, placeTooltip
     wind-sim.test.ts              # NOUVEAU : advection exacte pour u = 0, dérive bornée, spawn/respawn ; tolérances Float32 (T6, `toBeCloseTo(RADIUS, 6)`) et vitesse représentable 8 bits (v = 12) ; `sampleUV` accordé à 1e-9 avec `sampleValue` sur le même maillage cellulaire, seuil d'horizon exact au rayon 1,002
     wind-select.test.ts           # NOUVEAU : parseWindParam (défaut par tier, reduced-motion), withWindParam
-    wind-loader.test.ts           # NOUVEAU : WindLoader, remplacement atomique, garde dispose en vol (rechargement raté sur la même instance) ; ancien champ conservé sur échec au même `generated_at`, tampon `uv` entrelacé
     wind-layer.test.ts            # WindLayer : instances N·(K−1), aStart/aEnd sur le même tampon décalés de 3N, uniforms N/K, onBeforeRender (viewport, largeur × pixel ratio), garde de taille
     wind-controller.test.ts       # NOUVEAU : WindController, cadence 30 Hz, dt borné MAX_DT_S ; Σ dt ≤ temps écoulé (reste d'accumulateur non recompté, `a68d44b`)
     toggle.test.ts                # lot C : interrupteur générique sur faux bouton (Vitest sans DOM)
@@ -445,6 +457,19 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **URL non réécrite après « ma position »**, réécrite seulement après le choix d'un résultat de recherche *(2026-09-26, relecture finale F4, écart assumé à la spec §5.4)* | Le panneau About promet que la position n'est « ni envoyée ni stockée » ; une URL contenant `lon`/`lat` finit dans l'historique du navigateur et peut être partagée, ce qui contredirait la promesse. Coût : un lien de position personnelle non partageable (acceptable, ce n'est pas l'usage visé). |
 | **Montée (« hump ») du vol proportionnelle à l'angle parcouru**, absente du texte de la spec §5.3 mais retenue au plan *(2026-09-26, ruling)* | Sans elle, un vol vers un point proche des antipodes rase la surface du globe (la trajectoire directe passe sous l'horizon apparent) au lieu de la survoler. |
 | **Boutons `#search-open`/`#locate` laissés à la taille de `#about-open`** (spec §5.1), la cible de 40 px de la spec §5.5 réservée au champ et à la liste de résultats *(2026-09-26, ruling)* | Les trois boutons du bandeau doivent rester visuellement identiques ; `#about-open` est déjà à 1,75 rem (24,5 px, dette préexistante). Corriger seulement ce bouton aurait été hors périmètre du lot. |
+| **Curseur temporel sur 48 h avec lecture automatique**, pas de simple sélecteur d'échéance *(2026-09-27, décision utilisateur, lot E)* | Chantier E retenu comme « la plus grosse valeur d'usage » (§8, feuille de route) : la photo de l'instant devient un outil de prévision. La lecture (façon Windy) rend visible l'évolution sans manipulation répétée du curseur. |
+| **Pas de 3 h, f003 → f060 (20 échéances)** plutôt qu'un pas plus fin ou plus large *(2026-09-27, lot E §3.1)* | f060 garantit 48 h devant « maintenant » pendant toute la vie d'un run (jusqu'à ~12 h d'âge, avant le run suivant) ; le pas de 3 h borne le volume R2 et le nombre de PNG par run (9 couches × 20) tout en restant fondu au GPU entre deux échéances, sans à-coup visuel. |
+| **Fondu entre échéances au GPU** (`uLayerA`/`uLayerB`/`uMix`, deux textures R8 fixes), pas de décodage/interpolation CPU par image *(2026-09-27, lot E §5.3/§6.1)* | Le shader lit déjà deux textures par couche à chaque frame de rendu à la demande ; mélanger au GPU coûte une lecture de texture de plus, contre un recalcul CPU de toute l'image à chaque pas de lecture (16 s pour parcourir 48 h). |
+| **Manifeste v3 `layers/forecast.json`**, PNG rangés par dossier de run (`layers/<YYYYMMDDTHHZ>/<couche>_f<fh>.png`) — approche A *(2026-09-27, lot E §3.4)* | Une clé neuve évite toute ambiguïté avec le contrat v2 (une seule échéance) pendant la bascule ; ranger par dossier de run rend la rétention (couper un run entier) et la reprise d'un passage interrompu naturelles, sans schéma de nommage à parser. |
+| **Fichier de progression par run** (`layers/<run>/<source>.json`), pas un listing R2 pour savoir ce qui est déjà publié *(2026-09-27, lot E §3.4)* | Un `list_objects`/`HEAD` par échéance candidate serait un aller-retour R2 de plus par reprise ; le fichier de progression, déjà écrit par le run en cours, se relit d'un seul GET et porte exactement l'état voulu (noms validés avant toute suppression, revue finale). |
+| **Rétention : dossiers de run ni cités par l'ancien ni par le nouveau manifeste, plus anciens que le plus récent cité** *(2026-09-27, lot E §3.4, revue finale)* | Un run encore cité par le manifeste précédent (bascule en cours) ne doit pas disparaître sous les visiteurs déjà chargés ; supprimer la progression avant les PNG et vérifier les `Errors` de `DeleteObjects` évite un dossier à moitié effacé qui semblerait publié. |
+| **Canal R seul par échéance (1 Mo, pas 4)**, deux textures GPU R8 fixes (mémoire indépendante du nombre d'échéances) *(2026-09-27, lot E §5.3)* | 20 échéances × 9 couches en RGBA aurait multiplié par 4 le volume réseau et la mémoire GPU du profil `low` ; les données sont déjà en niveaux de gris côté pipeline (§4, décision du 2026-08-30), le canal R suffit. |
+| **`Limiter` tiré par rang** (position du prochain index voulu dans l'ordre propre à chaque source), priorité seulement à égalité de rang *(2026-09-27, lot E, revue T8)* | Un préchargement complet de la couche active affamait le vent derrière elle sous l'ancien tirage par priorité fixe ; le tirage par rang laisse la couche et le vent avancer entrelacés au lieu d'attendre la fin du préchargement d'une couche avant de commencer l'autre. |
+| **Bandeau sans l'instant choisi** (« source · run HH:MM UTC · updated … ago »), l'instant vit dans le libellé de la frise *(2026-09-27, ruling d'exécution T11, spec §7.1 mise à jour)* | Évite le doublon à l'écran entre bandeau et frise ; écart assumé à la spec validée par l'utilisateur — à revoir si l'utilisateur préfère voir l'instant dans le bandeau (coût : une ligne de `formatBanner`). |
+| **La lecture reboucle vers `range.start`** (heure courante arrondie à l'heure inférieure, recalculée chaque minute), pas vers la minute exacte *(2026-09-27, ruling T7)* | Cohérent avec le pas horaire du curseur (spec §7.1 « vers maintenant ») ; alternative rejetée : la boucle démarrerait jusqu'à 59 min avant l'instant présent. |
+| **Repli sur l'échéance voisine avant de déclarer une couche indisponible**, échec expirant après `RETRY_AFTER_MS` (30 s), délai réseau porté à 60 s *(2026-09-27, ruling de revue finale, Important)* | Une échéance en échec au démarrage grisait la couche pendant ~6 h (jusqu'à la suivante) sans repli ; le bouton redevient utilisable 30 s après un échec plutôt que de rester grisé, et 60 s de délai réseau couvre la lecture du corps (~1 Mo) sur un lien mobile faible. |
+| **Préchargement de la frise borné à la fin de la plage visible**, relancé seulement après une interaction au changement de run *(2026-09-27, ruling de revue finale)* | Précharger au-delà de `range.end` gaspillerait de la bande passante sur des échéances pas encore atteignables par la lecture ; un nouveau run ne doit pas relancer un préchargement complet tant que l'utilisateur n'a pas touché la frise. |
+| **Déploiement sans trou : frise publiée en prod depuis la branche avant le merge** (T13, `workflow_dispatch`), HISTORY mis à jour avant le push de `master` *(2026-09-27, lot E)* | Le run réel (12Z) a validé pipeline et navigateur contre R2 prod avant que `master` ne change ; `history_check` bloque le déploiement CI tant que ce document n'est pas à jour (§10), donc ce commit précède le push. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -515,6 +540,12 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-26 | Task 6 : le test « une vue est demandée » à l'arrivée d'une tuile de détail ne testait rien — le chemin des fleuves (actif par défaut) déclenchait de toute façon une demande de vue, masquant l'absence de la ligne attendue côté détail. Trouvé en revue (plan-mandated), pas par le test lui-même. | Test réécrit avec `?rivers=0` et une assertion qui échoue réellement sans la ligne de câblage attendue (`88f2135`). Un test qui ne garde rien au retrait du code testé est un défaut à corriger, pas à ignorer. |
 | 2026-09-26 | Task 10 : la grille CSS du panneau de recherche laissait `#status` se faire pousser par auto-placement dès que `#search-panel` était déplié (plan-mandated) ; `userNotice` (message « Location unavailable ») absent de la branche `noData` de `#status`. | Lignes/zones de grille explicites pour `#search-panel`/`#status` ; `userNotice` réintroduit dans la branche `noData` (`bcd37d3`). |
 | 2026-09-26 | Task 1 (implémenteur Haiku) : l'apostrophe courbe U+2019 attendue par `_LATIN_PUNCT` et son test avait été mangée en écriture (apostrophe droite U+0027, docstring aux parenthèses doublées) — round 1 de revue trouvé, pas corrigé (round 2 nécessaire). | `_LATIN_PUNCT` élargie pour accepter les deux apostrophes (U+0027 et U+2019), test réécrit avec l'échappement `’` explicite plutôt qu'un caractère littéral dans la source (`8bae8fe`, `a1b3b30`). Leçon déjà connue (§6, 2026-09-13) : vérifier le trailer et le contenu exact produit par un implémenteur Haiku, pas seulement son résultat de test. |
+| 2026-09-27 | Revue T8 (lot E, Important) : `FrameSet.ensure` restait bloqué après `dispose()` (promesse jamais résolue ni rejetée), et le `Limiter` avalait les erreurs de `onReady`/`settle` sans les journaliser — silencieuses, invisibles hors test. | Corrigés malgré le plan (ruling : le plan avait tort) : `ensure` rejette après `dispose`, erreurs journalisées. Trouvé au round 1 de revue de tâche, pas par un test qui existait déjà. |
+| 2026-09-27 | Revue T8 : le préchargement de la couche active affamait le vent derrière elle — le `Limiter` tirait par priorité fixe, donc la couche s'accaparait les 3 téléchargements simultanés jusqu'à la fin de sa frise. | Tirage par rang : la source dont le prochain index voulu a le plus petit rang dans son propre ordre passe en premier, la priorité ne départageant qu'à rang égal (§5). |
+| 2026-09-27 | Revue T12 (Important) : un jeu d'échéances (`FrameSet`) pouvait être lu avec le manifeste **nouveau** avant d'être re-clé sur ce manifeste — vent U/V mélangés à 6 h d'écart (paire d'un ancien run croisée avec un nouveau). | Re-clé synchrone dans `applyData` + garde de clé (`FrameSet.key`) vérifiée dans `wantFrames`/`applyTime`/`applyWindTime`/`settledAt` — défensif, coût nul si le cas ne se présente pas. |
+| 2026-09-27 | Revue T12 (Important) : une éviction pendant `ensure()` (changement de couche en cours de chargement) était prise pour un échec réel de l'échéance — la couche restait grisée après un simple changement d'esprit de l'utilisateur. | Rejet ignoré si `activeId !== id` au moment où la promesse se résout (l'éviction n'est pas une panne). |
+| 2026-09-27 | Revue finale de branche (Important) : une échéance en échec au tout premier chargement d'une couche grisait celle-ci pendant ~6 h, jusqu'à la prochaine tentative naturelle (pas de repli tenté). | Repli sur l'échéance voisine avant de déclarer la couche indisponible, échec expirant après 30 s (`RETRY_AFTER_MS`, bouton réactivé), délai réseau porté à 60 s (§5). |
+| 2026-09-27 | Validation navigateur T13 : entre 601 et 900 px de large, la frise (`#timeline`) se dessinait au milieu du globe — `#legend`/`#controls` et `#timeline` se disputaient la même ligne de la grille CSS dans cette plage. | `#timeline` déplacé en `grid-row: 5` sous `#legend`/`#controls` (`grid-row: 4`), largeur `min(30rem, 100%)` (`9d84799`). |
 
 ## 7. Historique par plan (chronologie)
 
@@ -538,6 +569,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-19 | feat/starfield — ciel étoilé procédural derrière le globe (`render/stars.ts`, 6 000 / 3 000 points à l'infini, passe opaque avant le globe), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `668cf7a` | 452 passed vitest (44 fichiers) ; bundle 160,88 Ko gzip (+1,04 Ko) |
 | 2026-09-19 | feat/halo — halo d'atmosphère sur le pourtour du globe (`render/halo.ts`, feuille de route P3), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `dd7f8f0` | 461 passed vitest (45 fichiers) ; bundle 161,71 Ko gzip (+0,83 Ko) |
 | 2026-09-26 | feat/search-cities — lot F : recherche de ville, « ma position », villes de détail GeoNames > 1 000 hab. (spec `2026-09-26-search-cities-design.md`, plan `2026-09-26-search-cities.md` 10 tâches, subagent-driven ; revue finale « With fixes » + vague de correction unique ; validation navigateur Brave T11, 3 tours de correctifs) | ✅ mergée | `98928fd` | 246 passed / 10 skipped pytest local (Windows) ; 553 passed vitest (51 fichiers) ; bundle 165,96 Ko gzip |
+| 2026-09-27 | feat/timeline — lot E : curseur temporel des prévisions sur 48 h, pas de 3 h (spec `2026-09-27-timeline-design.md`, plan `2026-09-27-timeline.md` 14 tâches, subagent-driven ; revue finale « With fixes » + vague de correction unique ; validation navigateur Brave T13, 1 correctif CSS) | ✅ mergée | `9339e47` | 264 passed / 10 skipped pytest local (Windows) ; 608 passed vitest (54 fichiers) ; bundle 170,16 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -597,19 +629,26 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 52 | **`web/public/geo/` pèse 17,03 Mo**, au-delà de l'estimation de la spec lot F §3.4/§3.5 (5 à 10 Mo) | Reste raisonnable pour des fichiers statiques versionnés avec le site (pas de R2, pas de limite Cloudflare Pages atteinte), mais double la taille de `geo/` par rapport au lot C seul (assets Natural Earth ≈ 460 Ko) | 🟡 ouvert, sans impact mesuré — à surveiller si un futur lot ajoute encore des données statiques |
 | 53 | **Tests ancrés sur des fichiers commités précis** : `cities/5/33/7.json` (tuile d'Épinal), `search/ep.json`, `search/mu.json` (Munich/München) | Fragile si GeoNames change ses données (recensement suivant) ou si `tools/.geo-cache/` est régénéré avec un jeu plus récent : ces tests peuvent casser sans régression de code | 🟡 ouvert — mêmes limites que les tests déjà ancrés sur `places.json`/`countries.json` (lot C) |
 | 54 | **GeoNames n'est pas versionné/daté** (contrairement à Natural Earth, figé sur `NE_TAG`) : `tools/build_geo.py` télécharge la dernière publication disponible, le cache local (`tools/.geo-cache/`) devenant la seule référence reproductible une fois téléchargé | Une régénération à une date différente peut produire un jeu de villes différent (nouvelles villes, populations mises à jour, code de feature changé) sans que le code ait changé | 🟡 ouvert — épingler une date de dump GeoNames nécessiterait de retrouver une archive datée (GeoNames ne publie qu'un flux courant) |
+| 55 | **Mémoire du profil `low` estimée dépassable** (spec lot E §5.3) : deux couches transitoires (changement de couche) portent chacune leurs échéances chargées, au-delà de l'estimation initiale | Pas mesuré en conditions réelles sur mobile modeste ; risque théorique sur le budget mémoire `low` | 🟡 ouvert, lot E |
+| 56 | **Un échec de décodage d'une échéance GFS bloque aussi GEFS-chem pour la passe** (conforme à la spec lot E §3.3, comportement voulu) | Une échéance GFS invalide prive la passe entière des couches `pm25`/`dust`, même si GEFS-chem lui-même est sain | 🟡 ouvert, assumé — comportement de spec, pas un bug |
+| 57 | **`PublishError` sur GEFS-chem retarde la publication de GFS d'une passe** (source secondaire tolérante, §3) | Auto-réparé à la passe suivante (cron horaire) ; aucune perte de données, juste un retard | 🟡 ouvert, mineur |
+| 58 | **Une perte de contexte WebGL (`webglcontextlost`) n'arrête ni la lecture ni les chargements d'échéances** en cours (lot E, revue finale, différé) | La simulation continue de tourner et de consommer du réseau pendant que le rendu est figé, jusqu'au rechargement de page | 🟡 ouvert, mineur |
+| 59 | **Activation d'une couche jusqu'à ~3 × 60 s sur un lien très lent** (paire d'échéances initiale + jusqu'à deux replis, chacun avec le délai réseau de 60 s, lot E revue finale) | Cas extrême (lien mobile très dégradé) : l'utilisateur peut attendre jusqu'à 3 minutes avant qu'une couche indisponible ne soit signalée | 🟡 ouvert, théorique |
+| 60 | **`SourceSpec.step_hours` mort en production, `_cited_run` ne compare pas les échéances citées à `FRAME_HOURS`** (`pipeline/main.py`, mineurs différés lot E) | Un `out/forecast.json` local à une seule échéance (dry-run) rend un futur dry-run complet local sans effet détectable ; idem si `FRAME_HOURS` change sans changer de run | 🟡 ouvert, mineur |
+| 61 | **Rappel daté : objets R2 legacy `layers/latest.json` et `layers/<couche>.png` (contrat v2) à supprimer à la main** après confirmation que plus aucun client ne les lit | Deux formats de sortie coexistent sur R2 pendant la période de transition (visiteurs sur l'ancien onglet/cache) | 🔴 ouvert — **à supprimer vers le 2026-10-04** (une semaine après le déploiement du lot E) |
 
-### Chantiers à venir (feuille de route, relevée le 2026-09-19, mise à jour le 2026-09-26)
+### Chantiers à venir (feuille de route, relevée le 2026-09-19, mise à jour le 2026-09-27)
 
 La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
 chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
-Ordre recommandé le 2026-09-19 : D (livré) → E → F (livré 2026-09-26) → finitions. Reste : E, P2, P4.
+Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4.
 
 **Lots identifiés**
 
 | Lot | Contenu | Pourquoi / coût | Statut |
 |---|---|---|---|
 | **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | ✅ **livré 2026-09-19** (merge `1295853`, correctif de cache `e359ebd`) ; site vérifié et sitemap envoyé dans Google Search Console et Bing Webmaster |
-| **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | 🟡 à faire |
+| **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | ✅ **livré 2026-09-27** (merge `9339e47`) : frise f003→f060 (pas 3 h) par run, curseur live/fixed avec lecture, fondu GPU entre échéances |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | ✅ **livré 2026-09-26** (merge `98928fd`) : ~138 500 villes GeoNames de détail, recherche hors ligne, « ma position », vol animé |
 
 **Hors plan d'origine, manquant sur un site public**
@@ -618,7 +657,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F (livré 2026-09-26) →
 |---|---|---|---|
 | R1 | ~~**Référencement**~~ ✅ lot D (Lighthouse SEO 100 en local ; déclaration aux moteurs : voir §9) | ~~`<head>` = `title` + `description` seulement : ni Open Graph ni image de partage, ni favicon, ni `robots.txt`, ni `sitemap.xml`, ni `canonical`, ni données structurées ; site en français seulement~~ | D |
 | R2 | ~~**Mesure d'audience**~~ ✅ lot D : beacon Cloudflare Web Analytics au build de production (actif dès que `CF_BEACON_TOKEN` est renseigné, voir §9) | ~~Aucun script d'analytics dans le code~~ | D |
-| R3 | **Dimension temporelle** | Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances | E |
+| R3 | ~~**Dimension temporelle**~~ ✅ lot E : curseur temporel sur 48 h, pas de 3 h, lecture automatique | ~~Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances~~ | E |
 | R4 | ~~**Recherche et localisation**~~ ✅ lot F | ~~Ni recherche de ville ni « ma position »~~ | F |
 | R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS) | — |
 | R6 | **PWA et hors-ligne** | Rien | — |
@@ -634,11 +673,53 @@ Ordre recommandé le 2026-09-19 : D (livré) → E → F (livré 2026-09-26) →
 | P3 | ~~Halo d'atmosphère sur le pourtour (phase 6)~~ ✅ livré 2026-09-19 (`render/halo.ts`), avec un ciel étoilé procédural (`render/stars.ts`) | ~~Rien dans le code~~ | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
 | P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
 
-**Dettes techniques encore ouvertes au 2026-09-26** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
-47, 48, 49, 50, 51, 52, 53, 54 (n° 32, 36, 37 non relues depuis 2026-09-19), plus la machine à
-états des couches et du vent restée dans `main.ts`.
+**Dettes techniques encore ouvertes au 2026-09-27** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
+47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61 (n° 32, 36, 37 non relues depuis
+2026-09-19), plus la machine à états des couches et du vent restée dans `main.ts`. La n° 61 a une
+échéance : supprimer `layers/latest.json`/`layers/<couche>.png` de R2 vers le **2026-10-04**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-09-27 — Lot E livré : curseur temporel des prévisions sur 48 h (merge `9339e47`)
+
+Brainstorming → spec `2026-09-27-timeline-design.md` (précisée en cours d'exécution,
+`9f431e1` : bandeau sans l'instant choisi) → plan `2026-09-27-timeline.md` (14 tâches) →
+exécution SDD subagent-driven sur `feat/timeline` (T1–T12 + revue par tâche, T8 et T12 avec
+rounds de correction) → revue finale de branche (« With fixes » : repli à l'activation, échecs
+qui expirent, préchargement borné, `FrameSet.clear`, rétention pipeline) → vague de correction
+unique (`8c09624`, `75ffc56`) → validation navigateur Brave T13 (accord utilisateur : push de
+branche, pipeline sur R2 prod, navigateur) → 1 correctif CSS (`9d84799`, frise au milieu du
+globe entre 601 et 900 px) → merge `9339e47`. Détail complet :
+`.superpowers/sdd/2026-09-27-timeline/progress.md`.
+
+- **Pipeline :** sélection du run le plus récent + frise **f003 → f060 au pas de 3 h** (20
+  échéances) par source ; PNG sous `layers/<run>/<couche>_f<fh>.png` (`immutable`) ; fichier de
+  progression par run (reprise d'un passage coupé) ; manifeste v3 `layers/forecast.json`
+  (remplace `layers/latest.json` v2), basculé seulement à frise complète ; rétention des
+  dossiers de run ; interface `Store` (`R2Store`/`LocalStore`) ; `--max-frames` (dry-run) ;
+  `pipeline.yml` 15 → 30 min.
+- **Mesures T13 (run 12Z réel, `workflow_dispatch`) :** run neuf **4 min 24 s** (40
+  téléchargements NOMADS) ; passage « rien à faire » **27 s** ; R2 vérifié (9 couches × 20 PNG
+  `immutable`, CORS OK, `latest.json` v2 encore intact).
+- **Front :** `web/src/time/` (modèle de temps, curseur live/fixed/lecture), `web/src/data/frames.ts`
+  (file de téléchargement partagée, `FrameSet`, canal R seul), `web/src/render/frame-textures.ts`
+  (deux textures R8 fixes), `web/src/ui/timeline.ts` (frise DOM), shader `patch.frag.glsl`
+  (`uLayerA`/`uLayerB`/`uMix`) ; contrat v2 retiré (`parseManifest`, `LayerLoader`, `isStale`,
+  `STALE_AFTER_MS`, `web/src/wind/loader.ts`) ; bandeau = source/run/fraîcheur, l'instant choisi
+  vit dans le libellé de la frise ; « Données anciennes » = run de plus de 12 h.
+- **Validation navigateur T13 :** préchargement 17+17 échéances en 6,9 s (≤ 3 requêtes
+  simultanées), lecture 52 img/s moyenne (p50 17 ms, p95 33 ms), tas JS 91 Mo, étiquettes/tooltip
+  interpolés heure par heure, console propre, mobile 390 px OK.
+- **Tests :** 264 passed / 10 skipped pytest local (Windows) ; **608 passed vitest (54 fichiers)** ;
+  `tsc` propre.
+- **Build :** `index-*.js` 170,16 Ko gzip (budget 173,96 ; avant 165,96).
+- **Ce commit HISTORY précède le push de `master`** : `history_check` bloque le déploiement CI
+  tant que ce document n'est pas à jour (§10).
+- **Prochaine action :** pousser `master` → déploiement CI, vérifier la prod et le premier cron
+  horaire sur `master` avec la frise ; validation sur téléphone par l'utilisateur ; supprimer les
+  clés R2 legacy `layers/latest.json`/`layers/<couche>.png` vers le **2026-10-04** (dette n° 61) ;
+  chantier suivant au choix — P2 (rotation automatique) ou P4 (publicité), seules lignes
+  restantes de la feuille de route (§8).
 
 ### 2026-09-26 — Lot F livré : recherche de ville, « ma position », ~138 500 villes GeoNames (merge `98928fd`, poussé)
 
@@ -1504,7 +1585,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-26 (**lot F livré et poussé, merge `98928fd`** — recherche de ville hors ligne, « ma position », ~138 500 villes de détail GeoNames ; 246 pytest + 553 vitest (51 fichiers), bundle 165,96 Ko gzip ; premier push en échec sur `history_check` (déploiement sauté), ce commit redéclenche le pipeline ; prochain chantier : lot E après un `/clear`)
+**Dernière mise à jour :** 2026-09-27 (**lot E livré, merge `9339e47`, pas encore poussé** — curseur temporel des prévisions sur 48 h, pas de 3 h, fondu GPU entre échéances ; 264 pytest + 608 vitest (54 fichiers), bundle 170,16 Ko gzip ; ce commit HISTORY précède le push de `master` (`history_check` bloque sinon le déploiement) ; prochain chantier : P2 (rotation automatique) ou P4 (publicité))
+**Entrée précédente :** 2026-09-26 (**lot F livré et poussé, merge `98928fd`** — recherche de ville hors ligne, « ma position », ~138 500 villes de détail GeoNames ; 246 pytest + 553 vitest (51 fichiers), bundle 165,96 Ko gzip ; premier push en échec sur `history_check` (déploiement sauté), ce commit redéclenche le pipeline ; prochain chantier : lot E après un `/clear`)
 **Entrée précédente :** 2026-09-19 (**arrêt de session — tout est mergé, poussé et vérifié en prod** : lot C, dettes n° 42/41, lot D « site public » en anglais, ciel étoilé, halo ; §1 remis à l'état réel du site ; 461 vitest + 207 pytest, bundle 161,71 Ko gzip ; prochain chantier au choix : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**halo d'atmosphère mergé `dd7f8f0` et déployé** — avec le ciel étoilé, le globe est vu depuis l'espace ; 461 vitest, bundle 161,71 Ko gzip ; aucun chantier en cours)
 **Entrée précédente :** 2026-09-19 (**ciel étoilé procédural derrière le globe, mergé `668cf7a` et déployé** — 452 vitest, bundle 160,88 Ko gzip ; page indexée par Google ; aucun chantier en cours)
