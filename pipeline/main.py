@@ -135,10 +135,12 @@ def _process_source(
         if frames is not None:
             log.info("%s : frise complète, run %s (%d échéances)", source.id, iso_utc(run), len(hours))
             return SourceOutput({s.id: forecast_entry(s, source, run, frames[s.id], now) for s in specs}, fresh=True)
-        if cited is not None:
-            log.info("%s : run %s incomplet, le run %s reste publié", source.id, iso_utc(run), cited)
-            return SourceOutput(reused)
-        # Aucun run complet publié (premier déploiement) : on essaie le candidat plus ancien.
+        # Run incomplet : on essaie le candidat plus ancien, tant qu'il reste plus récent que le run
+        # publié (passages horaires sautés par le cron GitHub) ; ses PNG attendent la reprise.
+        log.info("%s : run %s incomplet, essai du run précédent", source.id, iso_utc(run))
+    if cited is not None:
+        log.info("%s : aucun run plus récent complet, le run %s reste publié", source.id, cited)
+        return SourceOutput(reused)
     raise SourceFailure(EXIT_SOURCE, f"{source.id} : aucun run complet parmi {len(candidates)} candidats")
 
 
