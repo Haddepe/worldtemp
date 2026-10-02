@@ -485,6 +485,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Token personnel fine-grained** (dépôt seul, *Actions : write*, 1 an) plutôt qu'une GitHub App *(2026-10-02, choix utilisateur)* | Un appel par heure ne justifie pas JWT signé, installation et token d'installation. Contrepartie : l'expiration, couverte par la dette datée n° 63. Le token ne transite ni par Claude ni par le dépôt (posé par l'utilisateur dans le dashboard). |
 | **Toutes les heures à :55** (`55 * * * *`) plutôt que des créneaux ciblés *(2026-10-02, choix utilisateur)* | Aucune couche ne change toutes les heures : GFS et GEFS-Aerosols sortent 4 runs par jour, complets à R + 3 h 48–50 et R + 4 h 48–49 (horodatages NOMADS) — tous deux vers :50, c'est la minute qui fixe le retard. Les 16 passages à vide par jour (~25 s) ne coûtent rien sur dépôt public et rattrapent tout retard de NOAA. |
 | **Cron GitHub `12 * * * *` gardé en secours ; surveillance passive** (exécution « failed » dans Cloudflare + bandeau « outdated » + dette datée) ; pas de nouvelle tentative dans une exécution *(2026-10-02, choix utilisateur)* | Une panne du Worker ramène aux 4 à 6 passages par jour, pas à zéro ; un double déclenchement est absorbé par `concurrency: pipeline`. Une alerte active demanderait un service d'envoi de plus ; une reprise ne ferait gagner qu'une heure. |
+| **Bornes plausibles GEFS-chem relevées : poussière (0, 500 000), PM2.5 (0, 200 000) µg/m³** (`pipeline/layers.py`) *(2026-10-02, `fix/dust-bounds`, demande utilisateur : « prendre en compte les tempêtes de sable sahariennes »)* | Maxima réels de la semaine : poussière 43 118 (06z f054) puis 59 830 (12z f048, rejeté) ; PM2.5 ≈ 0,2 × la poussière dans ces épisodes (8 383 au pic du 06z). Les bornes restent un garde-fou d'ordre de grandeur (~8 × la tempête observée) qui rejette toujours une erreur d'unité (maximum courant × 1000) ou une valeur manquante GRIB (9.999e20) ; l'affichage ne change pas (encodage 0–2000 / 0–500, valeurs au-delà écrêtées). PM2.5 relevée avec la poussière, même rapport 0,4 entre les deux bornes, car elle contient la fraction fine de la même tempête. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -563,6 +564,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-27 | Validation navigateur T13 : entre 601 et 900 px de large, la frise (`#timeline`) se dessinait au milieu du globe — `#legend`/`#controls` et `#timeline` se disputaient la même ligne de la grille CSS dans cette plage. | `#timeline` déplacé en `grid-row: 5` sous `#legend`/`#controls` (`grid-row: 4`), largeur `min(30rem, 100%)` (`9d84799`). |
 | 2026-10-02 | **Prod : bandeau « Data is outdated », run GFS 18z de la veille encore servi à 16 h UTC** (signalé par l'utilisateur). Deux causes cumulées : le cron `12 * * * *` ne déclenche que 4 à 7 passages par jour (trous de 7 h constatés, `gh api …/runs?event=schedule`) ; et à 09:42, 06z s'arrêtait à f054 (absent) → `run 06z incomplet, le run 18z reste publié`, sans essai de 00z, pourtant complet. | Repli sur le run précédent tant qu'il reste plus récent que le publié (§5, test `test_incomplete_new_run_falls_back_to_complete_run_newer_than_published` écrit rouge d'abord) ; passage manuel `workflow_dispatch` → 12z publié à 16:21. Cron : dette n° 62. **Leçon :** le cron GitHub n'est pas un ordonnanceur horaire, ne rien concevoir qui suppose qu'il le soit. |
 | 2026-10-02 | Revue finale `feat/cron-worker` (Minor, reclassé Important au regard de la spec « jamais le token ») : le corps d'erreur était tronqué à 200 caractères **avant** le masquage du token — un token à cheval sur la coupure aurait laissé sortir son début en clair. | Masquer d'abord, tronquer ensuite (`ca8aa03`), test « token masqué avant troncature » écrit rouge d'abord. **Leçon :** toute transformation qui découpe une chaîne doit venir après le masquage d'un secret. |
+| 2026-10-02 | Run GEFS-chem 12z rejeté à f048 au premier passage lancé par `worldtemp-cron` : `dust : plage invraisemblable [0.0001013, 5.983e+04], attendu (0.0, 50000.0)` — une tempête saharienne dépassait le garde-fou ; pm25/dust restaient sur 06z, et le rejet se serait répété à chaque passage jusqu'au run suivant. | Bornes relevées (§5), tests « accepte les tempêtes sahariennes » écrits rouges d'abord, et « rejette toujours les erreurs d'unité ». **Leçon :** calibrer un garde-fou sur les maxima publiés (stats des fichiers de progression `layers/<run>/gefs_chem.json`), pas sur une journée calme. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -589,6 +591,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-27 | feat/timeline — lot E : curseur temporel des prévisions sur 48 h, pas de 3 h (spec `2026-09-27-timeline-design.md`, plan `2026-09-27-timeline.md` 14 tâches, subagent-driven ; revue finale « With fixes » + vague de correction unique ; validation navigateur Brave T13, 1 correctif CSS) | ✅ mergée | `9339e47` | 264 passed / 10 skipped pytest local (Windows) ; 608 passed vitest (54 fichiers) ; bundle 170,16 Ko gzip |
 | 2026-10-02 | fix/run-fallback — repli sur le run précédent quand le plus récent est incomplet (bandeau « outdated » en prod) ; chemin borné (diagnostic en chat, TDD, spec lot E §3.2 révisée) | ✅ mergée, déployée par CI | `2be344a` | 265 passed / 10 skipped pytest |
 | 2026-10-02 | feat/cron-worker — dette n° 62 : Worker Cloudflare `worldtemp-cron` qui lance `pipeline.yml` par `workflow_dispatch` chaque heure à :55 (spec `2026-10-02-cron-worker-design.md`, plan `2026-10-02-cron-worker.md` 4 tâches, exécution native + revue finale opus, 1 correctif) | ✅ mergée, déployée par CI | `daf210b` | 23 vitest `cron/` + 265 pytest (10 skipped) |
+| 2026-10-02 | fix/dust-bounds — bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³ (tempêtes sahariennes) ; chemin borné (constat en chat, TDD) | ✅ mergée, déployée par CI | `465346b` | 272 passed / 10 skipped pytest |
 
 ## 8. Dette technique connue
 
@@ -700,6 +703,20 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 échéance : supprimer `layers/latest.json`/`layers/<couche>.png` de R2 vers le **2026-10-04** ; la n° 63 aussi : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-02 (3) — Bornes poussière et PM2.5 relevées pour les tempêtes sahariennes (merge `465346b`)
+
+Constaté au premier passage lancé par `worldtemp-cron` (19:55 UTC, run 37057276173, succès) :
+GEFS-chem 12z rejeté à f048, poussière 59 830 µg/m³ > 50 000 (§6). Calibrage sur les maxima
+publiés des runs 06z/12z (§5) ; bornes 500 000 / 200 000, PM2.5 incluse à cause de la fraction
+fine (choix de Claude, à la demande « prendre en compte les tempêtes sahariennes »).
+Branche distante `feat/cron-worker` supprimée à la demande de l'utilisateur.
+
+- **Tests :** 272 pytest (10 skipped), dont 7 nouveaux (`test_layers.py`).
+- **Ce commit HISTORY précède le push de `master`** (§10).
+- **Prochaine action :** au passage suivant, vérifier que GEFS-chem 12z se publie
+  (`gefs_chem : frise complète, run 2026-10-02T12:00:00Z`) ; contrôle 24 h de `worldtemp-cron`
+  (≥ 22 passages `workflow_dispatch`) ; clés R2 legacy vers le **2026-10-04** (dette n° 61).
 
 ### 2026-10-02 (2) — Pipeline lancé chaque heure par un Worker Cloudflare (merge `daf210b`, dette n° 62 fermée)
 
@@ -1645,7 +1662,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-02 (**pipeline lancé chaque heure à :55 par le Worker Cloudflare `worldtemp-cron`, merge `daf210b`, dette n° 62 fermée** — `workflow_dispatch` par token fine-grained (expire le 2027-10-02, dette n° 63) ; 23 vitest `cron/` + 265 pytest ; ce commit HISTORY précède le push de `master` ; reste : secret à poser par l'utilisateur, vérification au :55)
+**Dernière mise à jour :** 2026-10-02 (**bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³, merge `465346b`** — GEFS-chem 12z rejeté par une tempête saharienne (59 830 > 50 000) ; 272 pytest ; `worldtemp-cron` a déclenché son premier run à 19:55 ; ce commit HISTORY précède le push de `master`)
+**Entrée précédente :** 2026-10-02 (**pipeline lancé chaque heure à :55 par le Worker Cloudflare `worldtemp-cron`, merge `daf210b`, dette n° 62 fermée** — `workflow_dispatch` par token fine-grained (expire le 2027-10-02, dette n° 63) ; 23 vitest `cron/` + 265 pytest ; ce commit HISTORY précède le push de `master` ; reste : secret à poser par l'utilisateur, vérification au :55)
 **Entrée précédente :** 2026-10-02 (**correctif : site resté 22 h sur un run GFS périmé, merge `2be344a`** — repli sur le run précédent quand le plus récent est incomplet ; cron GitHub à 4–7 passages par jour relevé en dette n° 62, à traiter ensuite ; 265 pytest ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-09-27 (**lot E livré, merge `9339e47`, pas encore poussé** — curseur temporel des prévisions sur 48 h, pas de 3 h, fondu GPU entre échéances ; 264 pytest + 608 vitest (54 fichiers), bundle 170,16 Ko gzip ; ce commit HISTORY précède le push de `master` (`history_check` bloque sinon le déploiement) ; prochain chantier : P2 (rotation automatique) ou P4 (publicité))
 **Entrée précédente :** 2026-09-26 (**lot F livré et poussé, merge `98928fd`** — recherche de ville hors ligne, « ma position », ~138 500 villes de détail GeoNames ; 246 pytest + 553 vitest (51 fichiers), bundle 165,96 Ko gzip ; premier push en échec sur `history_check` (déploiement sauté), ce commit redéclenche le pipeline ; prochain chantier : lot E après un `/clear`)
