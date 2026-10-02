@@ -510,8 +510,8 @@ Job séparé de `deploy` : un échec du Worker de déclenchement ne bloque pas l
 
 - [ ] **Step 3: Vérifier la syntaxe YAML**
 
-Run: `.venv/Scripts/python -c "import yaml,sys; d=yaml.safe_load(open('.github/workflows/test.yml',encoding='utf-8')); print(list(d['jobs']))"`
-Expected: `['test', 'web', 'cron', 'deploy', 'deploy-cron']`
+Run: `npx --yes js-yaml .github/workflows/test.yml | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(Object.keys(JSON.parse(s).jobs)))"`
+Expected: `[ 'test', 'web', 'cron', 'deploy', 'deploy-cron' ]`
 
 - [ ] **Step 4: Commit et push de la branche, CI verte**
 
