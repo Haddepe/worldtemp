@@ -470,6 +470,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Repli sur l'échéance voisine avant de déclarer une couche indisponible**, échec expirant après `RETRY_AFTER_MS` (30 s), délai réseau porté à 60 s *(2026-09-27, ruling de revue finale, Important)* | Une échéance en échec au démarrage grisait la couche pendant ~6 h (jusqu'à la suivante) sans repli ; le bouton redevient utilisable 30 s après un échec plutôt que de rester grisé, et 60 s de délai réseau couvre la lecture du corps (~1 Mo) sur un lien mobile faible. |
 | **Préchargement de la frise borné à la fin de la plage visible**, relancé seulement après une interaction au changement de run *(2026-09-27, ruling de revue finale)* | Précharger au-delà de `range.end` gaspillerait de la bande passante sur des échéances pas encore atteignables par la lecture ; un nouveau run ne doit pas relancer un préchargement complet tant que l'utilisateur n'a pas touché la frise. |
 | **Déploiement sans trou : frise publiée en prod depuis la branche avant le merge** (T13, `workflow_dispatch`), HISTORY mis à jour avant le push de `master` *(2026-09-27, lot E)* | Le run réel (12Z) a validé pipeline et navigateur contre R2 prod avant que `master` ne change ; `history_check` bloque le déploiement CI tant que ce document n'est pas à jour (§10), donc ce commit précède le push. |
+| **Run le plus récent incomplet → repli sur les candidats plus anciens tant qu'ils restent plus récents que le run publié** (`_process_source`, `pipeline/main.py` ; spec lot E §3.2 révisée) *(2026-10-02, `fix/run-fallback`)* | La règle d'origine ne remontait qu'au premier déploiement, en supposant un passage par heure qui finit toujours par compléter le nouveau run. Le cron GitHub n'en tient que 4 à 6 par jour (dette n° 62) : garder l'ancien run quand un intermédiaire complet existe laissait le site plus de 12 h en retard. Les PNG du run incomplet restent sur R2 (la rétention épargne les dossiers plus récents que le run publié) et sont repris au passage suivant. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -546,6 +547,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-27 | Revue T12 (Important) : une éviction pendant `ensure()` (changement de couche en cours de chargement) était prise pour un échec réel de l'échéance — la couche restait grisée après un simple changement d'esprit de l'utilisateur. | Rejet ignoré si `activeId !== id` au moment où la promesse se résout (l'éviction n'est pas une panne). |
 | 2026-09-27 | Revue finale de branche (Important) : une échéance en échec au tout premier chargement d'une couche grisait celle-ci pendant ~6 h, jusqu'à la prochaine tentative naturelle (pas de repli tenté). | Repli sur l'échéance voisine avant de déclarer la couche indisponible, échec expirant après 30 s (`RETRY_AFTER_MS`, bouton réactivé), délai réseau porté à 60 s (§5). |
 | 2026-09-27 | Validation navigateur T13 : entre 601 et 900 px de large, la frise (`#timeline`) se dessinait au milieu du globe — `#legend`/`#controls` et `#timeline` se disputaient la même ligne de la grille CSS dans cette plage. | `#timeline` déplacé en `grid-row: 5` sous `#legend`/`#controls` (`grid-row: 4`), largeur `min(30rem, 100%)` (`9d84799`). |
+| 2026-10-02 | **Prod : bandeau « Data is outdated », run GFS 18z de la veille encore servi à 16 h UTC** (signalé par l'utilisateur). Deux causes cumulées : le cron `12 * * * *` ne déclenche que 4 à 7 passages par jour (trous de 7 h constatés, `gh api …/runs?event=schedule`) ; et à 09:42, 06z s'arrêtait à f054 (absent) → `run 06z incomplet, le run 18z reste publié`, sans essai de 00z, pourtant complet. | Repli sur le run précédent tant qu'il reste plus récent que le publié (§5, test `test_incomplete_new_run_falls_back_to_complete_run_newer_than_published` écrit rouge d'abord) ; passage manuel `workflow_dispatch` → 12z publié à 16:21. Cron : dette n° 62. **Leçon :** le cron GitHub n'est pas un ordonnanceur horaire, ne rien concevoir qui suppose qu'il le soit. |
 
 ## 7. Historique par plan (chronologie)
 
@@ -570,6 +572,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-09-19 | feat/halo — halo d'atmosphère sur le pourtour du globe (`render/halo.ts`, feuille de route P3), `og.jpg` recapturé ; chemin borné (design en chat, TDD, pas de spec ni de plan) | ✅ mergée, déployée par CI | `dd7f8f0` | 461 passed vitest (45 fichiers) ; bundle 161,71 Ko gzip (+0,83 Ko) |
 | 2026-09-26 | feat/search-cities — lot F : recherche de ville, « ma position », villes de détail GeoNames > 1 000 hab. (spec `2026-09-26-search-cities-design.md`, plan `2026-09-26-search-cities.md` 10 tâches, subagent-driven ; revue finale « With fixes » + vague de correction unique ; validation navigateur Brave T11, 3 tours de correctifs) | ✅ mergée | `98928fd` | 246 passed / 10 skipped pytest local (Windows) ; 553 passed vitest (51 fichiers) ; bundle 165,96 Ko gzip |
 | 2026-09-27 | feat/timeline — lot E : curseur temporel des prévisions sur 48 h, pas de 3 h (spec `2026-09-27-timeline-design.md`, plan `2026-09-27-timeline.md` 14 tâches, subagent-driven ; revue finale « With fixes » + vague de correction unique ; validation navigateur Brave T13, 1 correctif CSS) | ✅ mergée | `9339e47` | 264 passed / 10 skipped pytest local (Windows) ; 608 passed vitest (54 fichiers) ; bundle 170,16 Ko gzip |
+| 2026-10-02 | fix/run-fallback — repli sur le run précédent quand le plus récent est incomplet (bandeau « outdated » en prod) ; chemin borné (diagnostic en chat, TDD, spec lot E §3.2 révisée) | ✅ mergée, déployée par CI | `2be344a` | 265 passed / 10 skipped pytest |
 
 ## 8. Dette technique connue
 
@@ -636,6 +639,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 59 | **Activation d'une couche jusqu'à ~3 × 60 s sur un lien très lent** (paire d'échéances initiale + jusqu'à deux replis, chacun avec le délai réseau de 60 s, lot E revue finale) | Cas extrême (lien mobile très dégradé) : l'utilisateur peut attendre jusqu'à 3 minutes avant qu'une couche indisponible ne soit signalée | 🟡 ouvert, théorique |
 | 60 | **`SourceSpec.step_hours` mort en production, `_cited_run` ne compare pas les échéances citées à `FRAME_HOURS`** (`pipeline/main.py`, mineurs différés lot E) | Un `out/forecast.json` local à une seule échéance (dry-run) rend un futur dry-run complet local sans effet détectable ; idem si `FRAME_HOURS` change sans changer de run | 🟡 ouvert, mineur |
 | 61 | **Rappel daté : objets R2 legacy `layers/latest.json` et `layers/<couche>.png` (contrat v2) à supprimer à la main** après confirmation que plus aucun client ne les lit | Deux formats de sortie coexistent sur R2 pendant la période de transition (visiteurs sur l'ancien onglet/cache) | 🔴 ouvert — **à supprimer vers le 2026-10-04** (une semaine après le déploiement du lot E) |
+| 62 | **Le cron `schedule` de `pipeline.yml` ne déclenche que 4 à 7 passages par jour au lieu de 24** (constaté du 2026-09-13 au 2026-10-02 ; GitHub saute des déclenchements planifiés) | Données jusqu'à ~12 h en retard même avec le repli (§5) ; la dette n° 57 suppose aussi un passage horaire | 🔴 ouvert — piste : Worker Cloudflare (cron trigger) qui appelle `workflow_dispatch` chaque heure, à discuter avec l'utilisateur (prochain chantier) |
 
 ### Chantiers à venir (feuille de route, relevée le 2026-09-19, mise à jour le 2026-09-27)
 
@@ -674,11 +678,28 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
 
 **Dettes techniques encore ouvertes au 2026-09-27** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
-47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61 (n° 32, 36, 37 non relues depuis
+47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62 (n° 32, 36, 37 non relues depuis
 2026-09-19), plus la machine à états des couches et du vent restée dans `main.ts`. La n° 61 a une
 échéance : supprimer `layers/latest.json`/`layers/<couche>.png` de R2 vers le **2026-10-04**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-02 — Correctif : site resté 22 h sur un run GFS périmé (merge `2be344a`)
+
+Signalé par l'utilisateur : bandeau « Data is outdated », « updated 16 h 53 min ago », run 18z
+de la veille. Diagnostic par les logs Actions (§6) : cron GitHub irrégulier (4 à 7 passages par
+jour) **et** pas de repli sur 00z complet quand 06z était incomplet.
+
+- **Remise à jour immédiate :** `gh workflow run pipeline.yml` (accord utilisateur) ; un passage
+  planifié est parti au même moment, GFS 12z + GEFS 06z publiés à 16:21 UTC, vérifié sur
+  `data.globelayers.com/layers/forecast.json`.
+- **Correctif `fix/run-fallback` :** `_process_source` essaie les candidats plus anciens tant
+  qu'ils restent plus récents que le run publié (§5) ; spec lot E §3.2 révisée ; 265 pytest
+  (10 skipped).
+- **Ce commit HISTORY précède le push de `master`** (`history_check`, §10).
+- **Prochaine action :** pousser `master` → déploiement CI ; puis **dette n° 62** (cron
+  irrégulier) — l'utilisateur veut en discuter après ce correctif, piste Worker Cloudflare
+  → `workflow_dispatch` ; supprimer les clés R2 legacy vers le **2026-10-04** (dette n° 61).
 
 ### 2026-09-27 — Lot E livré : curseur temporel des prévisions sur 48 h (merge `9339e47`)
 
@@ -1585,7 +1606,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-09-27 (**lot E livré, merge `9339e47`, pas encore poussé** — curseur temporel des prévisions sur 48 h, pas de 3 h, fondu GPU entre échéances ; 264 pytest + 608 vitest (54 fichiers), bundle 170,16 Ko gzip ; ce commit HISTORY précède le push de `master` (`history_check` bloque sinon le déploiement) ; prochain chantier : P2 (rotation automatique) ou P4 (publicité))
+**Dernière mise à jour :** 2026-10-02 (**correctif : site resté 22 h sur un run GFS périmé, merge `2be344a`** — repli sur le run précédent quand le plus récent est incomplet ; cron GitHub à 4–7 passages par jour relevé en dette n° 62, à traiter ensuite ; 265 pytest ; ce commit HISTORY précède le push de `master`)
+**Entrée précédente :** 2026-09-27 (**lot E livré, merge `9339e47`, pas encore poussé** — curseur temporel des prévisions sur 48 h, pas de 3 h, fondu GPU entre échéances ; 264 pytest + 608 vitest (54 fichiers), bundle 170,16 Ko gzip ; ce commit HISTORY précède le push de `master` (`history_check` bloque sinon le déploiement) ; prochain chantier : P2 (rotation automatique) ou P4 (publicité))
 **Entrée précédente :** 2026-09-26 (**lot F livré et poussé, merge `98928fd`** — recherche de ville hors ligne, « ma position », ~138 500 villes de détail GeoNames ; 246 pytest + 553 vitest (51 fichiers), bundle 165,96 Ko gzip ; premier push en échec sur `history_check` (déploiement sauté), ce commit redéclenche le pipeline ; prochain chantier : lot E après un `/clear`)
 **Entrée précédente :** 2026-09-19 (**arrêt de session — tout est mergé, poussé et vérifié en prod** : lot C, dettes n° 42/41, lot D « site public » en anglais, ciel étoilé, halo ; §1 remis à l'état réel du site ; 461 vitest + 207 pytest, bundle 161,71 Ko gzip ; prochain chantier au choix : lot E ou F)
 **Entrée précédente :** 2026-09-19 (**halo d'atmosphère mergé `dd7f8f0` et déployé** — avec le ciel étoilé, le globe est vu depuis l'espace ; 461 vitest, bundle 161,71 Ko gzip ; aucun chantier en cours)
