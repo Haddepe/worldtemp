@@ -86,6 +86,13 @@ describe("dispatch — échecs", () => {
     expect(err.message).toBe(`workflow_dispatch refusé : HTTP 502 — ${html.slice(0, 200)}`);
   });
 
+  it("token masqué avant troncature : rien n'en sort même à cheval sur le 200e caractère", async () => {
+    const body = "x".repeat(190) + TOKEN + "y".repeat(50);
+    const err = await failure({ GITHUB_TOKEN: TOKEN }, respond(500, body));
+    expect(err.message).not.toContain(TOKEN.slice(0, 10));
+    expect(err.message).toContain("***");
+  });
+
   it("réseau ou délai dépassé : erreur « injoignable »", async () => {
     const fetchFn: Fetch = vi.fn(async () => {
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");

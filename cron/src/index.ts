@@ -46,7 +46,8 @@ export async function dispatch(env: Env, fetchFn: Fetch, log: (message: string) 
 
   const body = await response.text().catch(() => "");
   if (response.status !== 200 && response.status !== 204) {
-    throw new Error(hide(`workflow_dispatch refusé : HTTP ${response.status} — ${body.slice(0, BODY_EXCERPT)}`));
+    // Masquer avant de tronquer : un token coupé par la troncature échapperait au masquage.
+    throw new Error(`workflow_dispatch refusé : HTTP ${response.status} — ${hide(body).slice(0, BODY_EXCERPT)}`);
   }
   const runId = runIdOf(body);
   log(runId === null ? "déclenché" : `déclenché : run ${runId}`);
