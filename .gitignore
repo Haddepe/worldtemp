@@ -10,6 +10,8 @@ node_modules/
 web/dist/
 .vite/
 web/.wrangler/
+cron/dist/
+cron/.wrangler/
 
 # Données et textures générées — jamais versionnées (voir docs/PLAN.md,
 # « Conventions et garde-fous »). Le pipeline et les scripts de préparation

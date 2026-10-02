@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Déclenche pipeline.yml par workflow_dispatch chaque heure à :55 UTC (spec cron-worker §2).
+  // Ni route ni workers.dev : aucune URL publique.
+  "name": "worldtemp-cron",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "triggers": { "crons": ["55 * * * *"] },
+  "workers_dev": false,
+  "observability": { "enabled": true }
+}
