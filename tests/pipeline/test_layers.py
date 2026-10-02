@@ -69,6 +69,28 @@ def test_convert(layer_id, raw, expected):
     assert out[0] == pytest.approx(expected, rel=1e-9)
 
 
+@pytest.mark.parametrize("layer_id,storm", [
+    ("dust", 59_830.0),    # GEFS-chem 2026-10-02 12z f048 : rejeté par l'ancienne borne 50 000
+    ("dust", 150_000.0),   # marge : tempête saharienne ~2,5 × plus forte
+    ("pm25", 30_000.0),    # fraction fine de la même tempête (~0,2 × la poussière)
+])
+def test_plausible_range_accepts_saharan_dust_storms(layer_id, storm):
+    from pipeline.texture import validate_range
+    validate_range(np.array([0.5, storm]), get(layer_id).plausible, layer_id)
+
+
+@pytest.mark.parametrize("layer_id,bad", [
+    ("dust", 3_000.0 * 1000),   # maximum courant × 1000 : erreur d'unité (ng au lieu de µg)
+    ("pm25", 1_500.0 * 1000),
+    ("dust", 9.999e20),          # valeur manquante GRIB non masquée
+    ("pm25", 9.999e20),
+])
+def test_plausible_range_still_rejects_unit_errors(layer_id, bad):
+    from pipeline.texture import InvalidData, validate_range
+    with pytest.raises(InvalidData, match="invraisemblable"):
+        validate_range(np.array([0.5, bad]), get(layer_id).plausible, layer_id)
+
+
 def test_temp_layer_keeps_spec_1_encoding():
     e = get("temp").encoding
     assert (e.min, e.max, e.scale) == (-90, 60, "linear")
