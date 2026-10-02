@@ -201,8 +201,19 @@ def test_incomplete_new_run_keeps_published_run(tmp_path):
     store = store_with(published(gfs_run=R00))
     code, rec, _ = make_run(tmp_path, store=store, download=not_found_when("filter_gfs", "t06z", "f003"))
     assert code == EXIT_OK
-    assert len(rec.downloads) == 1 and "t06z" in rec.downloads[0]  # pas de repli sur un run plus ancien
+    assert len(rec.downloads) == 1 and "t06z" in rec.downloads[0]  # 00z est le run publié : pas de repli plus loin
     assert all(config.FORECAST_KEY not in put for put in store.puts)  # chem déjà à jour : rien de neuf
+
+
+def test_incomplete_new_run_falls_back_to_complete_run_newer_than_published(tmp_path):
+    # Cron GitHub sauté : le manifeste cite encore 18z la veille, 06z est incomplet, 00z complet.
+    store = store_with(published(gfs_run="2026-09-11T18:00:00Z"))
+    code, rec, _ = make_run(tmp_path, store=store, download=not_found_when("filter_gfs", "t06z", "f006"))
+    assert code == EXIT_OK
+    assert manifest_of(store)["layers"]["temp"]["run"] == R00
+    assert f"layers/{D06}/temp_f003.png" in store.objects  # f003 de 06z garde sa place pour la reprise
+    gfs = [u for u in rec.downloads if "filter_gfs" in u]
+    assert not any("20260911" in u for u in gfs)  # rien plus ancien que le run publié
 
 
 def test_everything_already_published_is_noop(tmp_path):

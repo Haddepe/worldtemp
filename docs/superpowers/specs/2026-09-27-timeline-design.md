@@ -59,9 +59,12 @@ Pour chaque source, primaire (GFS) d'abord :
    présentes sur R2 pour toutes ses couches.** D'ici là, le manifeste garde l'ancien run de
    cette source.
 
-Si le run candidat le plus récent est incomplet et que le manifeste n'a encore **aucun** run
-complet pour la source primaire (premier déploiement, §8), on essaie les candidats plus anciens
-dans l'ordre (le premier run complet l'emporte).
+Si le run candidat le plus récent est incomplet, on essaie les candidats plus anciens dans
+l'ordre (le premier run complet l'emporte), **tant qu'ils restent plus récents que le run déjà
+publié** ; sans run publié (premier déploiement, §8), on les essaie tous. *(Révisé le
+2026-10-02 : la règle d'origine ne remontait qu'au premier déploiement et supposait un passage
+par heure ; le cron GitHub n'en tient que 4 à 6 par jour, et le site est resté 22 h sur le run
+18z alors que 00z était complet.)*
 
 ### 3.3 Échecs et codes de sortie
 
