@@ -102,6 +102,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Après le déploiement : le fichier-clé doit déjà être en ligne. Un échec
+      # (API IndexNow indisponible) ne doit pas rendre le déploiement rouge.
+      - name: Signalement IndexNow (Bing, Yandex, Naver, Seznam, Yep)
+        working-directory: .
+        continue-on-error: true
+        run: python tools/indexnow.py web/dist
 
   deploy-cron:
     needs: [test, web, cron]
