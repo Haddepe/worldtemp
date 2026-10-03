@@ -200,7 +200,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       blur.ts                    # blurRedChannel : flou gaussien séparable du canal R (bouclage en longitude, bornage en latitude, `flipRows` pour l’ordre texture), logique pure
       frames.ts                  # NOUVEAU lot E (2026-09-27) : échéances de la frise, canal R seul (1 Mo/échéance au lieu de 4) — `Limiter` (3 téléchargements simultanés, tiré par rang dans l'ordre voulu de chaque source, priorité à égalité de rang : la couche n'affame pas le vent), `FrameSet<T>` (jeu d'échéances par couche, `ensure`/`want`/`clear`, échecs journalisés, réessai après `RETRY_AFTER_MS`), `loadScalarFrame`/`loadWindFrame`, `CACHED_LAYERS`
     gpu/
-      tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=)
+      tier.ts                    # detectTier : faisceau d'indices (renderer, cœurs, UA, pixel ratio, ?tier=) ; 2026-10-03 : `isBrave` (`"brave" in navigator`) — le nombre de cœurs, brouillé par Brave, est ignoré
     tiles/                       # spec 3 : pyramide géodésique de tuiles (miroir TS de tiler/)
       grid.ts                    # miroir de tiler/grid.py : tileBounds, tileSpan, children, parent, tileKey, subRect
       manifest.ts                # lecture du manifeste JSON des tuiles (TilesManifest {sat, map})
@@ -238,7 +238,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       data.ts                     # parseur de rivers.bin (WTRV) → segments 3D au rayon 1,001, subdivision > 2° le long du grand cercle, cumul par rang (RiversError)
     render/
       scene.ts                   # THREE.Scene/Camera/Renderer/OrbitControls (enableZoom = false, zoom délégué à controls/zoom.ts, enableRotate coupé pendant un pincement), rendu à la demande ; `onFrame(cb)` (spec vent) : rendu continu seulement si un abonné est actif, 0 draw call au repos conservé sinon ; boucle `loop()` isolée par callback (`try/catch`, `9458c3d`) : un tick de vent qui lève ne prive plus la frame du rendu ; 2026-10-03 : `setViewShift(px)` → `camera.setViewOffset` réappliqué à chaque `resize` (image remontée, mobile)
-      view-shift.ts              # 2026-10-03 : pur — `globeShiftPx(h, freeTop, freeBottom)` centre le globe entre le bandeau et les couches, borné à ±15 % de la hauteur ; branché dans main.ts (mobile ≤ 600 px, ResizeObserver sur bandeau et couches)
+      view-shift.ts              # 2026-10-03 : pur — `globeShiftPx(h, freeTop, freeBottom)` place le centre du globe aux 42 % de l'espace libre entre le bandeau et les couches (`CENTER_FRACTION`), borné à ±15 % de la hauteur ; branché dans main.ts (mobile ≤ 600 px, ResizeObserver sur bandeau et couches)
       pick.ts                    # picking analytique sur la sphère unité : pickSphere, vec3ToLonLat, projectToScreen, ndcFromCanvas
       globe.ts                   # globe tuilé : quadtree de patches, un seul ShaderMaterial partagé + uniformsNeedUpdate par patch ; setIsoStep(step) (spec couches) ; lot E (2026-09-27) : `setLayer(a, w, h, b?, mix?)` fond entre deux échéances au GPU (b/mix optionnels, remplace la signature à deux textures du contrat v2)
       colormap.ts                # buildLut(def, enc)/legendGradientCss(def, enc) génériques par couche (registre `layers/registry.ts`), LUT 256×1 sRGB ; 2026-10-03 : `legendStops(def, enc)` (arrêts 0–1 partagés par la légende CSS et la capture) ; `legendStopsCss(def, enc)` (arrêts sans orientation, pour `--stops`)
@@ -521,6 +521,8 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Vent : nombre de particules proportionnel à la surface d'écran (0,004 / px CSS²), plafonds 7 500 / 1 500, traînée et vitesse inchangées** *(2026-10-03, demande utilisateur « rapprocher l'ordinateur du rendu téléphone, sans toucher la traînée »)* | À 5 000 fixes sur ~1920×950 contre 1 500 sur ~412×915, l'ordinateur était ~1,5 fois moins dense. La vitesse (3 px CSS/s par m/s) reste : l'impression de vitesse sur téléphone vient de l'écran étroit. Plafond 7 500 mesuré à 60 fps (16,8 ms moy., p95 16,8 ms) en 1920×1000 ; fixé au démarrage (pas de réallocation au redimensionnement) |
 | **Correction du même jour : densité de référence 0,0133 / px CSS², plafond high 8 500** *(2026-10-03, remplace la ligne précédente)* | Le téléphone de l'utilisateur est en profil `high` (aucun critère `low` : GPU Adreno/Mali-G récent, 8 cœurs), pas `low` comme supposé : il affichait 5 000 particules sur 412 × 915, soit une densité ~4,4 fois celle de l'ordinateur — c'est ce rendu qu'il préfère. 0,0133 le restitue (5 014). Plafond mesuré sur la machine de l'utilisateur en 1920 × 1000 : 8 500 → 60 fps (16,7 ms, p95 16,9, aucune frame > 20 ms), 10 000 → ~47 fps (21,1 ms, p95 33,7). L'ordinateur reste ~3 fois moins dense que le téléphone : plus coûterait la fluidité |
 | **Globe recentré sur mobile par `camera.setViewOffset`** plutôt qu'en déplaçant le canvas *(2026-10-03, demande utilisateur « le globe a l'air trop bas »)* | L'interface du bas (couches + crédits, ~150 px) dépasse le bandeau du haut (~50–115 px) : centré sur l'écran entier, le globe paraissait bas. Décaler la projection garde un canvas plein écran, et tout ce qui lit la caméra suit (pick, étiquettes, tuiles, zoom ancré, vent) ; déplacer le canvas aurait cassé les repères écran (étiquettes, tooltip, `canvasPoint`) |
+| **Centre du globe aux 42 % de l'espace libre** (et non 50 %) *(2026-10-03, retour utilisateur « encore trop bas »)* | À 50 % le globe paraissait encore bas sur téléphone ; 42 % le remonte d'environ 55 px de plus sur 412 × 915 (décalage total 80 px), validé à l'œil en émulation |
+| **Sous Brave, le nombre de cœurs est ignoré pour le profil GPU** *(2026-10-03)* | Brave brouille `navigator.hardwareConcurrency` (anti-pistage, valeur au hasard ≤ la vraie, différente par site) : la machine de l'utilisateur annonçait 4 cœurs sur globelayers.com (`tier low — hardwareConcurrency 4`, 1 500 particules, tuiles plus grossières) et le vrai nombre sur localhost (`tier high`). Les autres critères restent (nom de GPU, mobile à dpr < 2, `?tier=`) ; contrepartie : un vrai petit PC sous Brave passe en high (dette n° 68) |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -603,6 +605,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-03 | Revue finale `feat/capture` (opus, agent neuf) : **I1** des images bloquées ≥ 400 ms en plein vol « ma position » (onglet en arrière-plan, téléphone lent) déclenchaient l'écriture d'un point intermédiaire > 5°, levaient la garde, et l'arrivée écrivait la position ; **I2** `cityChosen()` appelé au départ du vol de ville : un vol annulé par un geste laissait la caméra près de « ma position » sans garde ; **Minor reclassé Important** : `roundRect` absent (iOS < 16, Firefox < 112) faisait échouer toute capture | I1 : `busy()` = `flight.active` dans `attachViewUrl`, aucune écriture pendant un vol (test rouge → vert) ; I2 : garde levée dans le rappel d'arrivée (branchement `main.ts`, vérifié au navigateur : vol Berlin interrompu → rien d'écrit) ; repli `rect` (test rouge → vert). Commit `a7a3dfb` |
 | 2026-10-03 | Validation navigateur : premier essai de 📍 avec géolocalisation simulée sans vol (cause non élucidée, probablement le faux GPS posé juste avant le clic) puis écriture de la vue près du point simulé — alarme de fuite | Écartée : `d` inchangé (1,312 au lieu de 1,15) prouvait l'absence de vol, l'application ne connaissait aucune position ; second essai : URL vidée, rien d'écrit à 2° ni au retour sur le point, écriture reprise à 10° |
 | 2026-10-03 | Densité de vent alignée sur un téléphone supposé `low` (1 500 particules) : le téléphone de l'utilisateur, en réalité `high` (5 000), est devenu ~3 fois moins dense, et l'ordinateur n'a gagné que ~46 % — signalé par l'utilisateur (« moins de particules sur téléphone ») | Hypothèse de profil vérifiée contre `gpu/tier.ts` (aucun critère `low` ne s'applique à un Android récent) au lieu d'être supposée ; densité de référence recalée sur l'ancien rendu `high` du téléphone, plafond ordinateur mesuré (merge `14bbdd1`) |
+| 2026-10-03 | « Aucune différence en ligne » malgré les tests concluants en local : en ligne, Brave classait l'ordinateur de l'utilisateur en `low` (nombre de cœurs brouillé à 4), donc plafond de 1 500 particules avant comme après ; en local (non brouillé) et dans le navigateur piloté, `high` | Diagnostiqué par la ligne de console `[worldtemp] tier …` relevée par l'utilisateur sur les deux sites, puis `?tier=high` en ligne (rendu identique aux tests) ; correctif `isBrave` (merge `d6aed4a`). La même console a montré `ERR_BLOCKED_BY_CLIENT` : Brave Shields bloque le beacon Cloudflare Web Analytics (dette n° 67) |
 
 ## 7. Historique par plan (chronologie)
 
@@ -635,6 +638,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-03 | feat/capture-save — menu « Share… / Save image » sur mobile (`ui/capture-menu.ts`, `share.ts` découpé en `captureChoices`/`shareImage`/`saveImage`) ; chemin borné (design en chat, TDD) ; validé en émulation tactile 412×915 et sur ordinateur | ✅ mergée, déployée par CI | `3e7f3bc` | 663 vitest locaux + timeout connu `geo-loader` (dette n° 65) |
 | 2026-10-03 | feat/mobile-layout — légende et frise verticales sur téléphone, vent à densité d'écran ; chemin borné (maquettes ASCII, design en chat, TDD) ; validé en émulation 412×915 et 360×740, ordinateur inchangé à 1400×900, 60 fps à 7 500 particules | ✅ mergée, déployée par CI | `c2b91e2` | 669 vitest locaux + timeout connu `geo-loader` ; bundle 173,73 Ko gzip |
 | 2026-10-03 | fix/mobile-polish — légende et frise collées aux bords, globe recentré entre bandeau et couches (mobile), densité de vent de l'ancien rendu téléphone + plafond 8 500 mesuré ; chemin borné | ✅ mergée, déployée par CI | `14bbdd1` | 674 vitest locaux + timeout connu `geo-loader` ; bundle 173,97 Ko gzip |
+| 2026-10-03 | fix/brave-tier — nombre de cœurs ignoré sous Brave (profil GPU juste), centre du globe aux 42 % de l'espace libre sur mobile ; chemin borné (diagnostic avec l'utilisateur, TDD) | ✅ mergée, déployée par CI | `d6aed4a` | 677 vitest locaux + timeout connu `geo-loader` |
 
 ## 8. Dette technique connue
 
@@ -706,6 +710,8 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 64 | **Mineurs différés de la revue finale `feat/capture`** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-10-03-capture/progress.md`) : JSDoc de `shareView` restée au-dessus de `viewGuard` dans `main.ts` ; cartouche de l'épingle à 8 px de rayon contre 7 px (`.panel` 0.5rem), interligne 1.25 contre `normal` ; un glisser tenu immobile ≥ 400 ms écrit la vue pendant le geste (`replaceState`, invisible) ; `STRINGS.capture.button` inutilisé (`aria-label` en dur dans `index.html`) ; `/?` final dans la barre d'adresse après 📍 sans autre paramètre ; graduations −40…−10 serrées dans la légende de l'image (comme à l'écran) | Cosmétique ou sans effet visible | 🟡 ouvert, mineur |
 | 65 | **`web/tests/geo-loader.test.ts` (empreinte FNV-1a de `public/geo/`, 17 Mo) dépasse le délai Vitest de 5 s sur le poste local chargé**, parfois même lancé seul (2026-10-03, 3 fois sur 5) ; vert sur Actions | Faux rouge local à chaque `npm test` sous charge, risque de masquer un vrai rouge | 🟡 ouvert — piste : délai explicite plus long pour ce test |
 | 66 | **Partage sur iPhone non validé** : sur Android, feuille de partage et « Save image » → Galerie confirmés par l'utilisateur le 2026-10-03 ; restent iOS (Safari) et le contenu reçu par chaque appli cible (`files` + `url` + `text`) | Sur iPhone ou dans certaines applis, l'image pourrait ne pas être jointe | 🟡 ouvert, réduit à iOS |
+| 67 | **Audience sous-comptée : le beacon Cloudflare Web Analytics est bloqué par Brave Shields** (`ERR_BLOCKED_BY_CLIENT`, constaté le 2026-10-03) et sans doute par les bloqueurs de publicité | Les 30 chargements humains mesurés (§5) sont un minimum ; les visiteurs sous Brave ou avec bloqueur n'apparaissent pas | 🟡 ouvert — à prendre en compte au chantier audience (pistes : trafic HTTP de la zone, `pageViews` filtrés des robots) |
+| 68 | **Un vrai petit PC sous Brave est classé `high`** : sans nombre de cœurs fiable, seuls le nom du GPU (souvent masqué) et l'UA mobile peuvent le faire basculer en `low` | Jusqu'à 8 500 particules et des tuiles fines sur une machine faible : saccades possibles | 🟡 ouvert, théorique — contournement `?tier=low` ; piste : profil adaptatif selon le temps de frame mesuré |
 
 ### Chantiers à venir (feuille de route, relevée le 2026-09-19, mise à jour le 2026-09-27)
 
@@ -745,11 +751,26 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | **Différé le 2026-10-03** : audience humaine quasi nulle (§5) ; à rouvrir quand Cloudflare Web Analytics montrera un trafic régulier |
 
 **Dettes techniques encore ouvertes au 2026-10-03** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
-47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 63, 64, 65, 66 (n° 32, 36, 37 non relues depuis
+47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 63, 64, 65, 66, 67, 68 (n° 32, 36, 37 non relues depuis
 2026-09-19), plus la machine à états des couches et du vent restée dans `main.ts`. La n° 61 est fermée
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-03 (7) — Profil GPU juste sous Brave, globe remonté sur mobile (merge `d6aed4a`)
+
+L'utilisateur valide les bords sur téléphone, trouve le globe encore trop bas, et ne voit toujours
+aucune différence de vent en ligne alors que les tests locaux étaient concluants. Serveur local
+relancé sur `master` à sa demande pour comparer : sa console donne `tier low — hardwareConcurrency
+4` en ligne et `tier high` en local, et `?tier=high` en ligne reproduit les tests → Brave brouille
+le nombre de cœurs (§6). Correctif `isBrave` + centre du globe aux 42 % (TDD), validé en émulation
+(décalage 80 px, lecture au pixel des étiquettes juste).
+
+- **Tests :** 677 vitest locaux, typecheck propre ; seul échec : timeout `geo-loader` (dette n° 65).
+- **Ce commit HISTORY précède le push de `master`** (§10).
+- **Prochaine action :** l'utilisateur vérifie en ligne dans son Brave (console : `tier high —
+  default heuristic (Brave: core count ignored)`, vent dense) et le centrage sur téléphone ; puis
+  **lot G (chantier audience ③)**, en tenant compte de la dette n° 67 pour la mesure.
 
 ### 2026-10-03 (6) — Mobile : bords collés, globe recentré, densité de vent corrigée (merge `14bbdd1`)
 
@@ -1815,7 +1836,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-03 (**mobile : bords collés, globe recentré, densité de vent corrigée, merge `14bbdd1`** — téléphone en `high` et non `low`, densité 0,0133 / px², plafond 8 500 mesuré à 60 fps ; ce commit HISTORY précède le push de `master`)
+**Dernière mise à jour :** 2026-10-03 (**profil GPU juste sous Brave, globe aux 42 % sur mobile, merge `d6aed4a`** — Brave brouillait le nombre de cœurs (low à tort) ; beacon d'audience bloqué par Brave Shields (dette n° 67) ; ce commit HISTORY précède le push de `master`)
+**Entrée précédente :** 2026-10-03 (**mobile : bords collés, globe recentré, densité de vent corrigée, merge `14bbdd1`** — téléphone en `high` et non `low`, densité 0,0133 / px², plafond 8 500 mesuré à 60 fps ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**légende et frise verticales sur téléphone, vent à densité d'écran, merge `c2b91e2`** — globe entier visible sur mobile ; particules à 0,004 / px CSS², plafond 7 500 à 60 fps ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**menu « Share… / Save image » sur mobile, merge `3e7f3bc`** — enregistrement dans la Galerie Android par téléchargement ; lot G (pages de référencement par couche) inscrit comme prochain chantier ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**capture d'image partageable et vue caméra dans l'URL, merge `8fea4fb`** — chantier audience ② ; revue finale opus, 3 corrections ; validé au navigateur ; 658 vitest, 293 pytest ; ce commit HISTORY précède le push de `master`)
