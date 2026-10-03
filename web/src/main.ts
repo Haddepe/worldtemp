@@ -6,7 +6,7 @@ import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
 import { captureImage } from "./capture/capture";
 import { captureFileName, captureWhen } from "./capture/naming";
 import { ViewGuard } from "./capture/privacy";
-import { shareOrSave } from "./capture/share";
+import { browserShareEnv, captureChoices, saveImage, shareData, shareImage } from "./capture/share";
 import { attachViewUrl } from "./capture/view-url";
 import { withView, withoutView } from "./geo/params";
 import { setupGeo } from "./geo/wiring";
@@ -32,6 +32,7 @@ import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { TimeCursor } from "./time/cursor";
 import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
 import { createAbout } from "./ui/about";
+import { createCaptureMenu } from "./ui/capture-menu";
 import { formatBanner, formatWhen } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { locate } from "./ui/locate";
@@ -485,6 +486,11 @@ async function boot(): Promise<void> {
   };
   // Capture (spec capture §4.1) : l'image fige l'instant du clic, la lecture continue.
   const captureButton = byId<HTMLButtonElement>("capture");
+  const captureMenu = createCaptureMenu({
+    menu: byId<HTMLElement>("capture-menu"),
+    share: byId<HTMLButtonElement>("capture-share"),
+    save: byId<HTMLButtonElement>("capture-save"),
+  });
   const runCapture = async (): Promise<void> => {
     captureButton.disabled = true;
     captureButton.setAttribute("aria-busy", "true");
@@ -498,7 +504,13 @@ async function boot(): Promise<void> {
       const text = layer
         ? `${layer.def.label} · ${captureWhen(tMs)} — ${STRINGS.capture.site}`
         : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
-      const outcome = await shareOrSave(blob, captureFileName(layer ? layer.def.id : null, tMs), text, location.href);
+      const name = captureFileName(layer ? layer.def.id : null, tMs);
+      const data = shareData(blob, name, text, location.href);
+      const env = browserShareEnv();
+      // Tactile : choix Share / Save (Android : Save → Download/, visible dans la Galerie) ; ordinateur : téléchargement direct.
+      const choice = captureChoices(env, data).length > 1 ? await captureMenu.choose() : "save";
+      if (choice === null) return;
+      const outcome = choice === "share" ? await shareImage(blob, name, data, env) : saveImage(blob, name, env);
       if (outcome === "saved") flashNotice(STRINGS.capture.saved);
     } catch (e) {
       console.error(e);

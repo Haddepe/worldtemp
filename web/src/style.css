@@ -258,6 +258,10 @@ html, body {
   background: none; border: 1px solid currentColor; border-radius: 50%;
   width: 1.75rem; height: 1.75rem; flex: none; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
 }
+#capture-menu { grid-row: 2; grid-column: 1 / -1; justify-self: center; display: flex; gap: 0.5rem; }
+#capture-menu[hidden] { display: none; }
+#capture-menu button { min-height: 44px; padding: 0 1.1rem; font: inherit; color: var(--panel-fg); background: transparent; border: 1px solid var(--panel-muted); border-radius: 999px; cursor: pointer; }
+#capture-menu button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 #search { grid-row: 2; grid-column: 1 / -1; justify-self: center; width: min(100%, 24rem); box-sizing: border-box; }
 #search-input {
   width: 100%; box-sizing: border-box; min-height: 40px; padding: 0.5rem;
