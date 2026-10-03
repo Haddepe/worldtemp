@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import type { Encoding } from "../src/data/encoding";
 import { decode, encode } from "../src/data/encoding";
-import { layerDef } from "../src/layers/registry";
-import { LUT_SIZE, buildLut, colorAt, createLutTexture, legendGradientCss } from "../src/render/colormap";
+import { layerDef, type LayerDef } from "../src/layers/registry";
+import { LUT_SIZE, buildLut, colorAt, createLutTexture, legendGradientCss, legendStops } from "../src/render/colormap";
 
 const temp = layerDef("temp")!;
 const rain = layerDef("rain")!;
@@ -58,5 +58,16 @@ describe("createLutTexture", () => {
     expect(t.image.width).toBe(LUT_SIZE);
     expect(t.generateMipmaps).toBe(false);
     expect(t.wrapS).toBe(THREE.ClampToEdgeWrapping);
+  });
+});
+
+describe("legendStops", () => {
+  it("mêmes arrêts que le gradient CSS, positions 0–1", () => {
+    const def = { stops: [{ v: 0, rgba: [0, 0, 0, 255] }, { v: 50, rgba: [255, 0, 0, 128] }] } as unknown as LayerDef;
+    const enc = { bits: 8, min: 0, max: 100, scale: "linear" } as const;
+    expect(legendStops(def, enc)).toEqual([
+      { at: 0, color: "rgba(0, 0, 0, 1)" },
+      { at: 128 / 255, color: "rgba(255, 0, 0, 0.502)" },
+    ]);
   });
 });

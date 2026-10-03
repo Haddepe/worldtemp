@@ -21,3 +21,13 @@ export function withView(search: string, lon: number, lat: number, d: number): s
   p.set("d", d.toFixed(3));
   return `?${p.toString()}`;
 }
+
+/** Retire `lon`, `lat`, `d` (après « ma position », spec capture §4.3). Toujours préfixé par `?` :
+ * `history.replaceState(…, "")` garderait l'URL courante au lieu de la vider. */
+export function withoutView(search: string): string {
+  const p = new URLSearchParams(search);
+  p.delete("lon");
+  p.delete("lat");
+  p.delete("d");
+  return `?${p.toString()}`;
+}

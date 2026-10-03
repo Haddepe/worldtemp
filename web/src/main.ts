@@ -3,7 +3,12 @@ import { DATA_BASE_URL, LABELS_REFRESH_MS, REFRESH_MS, STALE_RUN_AFTER_MS, TILES
 import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, RETRY_AFTER_MS, loadScalarFrame, loadWindFrame, type ScalarFrame } from "./data/frames";
 import { ManifestLoader, browserDeps, isRunStale } from "./data/loader";
 import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
-import { withView } from "./geo/params";
+import { captureImage } from "./capture/capture";
+import { captureFileName, captureWhen } from "./capture/naming";
+import { ViewGuard } from "./capture/privacy";
+import { shareOrSave } from "./capture/share";
+import { attachViewUrl } from "./capture/view-url";
+import { withView, withoutView } from "./geo/params";
 import { setupGeo } from "./geo/wiring";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
@@ -132,7 +137,8 @@ async function boot(): Promise<void> {
     const c = canvasPoint(e);
     const hit = tap.feed({ type, id: e.pointerId, x: c.x, y: c.y, t: e.timeStamp });
     if (!hit) return;
-    tooltip.setReading(tooltip.hitMarker(hit.x, hit.y) ? null : readingAt(hit.x, hit.y, c.w, c.h), "pin");
+    const r = tooltip.hitMarker(hit.x, hit.y) ? null : readingAt(hit.x, hit.y, c.w, c.h);
+    tooltip.setReading(r && { ...r, origin: "user" }, "pin");
     tooltip.update(sceneHandle.camera, c.w, c.h);
   };
 
@@ -445,15 +451,64 @@ async function boot(): Promise<void> {
   canvas.addEventListener("wheel", () => flight.cancel(), { passive: true });
   /** `shareView` : réécrire l'URL à l'arrivée — oui pour une ville choisie, non pour « ma position »
    * (la position n'est ni stockée ni partagée, promesse du panneau About ; relecture finale F4). */
+  // Vue toujours à jour dans l'URL, jamais « ma position » (spec capture §4.3).
+  const viewGuard = new ViewGuard();
+  attachViewUrl({
+    camera: sceneHandle.camera,
+    onViewChange: (cb) => sceneHandle.onViewChange(cb),
+    onInteraction: (cb) => {
+      canvas.addEventListener("pointerdown", cb);
+      canvas.addEventListener("wheel", cb, { passive: true });
+    },
+    busy: () => flight.active,
+    guard: viewGuard,
+    search: () => location.search,
+    replace: (s) => history.replaceState(null, "", s),
+  });
   const goTo = (lon: number, lat: number, name: string | undefined, shareView: boolean): void => {
+    // Ville : garde levée à l'arrivée seulement — un vol annulé (geste) laisse la caméra près de
+    // « ma position », qui doit rester protégée (revue finale).
+    if (!shareView) {
+      viewGuard.located(lon, lat);
+      history.replaceState(null, "", withoutView(location.search));
+    }
     tooltip.setReading(null, "pin");
     flight.start(lon, lat, FLY_DISTANCE, () => {
-      tooltip.setReading({ lon, lat, name }, "pin");
+      tooltip.setReading({ lon, lat, name, origin: shareView ? "city" : "locate" }, "pin");
       tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
-      if (shareView) history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      if (shareView) {
+        viewGuard.cityChosen();
+        history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      }
       sceneHandle.requestRender();
     });
   };
+  // Capture (spec capture §4.1) : l'image fige l'instant du clic, la lecture continue.
+  const captureButton = byId<HTMLButtonElement>("capture");
+  const runCapture = async (): Promise<void> => {
+    captureButton.disabled = true;
+    captureButton.setAttribute("aria-busy", "true");
+    try {
+      const m = manifests.manifest;
+      const entry = shownId && m ? m.layers[shownId] : undefined;
+      const def = shownId ? layerDef(shownId) : undefined;
+      const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run } : null;
+      const tMs = layer ? cursor.state.t : Date.now();
+      const blob = await captureImage(sceneHandle, { layer, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
+      const text = layer
+        ? `${layer.def.label} · ${captureWhen(tMs)} — ${STRINGS.capture.site}`
+        : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
+      const outcome = await shareOrSave(blob, captureFileName(layer ? layer.def.id : null, tMs), text, location.href);
+      if (outcome === "saved") flashNotice(STRINGS.capture.saved);
+    } catch (e) {
+      console.error(e);
+      flashNotice(STRINGS.capture.failed);
+    } finally {
+      captureButton.disabled = false;
+      captureButton.removeAttribute("aria-busy");
+    }
+  };
+  captureButton.addEventListener("click", () => void runCapture());
   const geoBase = `${import.meta.env.BASE_URL}geo`;
   createSearchUi({
     openButton: byId<HTMLButtonElement>("search-open"),
