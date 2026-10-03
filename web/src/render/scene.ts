@@ -19,6 +19,8 @@ export interface SceneHandle {
   onFrame(cb: (nowMs: number) => boolean): () => void;
   /** Place la caméra au-dessus d'un point (paramètres d'URL `lon`, `lat`, `d`). */
   setInitialView(lon: number, lat: number, distance: number): void;
+  /** Remonte l'image de `px` px CSS (négatif = descend) : globe centré dans l'espace libre sur mobile. */
+  setViewShift(px: number): void;
   start(): void;
 }
 
@@ -77,11 +79,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     controls.rotateSpeed = Math.min(0.5, Math.max(0.01, 0.25 * (d - 1)));
   };
 
+  let shift = 0;
   const resize = () => {
     const w = canvas.clientWidth;
     const h = Math.max(1, canvas.clientHeight);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    // Fenêtre de vue décalée vers le bas = image remontée ; toute la chaîne (pick, étiquettes,
+    // tuiles, zoom ancré) lit la matrice de projection et suit sans autre changement.
+    if (shift !== 0 && w > 0) camera.setViewOffset(w, h, 0, shift, w, h);
+    else camera.clearViewOffset();
     camera.updateProjectionMatrix();
     dirty = true;
   };
@@ -149,6 +156,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       return () => {
         frameListeners.delete(cb);
       };
+    },
+    setViewShift(px) {
+      if (px === shift) return;
+      shift = px;
+      resize();
     },
     setInitialView(lon, lat, distance) {
       const d = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, distance));

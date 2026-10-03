@@ -22,6 +22,7 @@ import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
+import { globeShiftPx } from "./render/view-shift";
 import { createStarsLayer } from "./render/stars";
 import { createWindLayer } from "./render/wind";
 import { CitySearch } from "./search/index";
@@ -205,6 +206,24 @@ async function boot(): Promise<void> {
   };
 
   sceneHandle.start();
+  // Mobile : globe centré entre le bandeau et les couches, pas sur l'écran entier (2026-10-03).
+  // ResizeObserver : le bandeau change de hauteur quand son texte change ; replié (▾), les couches
+  // disparaissent et le décalage retombe à 0.
+  const mobileLayout = matchMedia("(max-width: 600px)");
+  const bannerEl = byId<HTMLElement>("banner");
+  const controlsEl = byId<HTMLElement>("controls");
+  const applyShift = (): void => {
+    if (!mobileLayout.matches) return sceneHandle.setViewShift(0);
+    const top = bannerEl.getBoundingClientRect().bottom;
+    const bottom = controlsEl.getBoundingClientRect().top;
+    sceneHandle.setViewShift(globeShiftPx(window.innerHeight, top, bottom));
+  };
+  new ResizeObserver(applyShift).observe(bannerEl);
+  new ResizeObserver(applyShift).observe(controlsEl);
+  window.addEventListener("resize", applyShift);
+  mobileLayout.addEventListener("change", applyShift);
+  ui.onLayoutChange(applyShift);
+  applyShift();
   await loadTiles();
 
   const manifests = new ManifestLoader(DATA_BASE_URL);

@@ -17,13 +17,13 @@ import type { ViewState } from "../tiles/lod";
  */
 /** `particles` = plafond (depuis le 2026-10-03) : le nombre réel suit la surface de l'écran (`windParticles`). */
 export const WIND_PROFILE: Record<Tier, { particles: number; trail: number; stride: number }> = {
-  high: { particles: 7_500, trail: 9, stride: 3 },
+  high: { particles: 8_500, trail: 9, stride: 3 },
   low: { particles: 1_500, trail: 5, stride: 3 },
 };
 
-/** Particules par px CSS² : celle d'un téléphone (1 500 sur 412 × 915), rendu préféré par
- * l'utilisateur ; à 5 000 fixes, un écran d'ordinateur était ~1,5 fois moins dense (2026-10-03). */
-export const WIND_DENSITY = 0.004;
+/** Particules par px CSS² : celle de l'ancien rendu téléphone (5 000 en high sur 412 × 915), préféré
+ * par l'utilisateur (2026-10-03). Plafond high 8 500 : 60 fps mesurés en 1920 × 1000, ~47 fps à 10 000. */
+export const WIND_DENSITY = 0.0133;
 const MIN_PARTICLES = 300;
 
 /** Nombre de particules pour un écran de `width` × `height` px CSS, fixé au démarrage. */
