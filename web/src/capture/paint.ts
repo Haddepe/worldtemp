@@ -1,9 +1,10 @@
-/** Exécute les ordres de `compose.ts` sur un canvas 2D (pas de test : Vitest tourne sans canvas). */
+/** Exécute les ordres de `compose.ts` sur un canvas 2D ; rendu validé à l'œil, repli `roundRect` testé (`capture-paint.test.ts`). */
 import type { DrawOp } from "./compose";
 
 function shape(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
-  if (r > 0) ctx.roundRect(x, y, w, h, r);
+  // `roundRect` absent sur iOS < 16 et Firefox < 112 : coins droits plutôt qu'une capture en échec.
+  if (r > 0 && typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
   else ctx.rect(x, y, w, h);
 }
 

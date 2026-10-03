@@ -4,13 +4,13 @@ import { ViewGuard } from "../src/capture/privacy";
 import { SETTLE_MS, attachViewUrl } from "../src/capture/view-url";
 import { lonLatToVec3 } from "../src/tiles/patch";
 
-function harness(guard = new ViewGuard()) {
+function harness(guard = new ViewGuard(), busy = () => false) {
   const camera = { position: lonLatToVec3(0, 0).multiplyScalar(3) };
   let view: () => void = () => {};
   let interact: () => void = () => {};
   let search = "?layer=dust";
   const replace = vi.fn((s: string) => void (search = s));
-  attachViewUrl({ camera, onViewChange: (cb) => void (view = cb), onInteraction: (cb) => void (interact = cb), guard, search: () => search, replace });
+  attachViewUrl({ camera, onViewChange: (cb) => void (view = cb), onInteraction: (cb) => void (interact = cb), busy, guard, search: () => search, replace });
   const moveTo = (lon: number, lat: number, d: number) => {
     camera.position.copy(lonLatToVec3(lon, lat, new THREE.Vector3()).multiplyScalar(d));
     view();
@@ -58,5 +58,19 @@ describe("attachViewUrl — vue écrite au repos de la caméra (spec capture §4
     h.moveTo(30, 20, 1.3);
     vi.advanceTimersByTime(SETTLE_MS);
     expect(h.replace).toHaveBeenCalledWith("?layer=dust&lon=30.00&lat=20.00&d=1.300");
+  });
+  it("pendant un vol (images bloquées ≥ 400 ms) : rien, et la garde n'est pas levée", () => {
+    const guard = new ViewGuard();
+    guard.located(0, 0);
+    let flying = true;
+    const h = harness(guard, () => flying);
+    h.interact();
+    h.moveTo(20, 0, 2); // point intermédiaire du vol, à plus de 5° de « ma position »
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(h.replace).not.toHaveBeenCalled();
+    flying = false;
+    h.moveTo(0.5, 0, 1.3); // arrivée près de « ma position »
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(h.replace).not.toHaveBeenCalled();
   });
 });

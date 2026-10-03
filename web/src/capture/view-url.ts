@@ -16,6 +16,10 @@ export interface ViewUrlDeps {
   onViewChange(cb: () => void): void;
   /** Gestes de l'utilisateur sur le globe (pointerdown, wheel). */
   onInteraction(cb: () => void): void;
+  /** Vrai pendant un vol animé : aucune écriture (spec §4.3). Sans ce garde, des images bloquées
+   * ≥ 400 ms en plein vol (onglet en arrière-plan, téléphone lent) écriraient un point intermédiaire,
+   * lèveraient la garde de « ma position », et l'arrivée écrirait la position (revue finale). */
+  busy(): boolean;
   guard: ViewGuard;
   search(): string;
   replace(search: string): void;
@@ -28,6 +32,7 @@ export function attachViewUrl(deps: ViewUrlDeps): void {
 
   const write = (): void => {
     timer = null;
+    if (deps.busy()) return; // les images de fin de vol réarment le minuteur
     const p = deps.camera.position;
     const { lon, lat } = vec3ToLonLat(p);
     if (!deps.guard.mayWrite(lon, lat)) return;

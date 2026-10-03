@@ -460,13 +460,15 @@ async function boot(): Promise<void> {
       canvas.addEventListener("pointerdown", cb);
       canvas.addEventListener("wheel", cb, { passive: true });
     },
+    busy: () => flight.active,
     guard: viewGuard,
     search: () => location.search,
     replace: (s) => history.replaceState(null, "", s),
   });
   const goTo = (lon: number, lat: number, name: string | undefined, shareView: boolean): void => {
-    if (shareView) viewGuard.cityChosen();
-    else {
+    // Ville : garde levée à l'arrivée seulement — un vol annulé (geste) laisse la caméra près de
+    // « ma position », qui doit rester protégée (revue finale).
+    if (!shareView) {
       viewGuard.located(lon, lat);
       history.replaceState(null, "", withoutView(location.search));
     }
@@ -474,7 +476,10 @@ async function boot(): Promise<void> {
     flight.start(lon, lat, FLY_DISTANCE, () => {
       tooltip.setReading({ lon, lat, name, origin: shareView ? "city" : "locate" }, "pin");
       tooltip.update(sceneHandle.camera, canvas.clientWidth, canvas.clientHeight);
-      if (shareView) history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      if (shareView) {
+        viewGuard.cityChosen();
+        history.replaceState(null, "", withView(location.search, lon, lat, FLY_DISTANCE));
+      }
       sceneHandle.requestRender();
     });
   };
