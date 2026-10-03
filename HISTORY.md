@@ -486,6 +486,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Toutes les heures à :55** (`55 * * * *`) plutôt que des créneaux ciblés *(2026-10-02, choix utilisateur)* | Aucune couche ne change toutes les heures : GFS et GEFS-Aerosols sortent 4 runs par jour, complets à R + 3 h 48–50 et R + 4 h 48–49 (horodatages NOMADS) — tous deux vers :50, c'est la minute qui fixe le retard. Les 16 passages à vide par jour (~25 s) ne coûtent rien sur dépôt public et rattrapent tout retard de NOAA. |
 | **Cron GitHub `12 * * * *` gardé en secours ; surveillance passive** (exécution « failed » dans Cloudflare + bandeau « outdated » + dette datée) ; pas de nouvelle tentative dans une exécution *(2026-10-02, choix utilisateur)* | Une panne du Worker ramène aux 4 à 6 passages par jour, pas à zéro ; un double déclenchement est absorbé par `concurrency: pipeline`. Une alerte active demanderait un service d'envoi de plus ; une reprise ne ferait gagner qu'une heure. |
 | **Bornes plausibles GEFS-chem relevées : poussière (0, 500 000), PM2.5 (0, 200 000) µg/m³** (`pipeline/layers.py`) *(2026-10-02, `fix/dust-bounds`, demande utilisateur : « prendre en compte les tempêtes de sable sahariennes »)* | Maxima réels de la semaine : poussière 43 118 (06z f054) puis 59 830 (12z f048, rejeté) ; PM2.5 ≈ 0,2 × la poussière dans ces épisodes (8 383 au pic du 06z). Les bornes restent un garde-fou d'ordre de grandeur (~8 × la tempête observée) qui rejette toujours une erreur d'unité (maximum courant × 1000) ou une valeur manquante GRIB (9.999e20) ; l'affichage ne change pas (encodage 0–2000 / 0–500, valeurs au-delà écrêtées). PM2.5 relevée avec la poussière, même rapport 0,4 entre les deux bornes, car elle contient la fraction fine de la même tempête. |
+| **P4 (publicité) différé ; prochain chantier = l'audience** *(2026-10-03, choix utilisateur)* | Audience mesurée le 2026-10-03 : Cloudflare Web Analytics (beacon JS, visiteurs humains) ne compte que **30 chargements du 2026-09-19 au 2026-10-03** (10 le 09-19, 20 le 09-26, 0 depuis), beacon pourtant présent en prod ; le trafic HTTP de la zone (50–150 `pageViews`/jour, 65–110 IP uniques/jour) a le profil des robots. À ce niveau une régie rapporte ≈ 0 € (RPM display de l'ordre de 1–5 € pour 1 000 pages vues), AdSense refuserait probablement une page unique WebGL à faible contenu texte, et les visiteurs EEE/UK imposent une CMP certifiée Google, donc un bandeau de consentement contraire au lot D. Écartés : lien de don seul, emplacement préparé sans régie, AdSense immédiat |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -657,7 +658,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 58 | **Une perte de contexte WebGL (`webglcontextlost`) n'arrête ni la lecture ni les chargements d'échéances** en cours (lot E, revue finale, différé) | La simulation continue de tourner et de consommer du réseau pendant que le rendu est figé, jusqu'au rechargement de page | 🟡 ouvert, mineur |
 | 59 | **Activation d'une couche jusqu'à ~3 × 60 s sur un lien très lent** (paire d'échéances initiale + jusqu'à deux replis, chacun avec le délai réseau de 60 s, lot E revue finale) | Cas extrême (lien mobile très dégradé) : l'utilisateur peut attendre jusqu'à 3 minutes avant qu'une couche indisponible ne soit signalée | 🟡 ouvert, théorique |
 | 60 | **`SourceSpec.step_hours` mort en production, `_cited_run` ne compare pas les échéances citées à `FRAME_HOURS`** (`pipeline/main.py`, mineurs différés lot E) | Un `out/forecast.json` local à une seule échéance (dry-run) rend un futur dry-run complet local sans effet détectable ; idem si `FRAME_HOURS` change sans changer de run | 🟡 ouvert, mineur |
-| 61 | **Rappel daté : objets R2 legacy `layers/latest.json` et `layers/<couche>.png` (contrat v2) à supprimer à la main** après confirmation que plus aucun client ne les lit | Deux formats de sortie coexistent sur R2 pendant la période de transition (visiteurs sur l'ancien onglet/cache) | 🔴 ouvert — **à supprimer vers le 2026-10-04** (une semaine après le déploiement du lot E) |
+| 61 | **Rappel daté : objets R2 legacy `layers/latest.json` et `layers/<couche>.png` (contrat v2) à supprimer à la main** après confirmation que plus aucun client ne les lit | Deux formats de sortie coexistent sur R2 pendant la période de transition (visiteurs sur l'ancien onglet/cache) | ✅ résolu 2026-10-03 (un jour d'avance, accord utilisateur) : 10 objets supprimés par l'API Cloudflare (`layers/latest.json` + 9 PNG, dernière écriture 2026-09-27 18:22 UTC), aucun code ne les lisait plus ; `latest.json` → 404, `forecast.json` et les frames du run courant → 200 |
 | 62 | ~~**Le cron `schedule` de `pipeline.yml` ne déclenche que 4 à 7 passages par jour au lieu de 24**~~ | — | ✅ résolu 2026-10-02 (merge `daf210b`) : Worker Cloudflare `worldtemp-cron`, cron trigger `55 * * * *` → `workflow_dispatch` ; cron GitHub gardé en secours (§5) |
 | 63 | **Rappel daté : le token GitHub du Worker `worldtemp-cron` expire le 2027-10-02** (fine-grained, dépôt `worldtemp`, *Actions : Read and write*) | À expiration, chaque exécution horaire échoue en 401 (« failed » dans Cloudflare) et le pipeline retombe sur le cron GitHub seul (4 à 6 passages par jour, bandeau « outdated » possible) | 🟡 ouvert — **renouveler vers le 2027-09-02** : nouveau token aux mêmes réglages, puis remplacer le secret `GITHUB_TOKEN` dans le dashboard Cloudflare |
 
@@ -665,7 +666,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
 chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
-Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4.
+Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4 (P4 différé le 2026-10-03 au profit d'un chantier « audience », §5).
 
 **Lots identifiés**
 
@@ -695,14 +696,31 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | P1 | Relief 3D géométrique (displacement map, phase 4) | Remplacé par un hillshade dans les tuiles (spec 3, choix assumé) | **Déconseillé** *(analyse 2026-09-19, estimation non mesurée)* : coût par image faible (une lecture de texture par sommet, patchs 32×32 / 16×16), mais canaux des tuiles `map` tous pris → nouveau jeu de tuiles (R2 déjà à 4,5 Go / 10, mémoire GPU `low` 96 Mo) ; maillage à densifier ; vent (1,002), fleuves (1,001), picking, étiquettes et horizon supposent une sphère lisse ; jupes 0,005 insuffisantes ; bénéfice visible seulement au limbe (caméra toujours à l'aplomb). Alternatives presque gratuites : P3, ou accentuer le hillshade par un uniform |
 | P2 | Rotation automatique quand l'utilisateur est inactif (phase 6) | Rien dans le code | Finition, après D–F |
 | P3 | ~~Halo d'atmosphère sur le pourtour (phase 6)~~ ✅ livré 2026-09-19 (`render/halo.ts`), avec un ciel étoilé procédural (`render/stars.ts`) | ~~Rien dans le code~~ | Finition peu coûteuse (un maillage, quelques lignes de shader), bon rapport effet/coût |
-| P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | Après le lot D (audience mesurée d'abord) |
+| P4 | Emplacements publicitaires, monétisation (phase 6) | `#ad-slot` présent dans `index.html`, caché ; aucune régie | **Différé le 2026-10-03** : audience humaine quasi nulle (§5) ; à rouvrir quand Cloudflare Web Analytics montrera un trafic régulier |
 
-**Dettes techniques encore ouvertes au 2026-10-02** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
-47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 63 (n° 32, 36, 37 non relues depuis
-2026-09-19), plus la machine à états des couches et du vent restée dans `main.ts`. La n° 61 a une
-échéance : supprimer `layers/latest.json`/`layers/<couche>.png` de R2 vers le **2026-10-04** ; la n° 63 aussi : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
+**Dettes techniques encore ouvertes au 2026-10-03** : n° 30, 33, 34, 35, 38, 39, 40, 43, 44, 45, 46,
+47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 63 (n° 32, 36, 37 non relues depuis
+2026-09-19), plus la machine à états des couches et du vent restée dans `main.ts`. La n° 61 est fermée
+(2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-03 — Vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience
+
+Session sans code.
+
+- **GEFS-chem republié** depuis `465346b` : 12z à 20:56 UTC le 2026-10-02 (`gefs_chem : frise
+  complète`, 20 échéances), puis 18z, 00z, 06z ; `forecast.json` cite le run 06z pour les 9 couches.
+- **`worldtemp-cron`** : 17 passages `workflow_dispatch` sur 17 créneaux de :55 (19:55 → 11:55 UTC),
+  tous verts, plus 3 passages `schedule` de secours. Fenêtre de 24 h du critère 4 (≥ 22) close
+  à 19:55 UTC le 2026-10-03, pas encore relevée.
+- **Dette n° 61 fermée** (§8), un jour avant l'échéance, à la demande de l'utilisateur.
+- **Audience mesurée** (§5) : 30 chargements humains en deux semaines, 0 depuis le 2026-09-26.
+  L'utilisateur avait choisi P4 ; P4 est différé et le prochain chantier vise l'audience.
+- **Tests :** inchangés (272 pytest, 23 vitest `cron/`), aucun fichier de code touché.
+- **Prochaine action :** brainstorming du chantier « audience » (pistes : pages de contenu par
+  couche, image Open Graph par couche, R8) ; relever le critère 4 de `worldtemp-cron` sur 24 h
+  pleines.
 
 ### 2026-10-02 (3) — Bornes poussière et PM2.5 relevées pour les tempêtes sahariennes (merge `465346b`)
 
@@ -1662,7 +1680,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-02 (**bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³, merge `465346b`** — GEFS-chem 12z rejeté par une tempête saharienne (59 830 > 50 000) ; 272 pytest ; `worldtemp-cron` a déclenché son premier run à 19:55 ; ce commit HISTORY précède le push de `master`)
+**Dernière mise à jour :** 2026-10-03 (**vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience** — GEFS-chem republié (12z → 06z), `worldtemp-cron` 17/17, 10 objets R2 legacy supprimés, 30 chargements humains en deux semaines ; aucun code)
+**Entrée précédente :** 2026-10-02 (**bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³, merge `465346b`** — GEFS-chem 12z rejeté par une tempête saharienne (59 830 > 50 000) ; 272 pytest ; `worldtemp-cron` a déclenché son premier run à 19:55 ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-02 (**pipeline lancé chaque heure à :55 par le Worker Cloudflare `worldtemp-cron`, merge `daf210b`, dette n° 62 fermée** — `workflow_dispatch` par token fine-grained (expire le 2027-10-02, dette n° 63) ; 23 vitest `cron/` + 265 pytest ; ce commit HISTORY précède le push de `master` ; reste : secret à poser par l'utilisateur, vérification au :55)
 **Entrée précédente :** 2026-10-02 (**correctif : site resté 22 h sur un run GFS périmé, merge `2be344a`** — repli sur le run précédent quand le plus récent est incomplet ; cron GitHub à 4–7 passages par jour relevé en dette n° 62, à traiter ensuite ; 265 pytest ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-09-27 (**lot E livré, merge `9339e47`, pas encore poussé** — curseur temporel des prévisions sur 48 h, pas de 3 h, fondu GPU entre échéances ; 264 pytest + 608 vitest (54 fichiers), bundle 170,16 Ko gzip ; ce commit HISTORY précède le push de `master` (`history_check` bloque sinon le déploiement) ; prochain chantier : P2 (rotation automatique) ou P4 (publicité))
