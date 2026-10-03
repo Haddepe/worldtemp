@@ -254,7 +254,7 @@ html, body {
 }
 
 /* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */
-#about-open, #search-open, #locate {
+#about-open, #search-open, #locate, #capture {
   background: none; border: 1px solid currentColor; border-radius: 50%;
   width: 1.75rem; height: 1.75rem; flex: none; padding: 0; color: inherit; font: inherit; line-height: 1; cursor: pointer;
 }
