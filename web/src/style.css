@@ -243,6 +243,9 @@ html, body {
     grid-row: 3; grid-column: 1; align-self: center; justify-self: start; min-width: 0; width: auto;
     box-sizing: border-box; height: min(45vh, 18rem); padding: 0.5rem 0.4rem;
     display: grid; grid-template-columns: auto auto; grid-template-rows: 1fr auto; column-gap: 0.3rem;
+    /* Collée au bord : annule la marge de #overlay, sauf l'encoche (safe-area) qui reste respectée. */
+    margin-left: calc(env(safe-area-inset-left, 0px) - max(0.75rem, env(safe-area-inset-left, 0px)));
+    border-radius: 0 0.5rem 0.5rem 0;
   }
   #legend .title { grid-column: 1 / -1; grid-row: 2; margin: 0.3rem 0 0; font-size: 0.7rem; text-align: center; }
   #legend .title .name, #legend .title .iso, #legend .extremes { display: none; }
@@ -262,6 +265,8 @@ html, body {
   #timeline {
     grid-row: 3; grid-column: 2; align-self: center; justify-self: end; width: 3.4rem; min-width: 0;
     height: min(45vh, 18rem); margin: 0; padding: 0.5rem 0.25rem; flex-direction: column; gap: 0.4rem;
+    margin-right: calc(env(safe-area-inset-right, 0px) - max(0.75rem, env(safe-area-inset-right, 0px)));
+    border-radius: 0.5rem 0 0 0.5rem;
   }
   #timeline-range { writing-mode: vertical-lr; direction: ltr; flex: 1; min-width: 0; min-height: 0; width: 44px; order: 1; }
   #timeline-label { order: 2; white-space: normal; text-align: center; font-size: 0.65rem; line-height: 1.2; }
