@@ -56,6 +56,10 @@
         <button id="about-open" type="button" aria-label="About GlobeLayers" aria-haspopup="dialog">?</button>
         <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls timeline" aria-label="Collapse or expand panels">▾</button>
       </header>
+      <div id="capture-menu" class="panel" role="group" aria-label="Captured image" hidden>
+        <button id="capture-share" type="button">Share…</button>
+        <button id="capture-save" type="button">Save image</button>
+      </div>
       <div id="search" class="panel" hidden>
         <input id="search-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" aria-label="City name" placeholder="Search a city" autocomplete="off" spellcheck="false" />
         <ul id="search-results" role="listbox" aria-label="Cities"></ul>

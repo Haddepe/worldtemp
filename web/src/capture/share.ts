@@ -1,11 +1,15 @@
 /**
- * Partage ou téléchargement de l'image (spec capture §4.1). Feuille native seulement sur appareil
- * tactile : Chrome sous Windows accepte aussi les fichiers, et l'ordinateur ouvrirait la boîte de
- * partage du système au lieu de télécharger. Environnement injectable : testé sans navigateur.
+ * Partage ou enregistrement de l'image (spec capture §4.1, complété le 2026-10-03). Sur appareil
+ * tactile capable de partager des fichiers, l'utilisateur choisit : feuille native, ou
+ * téléchargement — sur Android il arrive dans `Download/`, que la Galerie et Google Photos
+ * affichent (la feuille de partage d'Android n'a pas d'option « galerie »). Sur ordinateur :
+ * téléchargement direct (Chrome sous Windows accepte aussi le partage de fichiers, d'où la garde
+ * tactile). Environnement injectable : testé sans navigateur.
  */
 import { STRINGS } from "../i18n";
 
 export type ShareOutcome = "shared" | "saved" | "cancelled";
+export type CaptureChoice = "share" | "save";
 
 export interface ShareEnv {
   coarse: boolean;
@@ -32,17 +36,29 @@ export function browserShareEnv(): ShareEnv {
   };
 }
 
-export async function shareOrSave(blob: Blob, name: string, text: string, url: string, env: ShareEnv = browserShareEnv()): Promise<ShareOutcome> {
-  const data: ShareData = { files: [new File([blob], name, { type: "image/png" })], title: STRINGS.capture.shareTitle, text, url };
-  if (env.coarse && env.share && env.canShare?.(data)) {
+export function shareData(blob: Blob, name: string, text: string, url: string): ShareData {
+  return { files: [new File([blob], name, { type: "image/png" })], title: STRINGS.capture.shareTitle, text, url };
+}
+
+/** Choix offerts après la capture : le menu n'apparaît que s'il y en a deux. */
+export function captureChoices(env: ShareEnv, data: ShareData): CaptureChoice[] {
+  return env.coarse && env.share && env.canShare?.(data) ? ["share", "save"] : ["save"];
+}
+
+export function saveImage(blob: Blob, name: string, env: ShareEnv = browserShareEnv()): ShareOutcome {
+  env.download(blob, name);
+  return "saved";
+}
+
+export async function shareImage(blob: Blob, name: string, data: ShareData, env: ShareEnv = browserShareEnv()): Promise<ShareOutcome> {
+  if (env.share) {
     try {
       await env.share(data);
       return "shared";
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
-      // NotAllowedError (activation perdue pendant toBlob, iOS) ou autre : on télécharge quand même.
+      // NotAllowedError ou autre : on enregistre quand même plutôt que de perdre l'image.
     }
   }
-  env.download(blob, name);
-  return "saved";
+  return saveImage(blob, name, env);
 }
