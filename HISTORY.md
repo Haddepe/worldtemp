@@ -63,6 +63,7 @@ la frise elle-même.
 | Repères géographiques *(lot C, mergé 2026-09-19)* | **Natural Earth v5.1.2** (domaine public) : `populated_places` 10 m, `admin_0_countries` 50 m, `rivers_lake_centerlines` 10 m | transformés **à la main** par `tools/build_geo.py` (stdlib seule, cache git-ignoré `tools/.geo-cache/` ; noms **anglais** `name_en` depuis le lot D) en trois fichiers statiques commités sous `web/public/geo/` ; ni R2, ni CI, ni pipeline horaire |
 | Langue et référencement *(lot D, 2026-09-19)* | **Site en anglais seul** : chaînes d'interface dans `web/src/i18n/en.ts`, noms Natural Earth `name_en` ; **Cloudflare Web Analytics** (sans cookie, beacon injecté au build de production, jeton public dans `web/src/build/beacon.ts`) ; Google Search Console + Bing Webmaster | aucun service payant, aucune dépendance npm ajoutée (pas de `@types/node` : `web/tests/node-shims.d.ts`) ; balises, `robots.txt`, `sitemap.xml`, manifeste, `og.jpg` écrits à la main et commités |
 | Villes de détail et recherche *(lot F, 2026-09-26)* | **GeoNames** `cities1000` (> 1 000 hab.) + `admin1CodesASCII` (régions) + `countryInfo` (pays) — **CC BY 4.0**, crédit dans `#attribution` et le panneau About | téléchargés/cache dans `tools/.geo-cache/` (git-ignoré, comme Natural Earth) par `tools/geonames.py` ; transformés par `tools/build_geo.py` en tuiles de détail (`web/public/geo/cities/5/`) et index de recherche (`web/public/geo/search/`), commités avec le site (pas de R2) ; socle Natural Earth (`places.json`) inchangé |
+| Signalement aux moteurs *(2026-10-03, `feat/indexnow`)* | **IndexNow** (`api.indexnow.org`, relayé à Bing, Yandex, Naver, Seznam, Yep ; Google ne le lit pas) + soumission manuelle à **Brave Search** (`search.brave.com/submit-url`, faite par l'utilisateur le 2026-10-03) | `tools/indexnow.py` lancé par le job `deploy` ; clé publique `web/public/0e7c671bd5f632c5d0a560cb6667c6b6.txt` ; Google et Bing restent suivis dans Search Console et Bing Webmaster |
 | Frontend | Vite 8, TypeScript 5.9, Three.js 0.185, Vitest 4, Wrangler 4, Node 24 (Actions et local) | vanilla, shaders GLSL custom, pas de framework lourd ; `web/` livré le 2026-09-02 (branche `feat/globe-heatmap`, §3) |
 | Sortie | Fichiers statiques (PNG + JSON) | **aucun serveur applicatif** ; manifeste v3 `layers/forecast.json` (lot E, 2026-09-27, remplace `layers/latest.json` v2) porte `encoding`, `grid` et la frise de 20 échéances par couche ; PNG sous `layers/<run>/<couche>_f<fh>.png`, cache `immutable` (§5) |
 | Hébergement | **GitHub Actions** (pipeline lancé chaque heure à :55 par le Worker Cloudflare `worldtemp-cron` via `workflow_dispatch` depuis le 2026-10-02 ; cron GitHub minute 12 en secours, Linux) → **Cloudflare R2** (textures + tuiles) + **Cloudflare Workers Static Assets** (site) | tranché le 2026-08-29 (§5) ; **R2 en service depuis le 2026-09-02** : bucket `worldtemp` (WEUR) ; **domaine personnalisé Cloudflare Registrar `globelayers.com`** (acheté 2026-09-05) : site sur `https://globelayers.com` (Worker, `custom_domain`, `www` redirigé 301), données/tuiles sur `https://data.globelayers.com` (R2 custom domain + Cache Rule « cache tout, TTL origine ») ; anciens `worldtemp.geoviz.workers.dev` et `pub-….r2.dev` encore actifs, à couper après le merge (§8, §9) ; **Workers Static Assets remplace Cloudflare Pages** (2026-09-02, §5) : déploiement par le job `deploy` de `.github/workflows/test.yml`, sur push `master` uniquement, après `test` et `web` verts ; `eccodeslib` s'installe en pip sur Linux, pas sur Windows ; repo passé **public** le 2026-08-30 (§5) |
@@ -118,11 +119,13 @@ pipeline/
   requirements-grib.txt        # Actions seulement : cfgrib, eccodeslib, xarray (non référencés dans le code, dette n° 30 §8)
 tools/
   history_check.py             # contrôle mécanique de HISTORY.md contre le dépôt
+  indexnow.py                  # 2026-10-03 : sitemap du build → POST IndexNow (stdlib) ; vérifie le fichier-clé dans `dist/` ; lancé après `wrangler deploy` (étape `continue-on-error`) ; sortie 0 sur 200/202
   prepare_bluemarble.py        # télécharge/redimensionne la texture Blue Marble NASA (source, licence)
   build_geo.py                 # lot C : Natural Earth → web/public/geo/ (villes triées par priorité, pays avec rang majoré pour les micro-États et écartés au-delà de `MAX_COUNTRY_RANK` = 7 (jamais affichables), fleuves simplifiés Douglas-Peucker + format binaire WTRV) ; `fit_budget` borné à 40 itérations ; lot F (2026-09-26) : appelle `geonames.py`, écrit `geo/cities/5/{x}/{y}.json` (tuiles de détail) et `geo/search/{pp}.json` (index de recherche), `_write_tree` remplace chaque arbre en entier (pas d'orphelin) ; lancé à la main, déterministe à cache GeoNames égal
   geonames.py                   # lot F : GeoNames (cities1000 > 1 000 hab.) → villes de détail + index de recherche ; `normalize`/`prefix_of` MIROIR de `web/src/search/normalize.ts` (cas partagés `tests/fixtures/geo_normalize_cases.json`) ; `drop_sections` écarte les PPLX et les sections numérotées d'une ville du socle à < 10 km ; `match_socle` dédoublonne à 10 km (buckets 1°) ; `build_search_index` sépare clés primaires (nom affiché, ASCII, nom du socle) et clés alternatives (`alternatenames` latins, villes ≥ 100 000 hab. seulement)
 tests/
   test_history_check.py        # 30 tests unittest de la logique du contrôle
+  test_indexnow.py             # 2026-10-03 : 11 tests unittest (extraction du sitemap, refus d'hôte étranger/http/sitemap vide, requête, fichier-clé, fichiers commités)
   test_build_geo.py            # lot C : 22 tests pytest (dont `_name` : `name_en` puis `name`, lot D) — logique pure de build_geo (tri, arrondi, repli NAME_FR, DP, WTRV) et validité des trois fichiers commités (schéma, ordre, budgets)
   test_geonames.py             # lot F : filtre de population, `drop_sections` (PPLX + sections numérotées), `match_socle` (dédoublonnage à 10 km), rangement par tuile, tri, normalisation, découpage par préfixe, format des deux fichiers ; test sur les fichiers commités (Épinal dans `cities/5/33/7.json` et `search/ep.json`)
   fixtures/geo_normalize_cases.json  # lot F : cas de normalisation partagés Python (`tools/geonames.py`)/TypeScript (`web/src/search/normalize.ts`)
@@ -141,7 +144,7 @@ tests/
     test_tiler_sat.py
     test_tiler_main.py
 .github/workflows/
-  test.yml                     # jobs test (pytest+history_check+dry-run, installe GDAL), web (npm/vitest/build), cron (typecheck/vitest/bundle de cron/), deploy (wrangler, master), deploy-cron (wrangler de cron/, master)
+  test.yml                     # jobs test (pytest+history_check+dry-run, installe GDAL), web (npm/vitest/build), cron (typecheck/vitest/bundle de cron/), deploy (wrangler, master, puis IndexNow en `continue-on-error`), deploy-cron (wrangler de cron/, master)
   pipeline.yml                 # workflow_dispatch (lancé chaque heure à :55 par cron/, Worker worldtemp-cron) + cron GitHub minute 12 en secours
   tiles.yml                    # génération manuelle des tuiles : 8 jobs map (matriciel) + sat + index ; doit résider sur master (§6)
 pytest.ini                     # testpaths = tests
@@ -167,6 +170,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     _headers                   # cache : /assets immutable 1 an, /textures 1 jour, / et /index.html no-cache ; lot D : 1 jour pour og.jpg, favicon, icône, manifeste, robots, sitemap
     robots.txt, sitemap.xml    # lot D : tout autorisé + lien du sitemap ; une seule URL (https://globelayers.com/)
     BingSiteAuth.xml           # lot D : preuve de propriété pour Bing Webmaster (code de compte, public par nature) ; ne pas supprimer, Bing le relit
+    0e7c671bd5f632c5d0a560cb6667c6b6.txt  # 2026-10-03 : clé IndexNow (publique par conception), lue par les moteurs pour valider les envois ; doit rester égale à `KEY` de `tools/indexnow.py` (test)
     favicon.svg, apple-touch-icon.png, site.webmanifest  # lot D : globe à méridiens (SVG), icône 180 px générée depuis le SVG, manifeste minimal (`display: browser`, pas de service worker)
     og.jpg                     # lot D : image Open Graph 1200 × 630 (139 Ko), capture réelle du build local (température + vent, Atlantique/Europe), à refaire à la main si le look change
     geo/                       # lot C : données statiques Natural Earth, commitées, servies avec le site (cache 1 jour) — places.json (7 332 villes, 251 Ko), countries.json (206 pays, 6 Ko), rivers.bin (2 365 lignes, 45 663 segments, 202 Ko) ; lot F (2026-09-26) : cities/5/{x}/{y}.json (644 tuiles de détail GeoNames, niveau 5 seul, ~138 500 villes > 1 000 hab. après filtres PPLX/sections numérotées) et search/{pp}.json (701 fichiers d'index de recherche par préfixe de 2 caractères, format v2 clés primaires/alternatives) — geo/ pèse 17,03 Mo au total (1 348 fichiers)
@@ -487,6 +491,8 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Cron GitHub `12 * * * *` gardé en secours ; surveillance passive** (exécution « failed » dans Cloudflare + bandeau « outdated » + dette datée) ; pas de nouvelle tentative dans une exécution *(2026-10-02, choix utilisateur)* | Une panne du Worker ramène aux 4 à 6 passages par jour, pas à zéro ; un double déclenchement est absorbé par `concurrency: pipeline`. Une alerte active demanderait un service d'envoi de plus ; une reprise ne ferait gagner qu'une heure. |
 | **Bornes plausibles GEFS-chem relevées : poussière (0, 500 000), PM2.5 (0, 200 000) µg/m³** (`pipeline/layers.py`) *(2026-10-02, `fix/dust-bounds`, demande utilisateur : « prendre en compte les tempêtes de sable sahariennes »)* | Maxima réels de la semaine : poussière 43 118 (06z f054) puis 59 830 (12z f048, rejeté) ; PM2.5 ≈ 0,2 × la poussière dans ces épisodes (8 383 au pic du 06z). Les bornes restent un garde-fou d'ordre de grandeur (~8 × la tempête observée) qui rejette toujours une erreur d'unité (maximum courant × 1000) ou une valeur manquante GRIB (9.999e20) ; l'affichage ne change pas (encodage 0–2000 / 0–500, valeurs au-delà écrêtées). PM2.5 relevée avec la poussière, même rapport 0,4 entre les deux bornes, car elle contient la fraction fine de la même tempête. |
 | **P4 (publicité) différé ; prochain chantier = l'audience** *(2026-10-03, choix utilisateur)* | Audience mesurée le 2026-10-03 : Cloudflare Web Analytics (beacon JS, visiteurs humains) ne compte que **30 chargements du 2026-09-19 au 2026-10-03** (10 le 09-19, 20 le 09-26, 0 depuis), beacon pourtant présent en prod ; le trafic HTTP de la zone (50–150 `pageViews`/jour, 65–110 IP uniques/jour) a le profil des robots. À ce niveau une régie rapporte ≈ 0 € (RPM display de l'ordre de 1–5 € pour 1 000 pages vues), AdSense refuserait probablement une page unique WebGL à faible contenu texte, et les visiteurs EEE/UK imposent une CMP certifiée Google, donc un bandeau de consentement contraire au lot D. Écartés : lien de don seul, emplacement préparé sans régie, AdSense immédiat |
+| **Chantier audience découpé en trois : ① signalement multi-moteurs, ② liens profonds, ③ pages de référencement par couche** ; partage communautaire (Show HN, Reddit, fait par l'utilisateur) après ② *(2026-10-03, choix utilisateur)* | Search Console : 0 impression en 28 jours alors que la page est indexée ; ajouter des moteurs ne crée pas de requêtes, il faut des pages qui y répondent (③) et des liens qui montrent une vue précise (②). Chine non visée : licence ICP impossible sans société chinoise, compte Baidu Webmaster fermé aux numéros étrangers depuis 2022, site en anglais ; le site y reste joignable (aucun domaine Google chargé) |
+| **IndexNow appelé explicitement au déploiement, depuis le sitemap du build**, plutôt que Crawler Hints de Cloudflare *(2026-10-03, `feat/indexnow`)* | Crawler Hints (interrupteur de zone, désactivé) se déclenche sur les changements de cache de toute la zone : il signalerait chaque heure les PNG de `data.globelayers.com` et pas `index.html` (`max-age=0`), sans test possible. Le sitemap comme source fait entrer les futures pages (③) sans toucher le script. Appel à chaque déploiement, même pour un commit HISTORY seul : quelques appels par semaine, filtrer sur `web/` demanderait l'historique du push. `continue-on-error` : l'indexation ne doit jamais bloquer une mise en ligne |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -593,6 +599,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-02 | fix/run-fallback — repli sur le run précédent quand le plus récent est incomplet (bandeau « outdated » en prod) ; chemin borné (diagnostic en chat, TDD, spec lot E §3.2 révisée) | ✅ mergée, déployée par CI | `2be344a` | 265 passed / 10 skipped pytest |
 | 2026-10-02 | feat/cron-worker — dette n° 62 : Worker Cloudflare `worldtemp-cron` qui lance `pipeline.yml` par `workflow_dispatch` chaque heure à :55 (spec `2026-10-02-cron-worker-design.md`, plan `2026-10-02-cron-worker.md` 4 tâches, exécution native + revue finale opus, 1 correctif) | ✅ mergée, déployée par CI | `daf210b` | 23 vitest `cron/` + 265 pytest (10 skipped) |
 | 2026-10-02 | fix/dust-bounds — bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³ (tempêtes sahariennes) ; chemin borné (constat en chat, TDD) | ✅ mergée, déployée par CI | `465346b` | 272 passed / 10 skipped pytest |
+| 2026-10-03 | feat/indexnow — signalement IndexNow au déploiement (`tools/indexnow.py`, fichier-clé, étape du job `deploy`) ; chemin borné (design en chat, TDD) | ✅ mergée, déployée par CI | `593bc4c` | 293 passed pytest (Actions), dont 11 nouveaux |
 
 ## 8. Dette technique connue
 
@@ -704,6 +711,25 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-03 (2) — Sous-chantier audience n° 1 : IndexNow au déploiement (merge `593bc4c`)
+
+Questions de l'utilisateur sur l'accès mondial, Brave et la Chine → réponses et découpage du
+chantier audience en trois (§5). Sous-chantier ① en chemin borné : design en chat (IndexNow
+explicite plutôt que Crawler Hints, §5), approuvé, TDD (11 tests rouges puis verts), CI de
+branche verte, revue cavecrew (2 🟡 écartés : `socket.timeout` avant Python 3.10 sans objet en
+3.12/3.14 ; fichier-clé non vérifié en HTTP, couvert par l'arrêt du job si `wrangler deploy`
+échoue et par `continue-on-error`).
+
+- **Brave Search :** site soumis par l'utilisateur sur `search.brave.com/submit-url`.
+- **Tests :** 293 pytest sur Actions, 608 vitest, 23 vitest `cron/`. En local, la suite vitest
+  complète a vu une fois `geo-loader.test.ts` (empreinte FNV-1a de `public/geo/`) dépasser son
+  délai (11,9 s) sous charge ; seul, il passe 7/7, et il passe sur Actions.
+- **Ce commit HISTORY précède le push de `master`** (§10).
+- **Prochaine action :** après le push, vérifier le fichier-clé en 200 et l'étape IndexNow en
+  200/202 dans le job `deploy`, puis le rapport IndexNow de Bing Webmaster ; relever le critère 4
+  de `worldtemp-cron` (24 h pleines à 19:55 UTC) ; brainstorming du sous-chantier ② (liens
+  profonds).
 
 ### 2026-10-03 — Vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience
 
@@ -1680,7 +1706,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-03 (**vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience** — GEFS-chem republié (12z → 06z), `worldtemp-cron` 17/17, 10 objets R2 legacy supprimés, 30 chargements humains en deux semaines ; aucun code)
+**Dernière mise à jour :** 2026-10-03 (**IndexNow au déploiement, merge `593bc4c`** — sous-chantier audience ①, `tools/indexnow.py` + fichier-clé + étape `deploy` ; Brave soumis par l'utilisateur ; 293 pytest ; ce commit HISTORY précède le push de `master`)
+**Entrée précédente :** 2026-10-03 (**vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience** — GEFS-chem republié (12z → 06z), `worldtemp-cron` 17/17, 10 objets R2 legacy supprimés, 30 chargements humains en deux semaines ; aucun code)
 **Entrée précédente :** 2026-10-02 (**bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³, merge `465346b`** — GEFS-chem 12z rejeté par une tempête saharienne (59 830 > 50 000) ; 272 pytest ; `worldtemp-cron` a déclenché son premier run à 19:55 ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-02 (**pipeline lancé chaque heure à :55 par le Worker Cloudflare `worldtemp-cron`, merge `daf210b`, dette n° 62 fermée** — `workflow_dispatch` par token fine-grained (expire le 2027-10-02, dette n° 63) ; 23 vitest `cron/` + 265 pytest ; ce commit HISTORY précède le push de `master` ; reste : secret à poser par l'utilisateur, vérification au :55)
 **Entrée précédente :** 2026-10-02 (**correctif : site resté 22 h sur un run GFS périmé, merge `2be344a`** — repli sur le run précédent quand le plus récent est incomplet ; cron GitHub à 4–7 passages par jour relevé en dette n° 62, à traiter ensuite ; 265 pytest ; ce commit HISTORY précède le push de `master`)
