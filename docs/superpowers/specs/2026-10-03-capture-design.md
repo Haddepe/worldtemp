@@ -46,7 +46,7 @@ Nouveau dossier `web/src/capture/` :
 | Unité | Rôle | Dépend de | Test |
 |---|---|---|---|
 | `compose.ts` (pur) | `composeCapture(input): DrawOp[]` : liste d'ordres de dessin (rectangle, texte, dégradé, marqueur) à partir de la taille de l'image, du DPR, de la couche, de la légende, de l'heure, des étiquettes et du point épinglé. Place le bandeau et met les polices à l'échelle selon la largeur | `ui/format.ts` (`legendTicks`), `render/colormap.ts` (arrêts de couleur), `i18n/en.ts` | Vitest |
-| `naming.ts` (pur) | `captureFileName(layerId, tMs)` → `globelayers-<couche>-<AAAA-MM-JJ>-<HH>UTC.png` (`none` → `globelayers-<AAAA-MM-JJ>-<HH>UTC.png`) ; `captureWhen(tMs)` → `Forecast for Sat 3 Oct 2026, 13:24 UTC` ; `captureRun(model, runIso)` → `GFS run 3 Oct 06Z` | `i18n/en.ts` | Vitest |
+| `naming.ts` (pur) | `captureFileName(layerId, tMs)` → `globelayers-<couche>-<AAAA-MM-JJ>-<HH>UTC.png` (`none` → `globelayers-<AAAA-MM-JJ>-<HH>UTC.png`) ; `captureWhen(tMs)` → `Forecast for Sat 3 Oct 2026, 13:24 UTC` ; `captureRun(model, runIso)` → `NOAA GFS run 3 Oct 06Z` | `i18n/en.ts` | Vitest |
 | `privacy.ts` (pur) | `ViewGuard` : `located(lon, lat)`, `cityChosen()`, `mayWrite(centerLon, centerLat): boolean` (faux tant que la distance angulaire au point localisé est ≤ 5°) | — | Vitest |
 | `paint.ts` | `paint(ctx, ops)` : exécute les `DrawOp` sur un `CanvasRenderingContext2D` | — | à l'œil |
 | `capture.ts` | `captureImage(deps): Promise<Blob>` : `renderer.render(scene, camera)` puis, **dans la même tâche**, `drawImage(canvas WebGL)` sur un canvas 2D de même taille, `paint(composeCapture(...))`, `toBlob("image/png")` | `render/scene.ts`, `compose.ts`, `paint.ts` | à l'œil |
@@ -76,8 +76,8 @@ se fait juste après un `render()` explicite, dans la même tâche JS, ce que le
      `<Couche> · <captureWhen> — globelayers.com`, URL courante ;
    - sinon : téléchargement du PNG.
 4. Message bref dans `#status` : `Image saved` (téléchargement) ; rien pour `shared` ou
-   `cancelled` ; `Capture failed` en cas d'erreur (§5). Le message dure **3 s**, puis `#status`
-   retrouve son contenu précédent (ex. « Data is outdated »). Bouton réactivé dans tous les cas.
+   `cancelled` ; `Capture failed` en cas d'erreur (§5). Message par `flashNotice` de `main.ts`
+   (**5 s**, puis `#status` retrouve son contenu, ex. « Data is outdated »). Bouton réactivé dans tous les cas.
 
 ### 4.2 Contenu de l'image
 
@@ -88,11 +88,11 @@ se fait juste après un `render()` explicite, dans la même tâche JS, ce que le
 - **Point épinglé** (origine `user` ou `city`) : marqueur jaune `#ffd166` cerclé de blanc + texte
   de l'infobulle dans un cartouche sombre. Origine `locate` : **ni marqueur ni texte**.
 - **Bandeau :** en bas, pleine largeur, fond `rgba(10,12,18,0.82)`, hauteur
-  `clamp(64, 0.09 × min(L, H), 160)` px d'image ; police système, tailles proportionnelles à la
-  hauteur du bandeau.
+  `clamp(64, 0.12 × min(L, H), 120)` en **px CSS**, × DPR en px d'image (en px d'image, un écran
+  Retina donnerait un texte d'environ 7 pt) ; police système, tailles proportionnelles à la hauteur du bandeau.
   - gauche : `<Nom de couche> · <unité>` puis dégradé de la légende et graduations
     (`legendTicks`) ;
-  - droite : `captureWhen(t)`, puis `captureRun(model, run)` (`GEFS-Aerosols` pour `pm25`/`dust`),
+  - droite : `captureWhen(t)`, puis `captureRun(model, run)` (`NOAA GFS`, `NOAA GEFS-Aerosols` pour `pm25`/`dust`),
     puis **`globelayers.com`** en gras ;
   - largeur < 600 px CSS (portrait mobile) : les deux blocs s'empilent (couche + légende en haut,
     date/run/site en bas), hauteur du bandeau doublée.
@@ -100,8 +100,9 @@ se fait juste après un `render()` explicite, dans la même tâche JS, ce que le
 
 ### 4.3 Vue caméra dans l'URL
 
-- Au repos de la caméra (aucun événement `change` d'OrbitControls depuis **400 ms**, amortissement
-  fini) : si `ViewGuard.mayWrite(centre)`, `history.replaceState(null, "", withView(location.search,
+- Au repos de la caméra (position inchangée depuis **400 ms**, comparée à chaque rendu par
+  `onViewChange` : le zoom passe aussi par `attachZoom`, pas seulement par OrbitControls ; écriture
+  **armée au premier geste** `pointerdown`/`wheel` sur le canvas, rien n'est écrit au chargement) : si `ViewGuard.mayWrite(centre)`, `history.replaceState(null, "", withView(location.search,
   lon, lat, d))` avec le centre de la vue (point de la sphère sous l'axe caméra) et la distance.
 - Vol vers une ville : `ViewGuard.cityChosen()`, puis comportement actuel (écriture à l'arrivée).
 - Vol « ma position » : `ViewGuard.located(lon, lat)` et **retrait** de `lon`/`lat`/`d` de l'URL ;
