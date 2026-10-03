@@ -160,7 +160,7 @@ cron/                         # Worker Cloudflare worldtemp-cron (2026-10-02, de
   tests/dispatch.test.ts       # 20 tests vitest (fetch injecté) : appel exact, succès, refus HTTP, réseau/délai, token jamais dans un message, secret absent
   tests/config.test.ts         # 3 tests : garde de wrangler.jsonc (cron :55, aucune URL publique, nom, logs)
 web/                          # frontend (branche feat/globe-heatmap, 2026-09-02) : web/src/, web/tests/, web/public/
-  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique ; lot D : `lang="en"`, `<head>` complet (Open Graph, Twitter, JSON-LD WebApplication, canonical, icônes), bouton `#about-open` dans le bandeau, `<dialog id="about">` avec le texte anglais indexable ; lot F : `#search-open` (🔍) et `#locate` (📍) à côté de `#about-open`, panneau `#search-panel` (champ, liste, `#search-message`), GeoNames dans `#attribution` et le texte About ; lot E (2026-09-27) : panneau `#timeline` (`#timeline-play`, `#timeline-range` 0–48, `#timeline-label`, `#timeline-now`), `aria-controls` du bouton de repli étendu à `timeline`, textes « 48-hour forecast » (meta description/OG/Twitter/JSON-LD, panneau About) ; 2026-10-03 : bouton `#capture` (📷) dans `#banner`, entre `#locate` et `#about-open`
+  index.html                   # squelette DOM : canvas, overlay (bandeau/statut/légende/bouton), #tooltip + #marker hors overlay, #fatal ; `#layers-menu` + `#wind-toggle` (spec vent §9) remplacent l'ancien `#controls` générique ; lot D : `lang="en"`, `<head>` complet (Open Graph, Twitter, JSON-LD WebApplication, canonical, icônes), bouton `#about-open` dans le bandeau, `<dialog id="about">` avec le texte anglais indexable ; lot F : `#search-open` (🔍) et `#locate` (📍) à côté de `#about-open`, panneau `#search-panel` (champ, liste, `#search-message`), GeoNames dans `#attribution` et le texte About ; lot E (2026-09-27) : panneau `#timeline` (`#timeline-play`, `#timeline-range` 0–48, `#timeline-label`, `#timeline-now`), `aria-controls` du bouton de repli étendu à `timeline`, textes « 48-hour forecast » (meta description/OG/Twitter/JSON-LD, panneau About) ; 2026-10-03 : bouton `#capture` (📷) dans `#banner`, entre `#locate` et `#about-open` ; menu `#capture-menu` (« Share… » / « Save image », caché par défaut, sous le bandeau)
   package.json                 # scripts (dev/build/test/typecheck/deploy), deps three/vite/vitest/wrangler
   package-lock.json
   tsconfig.json                # strict, noUncheckedIndexedAccess, cible ES2022/bundler ; `allowImportingTsExtensions` (lot D : vite.config.ts importe `./src/build/*.ts` avec l'extension, exigée par le futur chargeur de config de Vite)
@@ -218,7 +218,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       compose.ts                  # pur : `composeCapture(input, measure)` → `DrawOp[]` en px d'image (étiquettes aux règles de `.label`, épingle et cartouche comme `#marker`/`#tooltip`, bandeau couche/légende/date/run/site) ; `bandHeight` = clamp(64, 0,12 × min, 120) px CSS × DPR, blocs empilés sous 600 px CSS ; `FONT_STACK` sans « sans-serif » (garde-fou anglais)
       paint.ts                    # exécute les `DrawOp` sur un canvas 2D (`save`/`restore` par ordre, halo = contour arrondi) ; repli `rect` sans `roundRect` (iOS < 16, Firefox < 112)
       capture.ts                  # `captureImage(scene, state)` : `renderer.render` puis `drawImage` du canvas WebGL dans la même tâche (pas de `preserveDrawingBuffer`), composition, `toBlob` PNG
-      share.ts                    # `shareOrSave` : feuille native si tactile (`pointer: coarse`) ET `canShare({files})`, sinon `<a download>` ; `AbortError` → rien, autre rejet (NotAllowedError iOS) → téléchargement ; environnement injectable (testé)
+      share.ts                    # `shareData`, `captureChoices` (`["share", "save"]` si tactile (`pointer: coarse`) ET `canShare({files})`, sinon `["save"]`), `shareImage` (`AbortError` → rien, autre rejet → enregistrement), `saveImage` (`<a download>` ; Android : `Download/`, visible dans la Galerie) ; environnement injectable (testé)
       view-url.ts                 # `attachViewUrl` : `lon`/`lat`/`d` écrits par `replaceState` 400 ms après le dernier mouvement caméra (comparé à chaque `onViewChange`), armé au premier `pointerdown`/`wheel`, jamais pendant un vol (`busy`), filtré par `ViewGuard`
     time/                       # NOUVEAU lot E (2026-09-27) : curseur temporel, logique pure (spec lot E §5.1)
       timeline.ts                  # `HOUR_MS`, `HORIZON_MS` (48 h), `framePair` (recherche binaire des deux échéances encadrant un instant + facteur de mélange `f`), `TimeRange`, `clampTime`, `snapToHour`, `resolvePair`, `loadOrder`, `nearestFrame`, `fallbackFrames` (repli sur l'échéance voisine)
@@ -270,6 +270,7 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
       timeline.ts                 # NOUVEAU lot E (2026-09-27) : frise temporelle, DOM seul (spec lot E §7.1) — `createTimeline(els, handlers)`, `render(s)` réécrit le DOM seulement si l'état a changé (pas d'écriture à chaque image sans changement), `seek`/`toggle`/`goLive`/`interact` (premier contact = déclenche le préchargement) ; validée dans le navigateur, testée sans DOM (Vitest)
       tooltip.ts                 # TapDetector, placeTooltip, createTooltip : setData(def, pixels, grid, encoding), une lecture {lon, lat} projetée à chaque rendu, aria-live selon le mode ; NOUVEAU setWind(field) ajoute une 2ᵉ ligne « Vent … » (spec vent §10) ; lot F : nom du lieu affiché, tooltip épinglé à l'arrivée d'un vol non écrasé par le survol souris (un clic sur le globe lève l'épingle) ; 2026-10-03 : `Reading.origin` (`user`/`city`/`locate`) et `pinned()` (épingle visible pour la capture, `null` pour « ma position » ou hors écran)
       locate.ts                   # lot F (2026-09-26) : « ma position » — `navigator.geolocation.getCurrentPosition` (`enableHighAccuracy: false`, `timeout` 10 s, `maximumAge` 10 min), position jamais envoyée ni stockée, réseau/API injectés
+      capture-menu.ts             # 2026-10-03 : `createCaptureMenu(els).choose()` → `"share"` / `"save"` / `null` (Échap, toucher hors du menu) ; texte des boutons dans index.html
   tests/
     fixtures.ts                  # lot E (2026-09-27) : FORECAST (manifeste de test v3, frise d'échéances, même contrat que le pipeline), WIND_FORECAST (vent v3, hors de FORECAST pour ne pas changer les comptes des autres suites) — remplacent l'ancien SAMPLE v2
     manifest.test.ts             # parseForecast v3 (strict, frise d'échéances, rejet v2) — lot E (2026-09-27), remplace la suite v2
@@ -307,7 +308,8 @@ web/                          # frontend (branche feat/globe-heatmap, 2026-09-02
     capture-naming.test.ts        # 2026-10-03 : dates UTC, run, noms de fichier
     capture-privacy.test.ts       # 2026-10-03 : distance haversine, rayon 5°, levée, antiméridien, pôle
     capture-compose.test.ts       # 2026-10-03 : bandeau paysage/portrait empilé/sans couche, étiquettes × DPR (clair/sombre), épingle et cartouche — attendus calculés à la main
-    capture-share.test.ts         # 2026-10-03 : partage tactile, téléchargement sur ordinateur, annulation, NotAllowedError → téléchargement
+    capture-share.test.ts         # 2026-10-03 : `captureChoices` (tactile/ordinateur/API absente), `saveImage`, `shareImage` (annulation, NotAllowedError → enregistrement)
+    capture-menu.test.ts          # 2026-10-03 : choix Share/Save, fermeture par Échap et toucher extérieur, écouteurs retirés (faux DOM)
     capture-paint.test.ts         # 2026-10-03 : repli sans `roundRect` (faux contexte 2D)
     capture-view-url.test.ts      # 2026-10-03 : écriture au repos, rien sans geste ni pendant le vent animé, garde « ma position », rien pendant un vol
     geo-loader.test.ts            # lot C : once, échec partiel des étiquettes, binaire invalide
@@ -512,6 +514,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **« Ma position » jamais dans l'URL ni dans l'image : garde de 5° (≈ 550 km), marqueur exclu** *(2026-10-03)* | Promesse du panneau About (lot F). Écrire la vue à chaque repos de caméra porterait sinon la position sans que l'utilisateur le voie. L'image reste cadrée sur sa région (sans marqueur) : c'est ce qu'il voit et choisit de partager |
 | **Ajustements du plan à la spec** *(2026-10-03)* : bandeau en **px CSS** (clamp(64, 0,12 × min, 120) × DPR, sinon texte ≈ 7 pt sur Retina) ; message par `flashNotice` existant (5 s) ; repos caméra détecté par **comparaison de position à chaque rendu**, armé au premier geste (le zoom passe par `attachZoom`, pas seulement par OrbitControls) ; crédit **« NOAA GFS run … »** | Chaque écart part du code existant ou de la lisibilité ; spec mise à jour dans le même commit que le plan |
 | **Partage natif seulement sur appareil tactile** (`pointer: coarse` ET `canShare({files})`) *(2026-10-03)* | Chrome sous Windows accepte aussi le partage de fichiers : sans la garde, l'ordinateur ouvrirait la boîte de partage du système au lieu de télécharger |
+| **Sur mobile, menu « Share… / Save image » après la capture** *(2026-10-03, demande utilisateur après test sur son Android)* | Une page web ne peut pas écrire dans la galerie. Sur Android la feuille de partage n'a pas d'option « galerie », mais un téléchargement arrive dans `Download/`, que la Galerie et Google Photos affichent ; sur iPhone, « Enregistrer l'image » est déjà dans la feuille de partage. Le choix étant un geste neuf, le partage ne dépend plus d'une activation consommée pendant la préparation de l'image. Ordinateur inchangé (téléchargement direct) |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -622,6 +625,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-02 | fix/dust-bounds — bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³ (tempêtes sahariennes) ; chemin borné (constat en chat, TDD) | ✅ mergée, déployée par CI | `465346b` | 272 passed / 10 skipped pytest |
 | 2026-10-03 | feat/indexnow — signalement IndexNow au déploiement (`tools/indexnow.py`, fichier-clé, étape du job `deploy`) ; chemin borné (design en chat, TDD) | ✅ mergée, déployée par CI | `593bc4c` | 293 passed pytest (Actions), dont 11 nouveaux |
 | 2026-10-03 | feat/capture — chantier audience ② : bouton 📷 (image PNG du globe + étiquettes + épingle + bandeau, partage natif sur tactile ou téléchargement) et vue caméra toujours à jour dans l'URL sans jamais « ma position » (spec `2026-10-03-capture-design.md`, plan `2026-10-03-capture.md` 8 tâches, exécution native ; revue finale opus « with fixes », 2 Important + 1 Minor reclassé corrigés) | ✅ mergée, déployée par CI | `8fea4fb` | 658 vitest (CI), 293 pytest ; bundle 170,16 → 173,34 Ko gzip |
+| 2026-10-03 | feat/capture-save — menu « Share… / Save image » sur mobile (`ui/capture-menu.ts`, `share.ts` découpé en `captureChoices`/`shareImage`/`saveImage`) ; chemin borné (design en chat, TDD) ; validé en émulation tactile 412×915 et sur ordinateur | ✅ mergée, déployée par CI | `3e7f3bc` | 663 vitest locaux + timeout connu `geo-loader` (dette n° 65) |
 
 ## 8. Dette technique connue
 
@@ -692,13 +696,13 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 63 | **Rappel daté : le token GitHub du Worker `worldtemp-cron` expire le 2027-10-02** (fine-grained, dépôt `worldtemp`, *Actions : Read and write*) | À expiration, chaque exécution horaire échoue en 401 (« failed » dans Cloudflare) et le pipeline retombe sur le cron GitHub seul (4 à 6 passages par jour, bandeau « outdated » possible) | 🟡 ouvert — **renouveler vers le 2027-09-02** : nouveau token aux mêmes réglages, puis remplacer le secret `GITHUB_TOKEN` dans le dashboard Cloudflare |
 | 64 | **Mineurs différés de la revue finale `feat/capture`** (détail dans le ledger git-ignoré `.superpowers/sdd/2026-10-03-capture/progress.md`) : JSDoc de `shareView` restée au-dessus de `viewGuard` dans `main.ts` ; cartouche de l'épingle à 8 px de rayon contre 7 px (`.panel` 0.5rem), interligne 1.25 contre `normal` ; un glisser tenu immobile ≥ 400 ms écrit la vue pendant le geste (`replaceState`, invisible) ; `STRINGS.capture.button` inutilisé (`aria-label` en dur dans `index.html`) ; `/?` final dans la barre d'adresse après 📍 sans autre paramètre ; graduations −40…−10 serrées dans la légende de l'image (comme à l'écran) | Cosmétique ou sans effet visible | 🟡 ouvert, mineur |
 | 65 | **`web/tests/geo-loader.test.ts` (empreinte FNV-1a de `public/geo/`, 17 Mo) dépasse le délai Vitest de 5 s sur le poste local chargé**, parfois même lancé seul (2026-10-03, 3 fois sur 5) ; vert sur Actions | Faux rouge local à chaque `npm test` sous charge, risque de masquer un vrai rouge | 🟡 ouvert — piste : délai explicite plus long pour ce test |
-| 66 | **Partage natif non validé sur vrai téléphone** : `navigator.share` avec `files` + `url` + `text` (certaines cibles iOS/Android ne gardent que l'URL ou que le fichier), et repli `<a download>` sans activation utilisateur sur iOS | La feuille de partage pourrait ne pas joindre l'image selon l'appli cible | 🟡 ouvert — à faire par l'utilisateur sur son téléphone après déploiement |
+| 66 | **Partage sur vrai téléphone partiellement validé** : feuille de partage confirmée par l'utilisateur sur Android le 2026-10-03 ; restent l'arrivée de « Save image » dans la Galerie Android, le contenu reçu par chaque appli cible (`files` + `url` + `text`), et iOS (non testé) | Selon l'appli cible, l'image pourrait ne pas être jointe | 🟡 ouvert — contrôle « Save image » → Galerie par l'utilisateur après déploiement de `3e7f3bc` |
 
 ### Chantiers à venir (feuille de route, relevée le 2026-09-19, mise à jour le 2026-09-27)
 
 La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
 chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
-Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4 (P4 différé le 2026-10-03 au profit d'un chantier « audience », §5 : ① IndexNow livré `593bc4c`, ② capture d'image livrée `8fea4fb`, ③ pages de référencement par couche à venir).
+Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4 (P4 différé le 2026-10-03 au profit d'un chantier « audience », §5 : ① IndexNow livré `593bc4c`, ② capture d'image livrée `8fea4fb`, ③ pages de référencement par couche = **prochain chantier**, lot G).
 
 **Lots identifiés**
 
@@ -707,6 +711,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | ✅ **livré 2026-09-19** (merge `1295853`, correctif de cache `e359ebd`) ; site vérifié et sitemap envoyé dans Google Search Console et Bing Webmaster |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | ✅ **livré 2026-09-27** (merge `9339e47`) : frise f003→f060 (pas 3 h) par run, curseur live/fixed avec lecture, fondu GPU entre échéances |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | ✅ **livré 2026-09-26** (merge `98928fd`) : ~138 500 villes GeoNames de détail, recherche hors ligne, « ma position », vol animé |
+| **G — pages de référencement par couche** (chantier audience ③) | Pages statiques indexables par couche (« temperature map », « dust forecast »…), peut-être par grande ville, image Open Graph par couche (ligne R8) | Search Console : page unique indexée, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (§5 du 2026-10-03) | ⏭ **PROCHAIN CHANTIER** (décision utilisateur 2026-10-03) — à brainstormer |
 
 **Hors plan d'origine, manquant sur un site public**
 
@@ -736,6 +741,22 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-03 (4) — Menu « Share… / Save image » sur mobile (merge `3e7f3bc`), lot G inscrit comme prochain chantier
+
+Test de l'utilisateur sur son Android : la feuille de partage s'ouvre ; il veut aussi enregistrer
+l'image dans la galerie comme une capture d'écran. Chemin borné : design en chat (§5), TDD
+(`capture-share.test.ts` réécrit, `capture-menu.test.ts` nouveau), validation en émulation tactile
+(menu sous le bandeau, « Save image » → téléchargement + « Image saved », Échap et toucher extérieur
+→ rien) et sur ordinateur (téléchargement direct, pas de menu). Branche distante `feat/capture`
+supprimée à la demande de l'utilisateur. Un essai de validation a laissé un vrai PNG de test dans
+le dossier Téléchargements du poste (signalé à l'utilisateur).
+
+- **Tests :** 663 vitest locaux, typecheck propre ; seul échec : timeout `geo-loader` (dette n° 65).
+- **Ce commit HISTORY précède le push de `master`** (§10).
+- **Prochaine action :** l'utilisateur vérifie « Save image » → Galerie sur son Android (dette
+  n° 66) ; puis **lot G (chantier audience ③) : brainstorming des pages de référencement par
+  couche** (§8, feuille de route) ; relever le critère 4 de `worldtemp-cron`.
 
 ### 2026-10-03 (3) — Chantier audience ② livré : capture d'image partageable et vue caméra dans l'URL (merge `8fea4fb`)
 
@@ -1750,7 +1771,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-03 (**capture d'image partageable et vue caméra dans l'URL, merge `8fea4fb`** — chantier audience ② ; revue finale opus, 3 corrections ; validé au navigateur ; 658 vitest, 293 pytest ; ce commit HISTORY précède le push de `master`)
+**Dernière mise à jour :** 2026-10-03 (**menu « Share… / Save image » sur mobile, merge `3e7f3bc`** — enregistrement dans la Galerie Android par téléchargement ; lot G (pages de référencement par couche) inscrit comme prochain chantier ; ce commit HISTORY précède le push de `master`)
+**Entrée précédente :** 2026-10-03 (**capture d'image partageable et vue caméra dans l'URL, merge `8fea4fb`** — chantier audience ② ; revue finale opus, 3 corrections ; validé au navigateur ; 658 vitest, 293 pytest ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**IndexNow au déploiement, merge `593bc4c`** — sous-chantier audience ①, `tools/indexnow.py` + fichier-clé + étape `deploy` ; Brave soumis par l'utilisateur ; 293 pytest ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**vérifications d'exploitation, dette n° 61 fermée, P4 différé faute d'audience** — GEFS-chem republié (12z → 06z), `worldtemp-cron` 17/17, 10 objets R2 legacy supprimés, 30 chargements humains en deux semaines ; aucun code)
 **Entrée précédente :** 2026-10-02 (**bornes plausibles poussière 500 000 et PM2.5 200 000 µg/m³, merge `465346b`** — GEFS-chem 12z rejeté par une tempête saharienne (59 830 > 50 000) ; 272 pytest ; `worldtemp-cron` a déclenché son premier run à 19:55 ; ce commit HISTORY précède le push de `master`)
