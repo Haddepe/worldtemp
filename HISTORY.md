@@ -767,7 +767,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 - **Question de l'utilisateur sur Brave** (« problème de processeur ? ») : non — protection
   anti-empreinte (*farbling*) qui annonce un nombre de cœurs au hasard entre 2 et le vrai, propre à
   chaque site et à chaque session (§5, §6).
-- **Dépôt :** `master` propre, aucune branche locale ni distante en cours ; serveur de dev arrêté.
+- **Dépôt :** `master` propre, aucune branche locale ; reste sur GitHub `feat/indexnow`, déjà mergée (`593bc4c`), à supprimer si l'utilisateur le confirme ; serveur de dev arrêté.
 - **Prochaine action (prochaine session, décision utilisateur) : lot G (chantier audience ③) —
   brainstorming des pages de référencement par couche** (§8, feuille de route), en tenant compte de
   la dette n° 67 (audience sous-comptée sous Brave et bloqueurs).
