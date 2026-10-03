@@ -43,13 +43,18 @@ function pct(v: number, enc: Encoding): string {
   return Number.isInteger(p) ? String(p) : p.toFixed(2).replace(/\.?0+$/, "");
 }
 
+/** Arrêts de la légende, positions encode(v)/255 (non uniformes en racine) : CSS et capture (spec capture §3). */
+export function legendStops(def: LayerDef, enc: Encoding): { at: number; color: string }[] {
+  return def.stops.map((st) => {
+    const [r, g, b, a] = st.rgba;
+    return { at: encode(st.v, enc) / 255, color: `rgba(${r}, ${g}, ${b}, ${Number((a / 255).toFixed(3))})` };
+  });
+}
+
 /** Gradient CSS de la légende, mêmes arrêts, positions encode(v)/255 (non uniformes en racine). */
 export function legendGradientCss(def: LayerDef, enc: Encoding): string {
-  const parts = def.stops.map((st) => {
-    const [r, g, b, a] = st.rgba;
-    const alpha = Number((a / 255).toFixed(3));
-    return `rgba(${r}, ${g}, ${b}, ${alpha}) ${pct(st.v, enc)}%`;
-  });
+  const stops = legendStops(def, enc);
+  const parts = def.stops.map((st, i) => `${stops[i]!.color} ${pct(st.v, enc)}%`);
   return `linear-gradient(to right, ${parts.join(", ")})`;
 }
 
