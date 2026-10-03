@@ -15,10 +15,22 @@ import type { ViewState } from "../tiles/lod";
  * À 30 Hz un segment par tick mesure ≤ 2 px : sur-échantillonné, et chaque segment est un quad
  * à dessiner. Longueur de traînée = (trail − 1) · stride ticks.
  */
+/** `particles` = plafond (depuis le 2026-10-03) : le nombre réel suit la surface de l'écran (`windParticles`). */
 export const WIND_PROFILE: Record<Tier, { particles: number; trail: number; stride: number }> = {
-  high: { particles: 5_000, trail: 9, stride: 3 },
+  high: { particles: 7_500, trail: 9, stride: 3 },
   low: { particles: 1_500, trail: 5, stride: 3 },
 };
+
+/** Particules par px CSS² : celle d'un téléphone (1 500 sur 412 × 915), rendu préféré par
+ * l'utilisateur ; à 5 000 fixes, un écran d'ordinateur était ~1,5 fois moins dense (2026-10-03). */
+export const WIND_DENSITY = 0.004;
+const MIN_PARTICLES = 300;
+
+/** Nombre de particules pour un écran de `width` × `height` px CSS, fixé au démarrage. */
+export function windParticles(tier: Tier, width: number, height: number): number {
+  const n = Math.round(WIND_DENSITY * width * height);
+  return Number.isFinite(n) ? Math.min(WIND_PROFILE[tier].particles, Math.max(MIN_PARTICLES, n)) : MIN_PARTICLES;
+}
 
 export const TICK_MS = 1000 / 30;
 export const MAX_DT_S = 0.1;

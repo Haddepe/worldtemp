@@ -42,7 +42,7 @@ import { TapDetector, createTooltip, mouseInput, type Reading, type TooltipData 
 import { createToggle } from "./ui/toggle";
 import { WindController } from "./wind/controller";
 import { parseWindParam, withWindParam } from "./wind/select";
-import { WIND_PROFILE, WindSim, type WindField } from "./wind/sim";
+import { WIND_PROFILE, WindSim, windParticles, type WindField } from "./wind/sim";
 
 /** Manifeste vide : aucune tuile demandée (mode repli, spec tuiles §8). */
 const NO_TILES: TilesManifest = { schemaVersion: 1, tileSize: 512, sat: { ext: "jpg", maxLevel: -1 }, map: { ext: "png", maxLevel: -1, index: "" } };
@@ -112,8 +112,9 @@ async function boot(): Promise<void> {
   sceneHandle.scene.add(halo.object);
 
   const windProfile = WIND_PROFILE[decision.tier];
-  const windSim = new WindSim(windProfile.particles, windProfile.trail, windProfile.stride);
-  const windLayer = createWindLayer(windSim.positions, windProfile.particles, windProfile.trail);
+  const windCount = windParticles(decision.tier, window.innerWidth, window.innerHeight);
+  const windSim = new WindSim(windCount, windProfile.trail, windProfile.stride);
+  const windLayer = createWindLayer(windSim.positions, windCount, windProfile.trail);
   sceneHandle.scene.add(windLayer.object);
   const windCtl = new WindController({
     sim: windSim,
