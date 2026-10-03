@@ -172,9 +172,9 @@ html, body {
 
 #ad-slot { grid-column: 1 / -1; height: 90px; }
 
-#legend .bar { height: 0.75rem; border-radius: 0.25rem; }
+#legend .bar { height: 0.75rem; border-radius: 0.25rem; background: linear-gradient(to right, var(--stops)); }
 #legend .ticks { position: relative; height: 1.4rem; font-size: 0.75rem; color: var(--panel-muted); }
-#legend .tick { position: absolute; transform: translateX(-50%); }
+#legend .tick { position: absolute; left: calc(var(--pct) * 1%); transform: translateX(-50%); }
 #legend .extremes { font-size: 0.75rem; color: var(--panel-muted); display: flex; justify-content: space-between; }
 
 #fatal {
@@ -236,21 +236,38 @@ html, body {
 @media (max-width: 600px) {
   /* Même rangée dédiée à #search qu'en pleine largeur (voir #overlay ci-dessus) : +1 sur les
      rangées explicites de #legend/#controls/#attribution (correctif tour 1, T10). */
-  #overlay { grid-template-rows: auto auto 1fr auto auto auto auto; }
-  /* border-box : sans lui le padding s'ajoute aux 100vw − 1.5rem, la légende déborde de 11 px et
-     élargit toute la grille (bandeau et contrôles collés au bord droit). */
-  #legend { box-sizing: border-box; min-width: 0; width: calc(100vw - 1.5rem); grid-row: 5; grid-column: 1 / -1; }
+  /* Rangées : bandeau, recherche/menu capture, milieu (statut + légende et frise verticales le long
+     des bords, 2026-10-03 : à plat, elles cachaient la moitié basse du globe), couches, crédits. */
+  #overlay { grid-template-rows: auto auto 1fr auto auto; }
+  #legend {
+    grid-row: 3; grid-column: 1; align-self: center; justify-self: start; min-width: 0; width: auto;
+    box-sizing: border-box; height: min(45vh, 18rem); padding: 0.5rem 0.4rem;
+    display: grid; grid-template-columns: auto auto; grid-template-rows: 1fr auto; column-gap: 0.3rem;
+  }
+  #legend .title { grid-column: 1 / -1; grid-row: 2; margin: 0.3rem 0 0; font-size: 0.7rem; text-align: center; }
+  #legend .title .name, #legend .title .iso, #legend .extremes { display: none; }
+  #legend .bar { grid-column: 1; grid-row: 1; width: 0.6rem; height: auto; background: linear-gradient(to top, var(--stops)); }
+  #legend .ticks { grid-column: 2; grid-row: 1; height: auto; min-width: 1.6rem; font-size: 0.65rem; }
+  #legend .tick { left: 0; bottom: calc(var(--pct) * 1%); transform: translateY(50%); }
   #controls {
-    grid-row: 6; grid-column: 1 / -1; justify-self: stretch;
+    grid-row: 4; grid-column: 1 / -1; justify-self: stretch;
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;
     -webkit-overflow-scrolling: touch;
   }
   #controls [role="radio"], #controls [role="switch"] { scroll-snap-align: start; min-height: 44px; flex: 0 0 auto; }
   #wind-toggle { margin-top: 0; }
-  #attribution { grid-row: 7; }
-  #timeline { width: calc(100vw - 1.5rem); min-width: 0; margin-bottom: 0; }
+  #attribution { grid-row: 5; }
+  /* Frise verticale à droite : « maintenant » en haut, +48 h en bas (writing-mode : Chrome 124+,
+     Safari 17.4+, Firefox) ; ▶ et l'heure dessous, l'heure repliée sur plusieurs lignes. */
+  #timeline {
+    grid-row: 3; grid-column: 2; align-self: center; justify-self: end; width: 3.4rem; min-width: 0;
+    height: min(45vh, 18rem); margin: 0; padding: 0.5rem 0.25rem; flex-direction: column; gap: 0.4rem;
+  }
+  #timeline-range { writing-mode: vertical-lr; direction: ltr; flex: 1; min-width: 0; min-height: 0; width: 44px; order: 1; }
+  #timeline-label { order: 2; white-space: normal; text-align: center; font-size: 0.65rem; line-height: 1.2; }
+  #timeline-play { order: 3; }
+  #timeline-now { order: 4; padding: 0 0.3rem; font-size: 0.7rem; }
   #timeline-play, #timeline-now { min-width: 44px; min-height: 44px; }
-  #timeline-range { min-height: 44px; }
 }
 
 /* Panneau About (spec site public §5) : <dialog> modal, contenu indexable dans index.html. */

@@ -51,11 +51,16 @@ export function legendStops(def: LayerDef, enc: Encoding): { at: number; color: 
   });
 }
 
+/** Arrêts CSS de la légende (« rgba(…) 33.33%, … »), sans orientation : le CSS choisit `to right`
+ * (ordinateur) ou `to top` (mobile, légende verticale) via `--stops`. */
+export function legendStopsCss(def: LayerDef, enc: Encoding): string {
+  const stops = legendStops(def, enc);
+  return def.stops.map((st, i) => `${stops[i]!.color} ${pct(st.v, enc)}%`).join(", ");
+}
+
 /** Gradient CSS de la légende, mêmes arrêts, positions encode(v)/255 (non uniformes en racine). */
 export function legendGradientCss(def: LayerDef, enc: Encoding): string {
-  const stops = legendStops(def, enc);
-  const parts = def.stops.map((st, i) => `${stops[i]!.color} ${pct(st.v, enc)}%`);
-  return `linear-gradient(to right, ${parts.join(", ")})`;
+  return `linear-gradient(to right, ${legendStopsCss(def, enc)})`;
 }
 
 /**

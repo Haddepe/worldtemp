@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Encoding } from "../src/data/encoding";
 import { decode, encode } from "../src/data/encoding";
 import { layerDef, type LayerDef } from "../src/layers/registry";
-import { LUT_SIZE, buildLut, colorAt, createLutTexture, legendGradientCss, legendStops } from "../src/render/colormap";
+import { LUT_SIZE, buildLut, colorAt, createLutTexture, legendGradientCss, legendStops, legendStopsCss } from "../src/render/colormap";
 
 const temp = layerDef("temp")!;
 const rain = layerDef("rain")!;
@@ -69,5 +69,15 @@ describe("legendStops", () => {
       { at: 0, color: "rgba(0, 0, 0, 1)" },
       { at: 128 / 255, color: "rgba(255, 0, 0, 0.502)" },
     ]);
+  });
+});
+
+describe("legendStopsCss — arrêts seuls, l'orientation est choisie par le CSS (mobile vertical, 2026-10-03)", () => {
+  it("le gradient CSS de la légende est exactement linear-gradient(to right, <arrêts>)", () => {
+    expect(legendGradientCss(temp, LIN)).toBe(`linear-gradient(to right, ${legendStopsCss(temp, LIN)})`);
+  });
+  it("arrêts aux positions encode(v)/255", () => {
+    const def = { stops: [{ v: 0, rgba: [0, 0, 0, 255] }, { v: 100, rgba: [255, 0, 0, 128] }] } as unknown as LayerDef;
+    expect(legendStopsCss(def, { bits: 8, min: 0, max: 100, scale: "linear" })).toBe("rgba(0, 0, 0, 1) 0%, rgba(255, 0, 0, 0.502) 100%");
   });
 });

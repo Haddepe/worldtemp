@@ -5,7 +5,7 @@ import { sampleValue } from "../src/data/sampling";
 import { viewStateFrom } from "../src/tiles/lod";
 import { lonLatToVec3 } from "../src/tiles/patch";
 import {
-  LIFE_MAX, LIFE_MIN, MAX_LAT, MIN_SPEED, PX_PER_S_PER_MS, RADIUS, SPAWN_TRIES, WIND_PROFILE, WindSim,
+  LIFE_MAX, LIFE_MIN, MAX_LAT, WIND_DENSITY, windParticles, MIN_SPEED, PX_PER_S_PER_MS, RADIUS, SPAWN_TRIES, WIND_PROFILE, WindSim,
   isVisible, sampleUV, spawnOnScreen, speedScale, type PickFn, type WindField,
 } from "../src/wind/sim";
 
@@ -20,9 +20,9 @@ export function view(d: number, height = 800) {
 }
 
 describe("WIND_PROFILE", () => {
-  it("budgets révisés le 2026-09-18 : moins de particules, traînées plus longues", () => {
+  it("traînées révisées le 2026-09-18 ; particles = plafond depuis le 2026-10-03", () => {
     // longueur de traînée = (trail − 1) · stride ticks : 24 en high, 12 en low
-    expect(WIND_PROFILE.high).toEqual({ particles: 5000, trail: 9, stride: 3 });
+    expect(WIND_PROFILE.high).toEqual({ particles: 7500, trail: 9, stride: 3 });
     expect(WIND_PROFILE.low).toEqual({ particles: 1500, trail: 5, stride: 3 });
     expect(PX_PER_S_PER_MS).toBe(3);
     expect(MAX_LAT).toBe(85);
@@ -339,5 +339,23 @@ describe("sampleUV — deux échéances (spec lot E §6.3)", () => {
     sampleUV({ uv: uvOf(0, 255), grid, encU: enc, encV: enc }, 10, 20, out);
     expect(out.u).toBeCloseTo(-60, 9);
     expect(out.v).toBeCloseTo(60, 9);
+  });
+});
+
+describe("windParticles — même densité qu'un téléphone, à l'échelle de l'écran (2026-10-03)", () => {
+  it("densité 0,004 particule par px CSS²", () => {
+    expect(WIND_DENSITY).toBe(0.004);
+  });
+  it("téléphone 412×915 en low : 1 500 (plafond, inchangé)", () => {
+    expect(windParticles("low", 412, 915)).toBe(1500);
+  });
+  it("ordinateur 1920×950 en high : 7 296 ; 2560×1300 plafonné à 7 500", () => {
+    expect(windParticles("high", 1920, 950)).toBe(7296);
+    expect(windParticles("high", 2560, 1300)).toBe(7500);
+  });
+  it("petite fenêtre 800×600 : 1 920 ; taille nulle ou absurde : plancher de 300", () => {
+    expect(windParticles("high", 800, 600)).toBe(1920);
+    expect(windParticles("high", 0, 0)).toBe(300);
+    expect(windParticles("low", Number.NaN, 500)).toBe(300);
   });
 });

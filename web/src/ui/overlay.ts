@@ -1,7 +1,7 @@
 import type { Encoding } from "../data/encoding";
 import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
-import { legendGradientCss } from "../render/colormap";
+import { legendStopsCss } from "../render/colormap";
 import { legendTicks } from "./format";
 
 export interface Overlay {
@@ -82,12 +82,13 @@ export function createOverlay(): Overlay {
     },
     setLegend(def, enc, stats) {
       const ticks = legendTicks(def, enc)
-        .map((t) => `<span class="tick" style="left:${t.pct.toFixed(2)}%">${t.label}</span>`)
+        .map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${t.label}</span>`)
         .join("");
       const iso = def.isoStep !== null ? ` · ${STRINGS.legend.isolines} ${def.isoStep} ${def.unit}` : "";
       legend.innerHTML =
-        `<div class="title">${def.label} · ${def.unit}${iso}</div>` +
-        `<div class="bar" style="background:${legendGradientCss(def, enc)}"></div>` +
+        // Orientation choisie par le CSS (`--stops`, `--pct`) : horizontale, ou verticale sur mobile.
+        `<div class="title"><span class="name">${def.label} · </span><span class="unit">${def.unit}</span><span class="iso">${iso}</span></div>` +
+        `<div class="bar" style="--stops:${legendStopsCss(def, enc)}"></div>` +
         `<div class="ticks">${ticks}</div>` +
         `<div class="extremes"><span>${STRINGS.legend.min} ${def.format(stats.min)}</span><span>${STRINGS.legend.max} ${def.format(stats.max)}</span></div>`;
     },
