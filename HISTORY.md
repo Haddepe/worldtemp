@@ -757,6 +757,21 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 
 ## 9. État actuel & prochaine action
 
+### 2026-10-03 (8) — Arrêt de session : tout est mergé, poussé et déployé ; lot G pour la prochaine session
+
+- **`worldtemp-cron`, critère 4 de la spec (≥ 22 passages sur 24 h) atteint :** 22 passages
+  `workflow_dispatch` sur 22 créneaux de :55, tous verts, du 2026-10-02 19:55 au 2026-10-03 16:55 UTC
+  (relevé à 17:30 UTC, avant même la fin de la fenêtre).
+- **Validé par l'utilisateur sur téléphone et ordinateur :** disposition mobile verticale, bords
+  collés, globe aux 42 %, vent dense en ligne sous Brave.
+- **Question de l'utilisateur sur Brave** (« problème de processeur ? ») : non — protection
+  anti-empreinte (*farbling*) qui annonce un nombre de cœurs au hasard entre 2 et le vrai, propre à
+  chaque site et à chaque session (§5, §6).
+- **Dépôt :** `master` propre, aucune branche locale ni distante en cours ; serveur de dev arrêté.
+- **Prochaine action (prochaine session, décision utilisateur) : lot G (chantier audience ③) —
+  brainstorming des pages de référencement par couche** (§8, feuille de route), en tenant compte de
+  la dette n° 67 (audience sous-comptée sous Brave et bloqueurs).
+
 ### 2026-10-03 (7) — Profil GPU juste sous Brave, globe remonté sur mobile (merge `d6aed4a`)
 
 L'utilisateur valide les bords sur téléphone, trouve le globe encore trop bas, et ne voit toujours
@@ -1836,7 +1851,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-03 (**profil GPU juste sous Brave, globe aux 42 % sur mobile, merge `d6aed4a`** — Brave brouillait le nombre de cœurs (low à tort) ; beacon d'audience bloqué par Brave Shields (dette n° 67) ; ce commit HISTORY précède le push de `master`)
+**Dernière mise à jour :** 2026-10-03 (**arrêt de session** — tout mergé et déployé ; critère 4 de `worldtemp-cron` atteint (22/22) ; lot G reporté à la prochaine session)
+**Entrée précédente :** 2026-10-03 (**profil GPU juste sous Brave, globe aux 42 % sur mobile, merge `d6aed4a`** — Brave brouillait le nombre de cœurs (low à tort) ; beacon d'audience bloqué par Brave Shields (dette n° 67) ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**mobile : bords collés, globe recentré, densité de vent corrigée, merge `14bbdd1`** — téléphone en `high` et non `low`, densité 0,0133 / px², plafond 8 500 mesuré à 60 fps ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**légende et frise verticales sur téléphone, vent à densité d'écran, merge `c2b91e2`** — globe entier visible sur mobile ; particules à 0,004 / px CSS², plafond 7 500 à 60 fps ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**menu « Share… / Save image » sur mobile, merge `3e7f3bc`** — enregistrement dans la Galerie Android par téléchargement ; lot G (pages de référencement par couche) inscrit comme prochain chantier ; ce commit HISTORY précède le push de `master`)
