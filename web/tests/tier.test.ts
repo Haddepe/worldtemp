@@ -55,4 +55,21 @@ describe("decideTier", () => {
   it("nom GPU reconnu prime sur l'heuristique", () => {
     expect(decideTier({ ...desktop, rendererName: "Apple GPU", hardwareConcurrency: 2 }).tier).toBe("high");
   });
+
+  describe("Brave : nombre de cœurs brouillé (anti-pistage), ignoré (2026-10-03)", () => {
+    const brave: TierInputs = { ...desktop, hardwareConcurrency: 4, isBrave: true };
+    it("ordinateur sous Brave annonçant 4 cœurs → high, raison explicite", () => {
+      const d = decideTier(brave);
+      expect(d.tier).toBe("high");
+      expect(d.reason).toMatch(/Brave/);
+    });
+    it("les autres critères restent : GPU faible, mobile dpr < 2, paramètre d'URL", () => {
+      expect(decideTier({ ...brave, rendererName: "Mali-T880" }).tier).toBe("low");
+      expect(decideTier({ ...brave, userAgent: "Mozilla/5.0 (Linux; Android 14) Mobile", devicePixelRatio: 1.5 }).tier).toBe("low");
+      expect(decideTier({ ...brave, urlSearch: "?tier=low" }).tier).toBe("low");
+    });
+    it("hors Brave, 4 cœurs → low (inchangé)", () => {
+      expect(decideTier({ ...brave, isBrave: false }).tier).toBe("low");
+    });
+  });
 });

@@ -6,6 +6,9 @@ export interface TierInputs {
   hardwareConcurrency: number | undefined;
   userAgent: string;
   devicePixelRatio: number;
+  /** Brave brouille `hardwareConcurrency` (anti-pistage : valeur au hasard entre 2 et la vraie,
+   * différente par site) : un ordinateur 8 cœurs y annonçait 4 et tombait en low (2026-10-03). */
+  isBrave?: boolean;
 }
 
 export interface TierDecision {
@@ -34,14 +37,14 @@ export function decideTier(i: TierInputs): TierDecision {
     if (LOW_GPU.test(i.rendererName)) return { tier: "low", reason: `GPU "${i.rendererName}"` };
   }
 
-  const cores = i.hardwareConcurrency ?? 0;
+  const cores = i.isBrave ? 0 : (i.hardwareConcurrency ?? 0);
   if (cores > 0 && cores <= 4) {
     return { tier: "low", reason: `hardwareConcurrency ${cores}` };
   }
   if (MOBILE_UA.test(i.userAgent) && i.devicePixelRatio < 2) {
     return { tier: "low", reason: `mobile, devicePixelRatio ${i.devicePixelRatio}` };
   }
-  return { tier: "high", reason: "default heuristic" };
+  return { tier: "high", reason: i.isBrave ? "default heuristic (Brave: core count ignored)" : "default heuristic" };
 }
 
 /** Lit le navigateur puis délègue à `decideTier`. */
@@ -58,5 +61,6 @@ export function detectTier(gl: WebGLRenderingContext | WebGL2RenderingContext): 
     hardwareConcurrency: navigator.hardwareConcurrency,
     userAgent: navigator.userAgent,
     devicePixelRatio: window.devicePixelRatio,
+    isBrave: "brave" in navigator,
   });
 }
