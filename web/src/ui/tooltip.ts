@@ -16,6 +16,8 @@ export interface Reading {
   lat: number;
   /** Nom du lieu (recherche), affiché au-dessus des valeurs. */
   name?: string;
+  /** Origine d'une épingle : « ma position » n'apparaît jamais dans une capture (spec capture §2). */
+  origin?: "user" | "city" | "locate";
 }
 
 /** Couche affichée à l'instant du curseur (spec lot E §6.2). */
@@ -106,6 +108,8 @@ export interface Tooltip {
   hitMarker(x: number, y: number, radiusPx?: number): boolean;
   /** Vrai si une lecture est épinglée (mode pin, lecture non nulle). */
   isPinned(): boolean;
+  /** Épingle visible pour la capture (px CSS) ; `null` si rien d'épinglé, hors écran ou « ma position ». */
+  pinned(): { x: number; y: number; text: string | null } | null;
 }
 
 /**
@@ -211,6 +215,10 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     },
     isPinned() {
       return mode === "pin" && reading !== null;
+    },
+    pinned() {
+      if (mode !== "pin" || !reading || !markerScreen || reading.origin === "locate") return null;
+      return { x: markerScreen.x, y: markerScreen.y, text: tip.hidden ? null : tip.textContent };
     },
   };
 }

@@ -10,7 +10,7 @@ import { STRINGS } from "../i18n";
 import { LabelsController } from "../labels/controller";
 import type { LabelSet } from "../labels/data";
 import { DetailLabels } from "../labels/detail";
-import { createLabelsLayer } from "../labels/layer";
+import { createLabelsLayer, type LabelView } from "../labels/layer";
 import { createRiversLayer, type RiversLayer } from "../render/rivers";
 import type { SceneHandle } from "../render/scene";
 import type { RiverSegments } from "../rivers/data";
@@ -127,6 +127,8 @@ export interface GeoHandle {
   /** Couche dont les étiquettes de ville affichent la valeur (`null` = nom seul) ; `layerShown` :
    * une couche colore le globe même si ses valeurs sont illisibles (pas de variante sombre). */
   setValueSource(data: TooltipData | null, layerShown?: boolean): void;
+  /** Étiquettes affichées, pour la capture (spec capture §3). */
+  labelSnapshot(): { views: readonly LabelView[]; dark: boolean };
 }
 
 async function fetchGeo(url: string): Promise<Response> {
@@ -151,8 +153,9 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
     },
     () => labels.invalidate(), // rafale de tuiles : au plus une re-sélection par intervalle (F3)
   );
+  const labelsLayer = createLabelsLayer(ui.labels);
   const labels = new LabelsController({
-    layer: createLabelsLayer(ui.labels),
+    layer: labelsLayer,
     camera: scene.camera,
     size: () => ({ width: canvas.clientWidth, height: canvas.clientHeight }),
     tier,
@@ -185,5 +188,9 @@ export function setupGeo(opts: { ui: Overlay; scene: SceneHandle; canvas: HTMLCa
   if (import.meta.env.DEV) {
     (window as unknown as { __worldtempGeo: unknown }).__worldtempGeo = { labels, rivers: wiring.rivers, detail };
   }
-  return { start: wiring.start, setValueSource: (data, layerShown) => labels.setValueSource(data, layerShown) };
+  return {
+    start: wiring.start,
+    setValueSource: (data, layerShown) => labels.setValueSource(data, layerShown),
+    labelSnapshot: () => ({ views: labelsLayer.current(), dark: labelsLayer.isDark() }),
+  };
 }

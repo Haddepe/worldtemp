@@ -11,7 +11,7 @@ interface FakeElement {
   className: string;
   textContent: string;
   style: { transform: string };
-  classList: { add(c: string): void; remove(c: string): void; contains(c: string): boolean };
+  classList: { add(c: string): void; remove(c: string): void; contains(c: string): boolean; toggle(c: string, on: boolean): void };
   append(...children: unknown[]): void;
 }
 
@@ -25,6 +25,7 @@ function fakeElement(): FakeElement {
       add: (c) => void classes.add(c),
       remove: (c) => void classes.delete(c),
       contains: (c) => classes.has(c),
+      toggle: (c, on) => void (on ? classes.add(c) : classes.delete(c)),
     },
     append: () => {},
   };
@@ -82,5 +83,27 @@ describe("labels/layer (C1)", () => {
     expect(spans[1]!.textContent).toBe("10.0 °C");
     layer.render([{ id: 1, kind: "city", name: "Paris", value: "12.0 °C", x: 0, y: 0 }]);
     expect(spans[1]!.textContent).toBe("12.0 °C");
+  });
+  it("current rend les vues du dernier render, vidé par clear (capture, spec capture §3)", () => {
+    const { container } = installFakeDom();
+    const layer = createLabelsLayer(container);
+    const views = [
+      { id: 1, kind: "city" as const, name: "Paris", value: "18 °C", x: 10, y: 20 },
+      { id: 2, kind: "country" as const, name: "France", value: null, x: 30, y: 40 },
+    ];
+    layer.render(views);
+    expect(layer.current()).toEqual(views);
+    layer.render(views.slice(1));
+    expect(layer.current()).toEqual(views.slice(1));
+    layer.clear();
+    expect(layer.current()).toEqual([]);
+  });
+
+  it("isDark suit setDark", () => {
+    const { container } = installFakeDom();
+    const layer = createLabelsLayer(container);
+    expect(layer.isDark()).toBe(false);
+    layer.setDark(true);
+    expect(layer.isDark()).toBe(true);
   });
 });

@@ -114,6 +114,38 @@ describe("createTooltip — épingle (relecture finale lot F, F2 et F4)", () => 
     expect(els.tip.hidden).toBe(false);
     expect(els.tip.textContent).toBe("Epinal");
   });
+  it("pinned : position écran et texte d'une épingle visible (ville)", () => {
+    const t = createTooltip(fakeEls());
+    t.setReading({ lon: 0, lat: 0, name: "Epinal", origin: "city" }, "pin");
+    t.update(camera(), 400, 400);
+    const p = t.pinned()!;
+    expect(p.x).toBeCloseTo(200, 6);
+    expect(p.y).toBeCloseTo(200, 6);
+    expect(p.text).toBe("Epinal");
+  });
+  it("pinned : null pour « ma position », en survol, avant update, ou derrière le globe", () => {
+    const loc = createTooltip(fakeEls());
+    loc.setReading({ lon: 0, lat: 0, origin: "locate" }, "pin");
+    loc.update(camera(), 400, 400);
+    expect(loc.pinned()).toBeNull();
+    const hover = createTooltip(fakeEls());
+    hover.setReading({ lon: 0, lat: 0, name: "X" }, "hover");
+    hover.update(camera(), 400, 400);
+    expect(hover.pinned()).toBeNull();
+    const early = createTooltip(fakeEls());
+    early.setReading({ lon: 0, lat: 0, origin: "user" }, "pin");
+    expect(early.pinned()).toBeNull();
+    const behind = createTooltip(fakeEls());
+    behind.setReading({ lon: 180, lat: 0, origin: "user" }, "pin");
+    behind.update(camera(), 400, 400);
+    expect(behind.pinned()).toBeNull();
+  });
+  it("pinned : épingle sans texte (ni couche ni nom) → text null", () => {
+    const t = createTooltip(fakeEls());
+    t.setReading({ lon: 0, lat: 0, origin: "user" }, "pin");
+    t.update(camera(), 400, 400);
+    expect(t.pinned()).toMatchObject({ text: null });
+  });
   it("survol sans rien à écrire : ni marqueur ni bulle", () => {
     const els = fakeEls();
     const t = createTooltip(els);
