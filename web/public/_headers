@@ -7,10 +7,61 @@
 /geo/*
   Cache-Control: public, max-age=86400
 
+/og/*
+  Cache-Control: public, max-age=86400
+
 /
   Cache-Control: public, max-age=0, must-revalidate
 
 /index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/temperature-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/wind-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/cloud-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/rain-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/pressure-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/humidity-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/air-quality-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/dust-forecast/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sahara-dust-forecast/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/europe-heatwave-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/atlantic-hurricane-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/pacific-typhoon-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/india-air-quality-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/antarctica-temperature-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/arctic-temperature-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/amazon-rainfall-map/
   Cache-Control: public, max-age=0, must-revalidate
 
 /og.jpg

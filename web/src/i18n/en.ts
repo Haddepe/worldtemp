@@ -76,6 +76,9 @@ export const STRINGS = {
     months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     sources: { gfs_0p25: "NOAA GFS", gefs_chem_0p25: "NOAA GEFS-Aerosols" } as Record<string, string>,
   },
+  pages: {
+    windReducedMotion: "Reduced motion is on, so the animation is paused: switch on Wind to see the flow.",
+  },
   sources: {
     gfs_0p25: "NOAA GFS 0.25°",
     gefs_chem_0p25: "NOAA GEFS-Aerosols 0.25°",

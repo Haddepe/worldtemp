@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAbout } from "../src/ui/about";
+import { createDialog } from "../src/ui/about";
 
 /** Faux éléments : Vitest tourne sans DOM. */
 function fakeButton() {
@@ -17,24 +17,24 @@ function fakeDialog() {
   return { el: dialog as unknown as HTMLDialogElement, raw: dialog, clickOn: (target: unknown) => onClick?.({ target }) };
 }
 
-describe("createAbout — panneau About (spec site public §5)", () => {
+describe("createDialog — panneau About (spec site public §5)", () => {
   it("le bouton « ? » ouvre en modal, une seule fois", () => {
     const d = fakeDialog(), open = fakeButton(), close = fakeButton();
-    createAbout(d.el, open.el, close.el);
+    createDialog(d.el, open.el, close.el);
     open.click();
     open.click();
     expect(d.raw.showModal).toHaveBeenCalledTimes(1);
   });
   it("le bouton Close ferme", () => {
     const d = fakeDialog(), open = fakeButton(), close = fakeButton();
-    createAbout(d.el, open.el, close.el);
+    createDialog(d.el, open.el, close.el);
     open.click();
     close.click();
     expect(d.raw.close).toHaveBeenCalledTimes(1);
   });
   it("un clic sur le fond (la cible est le dialog lui-même) ferme ; un clic dans le contenu ne ferme pas", () => {
     const d = fakeDialog(), open = fakeButton(), close = fakeButton();
-    createAbout(d.el, open.el, close.el);
+    createDialog(d.el, open.el, close.el);
     open.click();
     d.clickOn({ some: "paragraph" });
     expect(d.raw.close).not.toHaveBeenCalled();

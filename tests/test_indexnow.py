@@ -58,9 +58,14 @@ class UrlsFromSitemapTest(unittest.TestCase):
         with self.assertRaisesRegex(IndexNowError, "aucune URL"):
             urls_from_sitemap(xml)
 
-    def test_published_sitemap_lists_home(self) -> None:
-        xml = (ROOT / "web" / "public" / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertIn("https://globelayers.com/", urls_from_sitemap(xml))
+    # Le sitemap est généré au build (web/vite.config.ts) : ce test lit la sortie du build et
+    # s'efface sans lui (la génération elle-même est couverte côté Vitest).
+    @unittest.skipUnless((ROOT / "web" / "dist" / "sitemap.xml").is_file(), "web/dist absent : lancer npm run build")
+    def test_built_sitemap_lists_home(self) -> None:
+        xml = (ROOT / "web" / "dist" / "sitemap.xml").read_text(encoding="utf-8")
+        urls = urls_from_sitemap(xml)
+        self.assertIn("https://globelayers.com/", urls)
+        self.assertIn("https://globelayers.com/wind-map/", urls)
 
 
 class BuildPayloadTest(unittest.TestCase):

@@ -3,7 +3,7 @@
  * Échap et retour du focus au bouton sont fournis par le navigateur. Le contenu vit dans
  * `index.html` (HTML initial, indexable) ; ici, seulement l'ouverture et la fermeture.
  */
-export function createAbout(dialog: HTMLDialogElement, openButton: HTMLButtonElement, closeButton: HTMLButtonElement): void {
+export function createDialog(dialog: HTMLDialogElement, openButton: HTMLButtonElement, closeButton: HTMLButtonElement): void {
   openButton.addEventListener("click", () => {
     if (!dialog.open) dialog.showModal();
   });
