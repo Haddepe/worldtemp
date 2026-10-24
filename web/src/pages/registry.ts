@@ -219,7 +219,7 @@ export const PAGES: readonly PageDef[] = [
       "This is a global model with a 0.25 degree grid, around 28 kilometres, which is too coarse to resolve the sharp core of a storm, so winds in the centre are underestimated. For official warnings and the position of named storms, always rely on national hurricane services.",
     ],
     menuLabel: "Atlantic hurricanes", ogImage: "/og/atlantic-hurricane-map.jpg", ogAlt: "Wind and rain over the tropical Atlantic on a 3D globe",
-    related: ["wind-map", "pressure-map", "pacific-typhoon-map"],
+    related: ["rain-map", "wind-map", "pressure-map", "pacific-typhoon-map"],
   },
   {
     slug: "pacific-typhoon-map", kind: "region", layer: "rain", windForced: true,
@@ -235,7 +235,7 @@ export const PAGES: readonly PageDef[] = [
       "The model grid is 0.25 degrees, so this map gives the broad picture, not the exact intensity at the centre. Do not use it for safety decisions; follow the bulletins of national meteorological agencies for warnings, forecasts and the official names of storms.",
     ],
     menuLabel: "Pacific typhoons", ogImage: "/og/pacific-typhoon-map.jpg", ogAlt: "Wind and rain over the western Pacific on a 3D globe",
-    related: ["wind-map", "pressure-map", "atlantic-hurricane-map"],
+    related: ["rain-map", "wind-map", "pressure-map", "atlantic-hurricane-map"],
   },
   {
     slug: "india-air-quality-map", kind: "region", layer: "pm25", windForced: false,
