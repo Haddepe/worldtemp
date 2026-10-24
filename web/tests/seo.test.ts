@@ -151,6 +151,18 @@ describe("images de partage (spec site public §6)", () => {
     expect(bytes.length).toBeLessThanOrEqual(150_000);
     expect(jpegSize(bytes)).toEqual({ width: 1200, height: 630 });
   });
+  it("image de chaque page d'entrée : JPEG 1200 × 630, ≤ 150 Ko, sous /og/ (accueil : og.jpg)", () => {
+    for (const p of PAGES) {
+      expect(p.ogImage, p.slug).toBe(p.slug === "" ? "/og.jpg" : `/og/${p.slug}.jpg`);
+      const bytes = readFileSync(join(WEB, "public", p.ogImage));
+      expect([bytes[0], bytes[1]], p.slug).toEqual([0xff, 0xd8]);
+      expect(bytes.length, p.slug).toBeLessThanOrEqual(150_000);
+      expect(jpegSize(bytes), p.slug).toEqual({ width: 1200, height: 630 });
+    }
+  });
+  it("_headers : /og/* en cache d'un jour", () => {
+    expect(read("public/_headers")).toContain("/og/*\n  Cache-Control: public, max-age=86400\n");
+  });
   it("apple-touch-icon.png : PNG 180 × 180", () => {
     const bytes = readFileSync(join(WEB, "public/apple-touch-icon.png"));
     expect(String.fromCharCode(bytes[1]!, bytes[2]!, bytes[3]!)).toBe("PNG");

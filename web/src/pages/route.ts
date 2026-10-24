@@ -13,7 +13,12 @@ export function pageForPath(pathname: string): PageDef {
 export function pageDefaultsSearch(search: string, page: PageDef, reducedMotion: boolean): string {
   const params = new URLSearchParams(search);
   if (!params.has("layer")) params.set("layer", page.layer ?? "none");
-  if (page.windForced && !reducedMotion && !params.has("wind")) params.set("wind", "1");
+  // Vent : allumé sur les pages qui le forcent, éteint sur les autres pages d'entrée (il couvrait la
+  // couche) ; l'accueil garde le défaut du site (tier, reduced-motion).
+  if (!params.has("wind")) {
+    if (page.windForced) { if (!reducedMotion) params.set("wind", "1"); }
+    else if (page.kind !== "home") params.set("wind", "0");
+  }
   // Une vue explicite est un tout : lon ou lat présent écarte toute la vue de la page.
   if (page.view && !params.has("lon") && !params.has("lat")) {
     params.set("lon", String(page.view.lon));

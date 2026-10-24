@@ -51,9 +51,9 @@ describe("registre des pages — lot G", () => {
     }
   });
 
-  it("vent forcé seulement pour vent, ouragans, typhons", () => {
+  it("vent forcé seulement pour vent, pression, ouragans, typhons", () => {
     expect(PAGES.filter((p) => p.windForced).map((p) => p.slug)).toEqual([
-      "wind-map", "atlantic-hurricane-map", "pacific-typhoon-map",
+      "wind-map", "pressure-map", "atlantic-hurricane-map", "pacific-typhoon-map",
     ]);
   });
 

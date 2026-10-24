@@ -24,11 +24,21 @@ describe("pageDefaultsSearch", () => {
     expect(s).toContain("layer=none");
     expect(s).toContain("wind=1");
   });
+  it("autre page d'entrée : vent éteint (wind=0), même en reduced-motion", () => {
+    expect(new URLSearchParams(pageDefaultsSearch("", page("rain-map"), false)).get("wind")).toBe("0");
+    expect(new URLSearchParams(pageDefaultsSearch("", page("sahara-dust-forecast"), true)).get("wind")).toBe("0");
+  });
+  it("wind=1 explicite gardé sur une page à vent éteint", () => {
+    expect(new URLSearchParams(pageDefaultsSearch("?wind=1", page("rain-map"), false)).get("wind")).toBe("1");
+  });
+  it("accueil : pas de wind, défaut du site", () => {
+    expect(pageDefaultsSearch("", page(""), false)).not.toContain("wind");
+  });
   it("page vent en reduced-motion : pas de wind", () => {
     expect(pageDefaultsSearch("", page("wind-map"), true)).not.toContain("wind");
   });
   it("page régionale : couche et vue", () => {
-    expect(pageDefaultsSearch("", page("sahara-dust-forecast"), false)).toBe("?layer=dust&lon=-5&lat=20&d=2");
+    expect(pageDefaultsSearch("", page("sahara-dust-forecast"), false)).toBe("?layer=dust&wind=0&lon=-5&lat=20&d=2");
   });
   it("une vue explicite n'est pas complétée par celle de la page", () => {
     const p = new URLSearchParams(pageDefaultsSearch("?layer=rain&lon=10&lat=10", page("sahara-dust-forecast"), false));

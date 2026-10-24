@@ -72,7 +72,7 @@ describe("rendu des pages (lot G, spec §4)", () => {
       url: `${SITE}/rain-map/`,
       description: PAGES[4]!.description,
       inLanguage: "en",
-      image: `${SITE}/og.jpg`,
+      image: `${SITE}/og/rain-map.jpg`,
       isPartOf: { "@type": "WebApplication", name: "GlobeLayers", url: `${SITE}/` },
     });
   });

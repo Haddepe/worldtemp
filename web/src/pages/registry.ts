@@ -11,7 +11,7 @@ export interface PageDef {
   kind: "home" | "layer" | "region";
   /** Id de LAYERS, ou null (aucune couche). */
   layer: string | null;
-  /** true : vent allumé sauf reduced-motion (spec §5). */
+  /** true : vent allumé sauf reduced-motion (spec §5) ; false : éteint, sauf l'accueil (défaut du site). */
   windForced: boolean;
   /** null : vue par défaut du site. */
   view: PageView | null;
@@ -43,14 +43,14 @@ export const PAGES: readonly PageDef[] = [
     title: "GlobeLayers — Live 3D Weather Globe",
     description: "Interactive 3D weather globe with a 48-hour forecast: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data.",
     h1: "GlobeLayers, a live 3D weather globe",
-    summary: "Pick a layer from the top bar, search a town with the magnifier, tap the pin for your own location, the camera to save an image, and drag the slider to move through the next 48 hours. The ? button explains the data.",
+    summary: "Pick a layer from the layer menu at the bottom, search a town with the magnifier, tap the pin for your own location, the camera to save an image, and drag the slider to move through the next 48 hours. The ? button explains the data.",
     body: [
       "GlobeLayers draws the weather of the whole planet on one rotating globe. Drag to turn it, scroll or pinch to zoom, and open the layer menu to switch between temperature, wind, clouds, rain, pressure, humidity, PM2.5 and dust.",
       "To find a place, use the magnifier: it searches every town above 1,000 inhabitants. The pin button centres the globe on where you are. Your position is read once by your browser and never leaves it, and it is never written into a link or a saved image.",
       "The slider at the bottom steps through the forecast, three hours at a time, over two days. Press play to watch the weather move. The camera button saves what you see as an image, or shares it, and the address bar keeps your view so a link opens the same place. Three switches next to the layer menu turn on the animated wind, place names and rivers.",
       "Weather fields come from the NOAA GFS model at 0.25 degree resolution, and the air quality layers from NOAA GEFS-Aerosols. The data refreshes four times a day. Each map page of this site opens the globe on one layer, and the menu in the top left lists them all.",
     ],
-    menuLabel: "How to use", ogImage: OG, ogAlt: "GlobeLayers 3D weather globe showing temperature",
+    menuLabel: "How to use", ogImage: OG, ogAlt: "3D globe showing world temperature and animated wind over Europe and the Atlantic",
     related: ["temperature-map", "wind-map", "rain-map"],
   },
   {
@@ -65,7 +65,7 @@ export const PAGES: readonly PageDef[] = [
       "Look for the daily rhythm. As the slider moves through the forecast, a band of warmth follows the sun around the planet, and deserts swing between hot afternoons and cool nights far more than oceans do. Continental interiors in winter, such as Siberia and northern Canada, hold the lowest values outside Antarctica.",
       "The model runs four times a day. Every run covers 48 hours in steps of 3 hours, and the globe blends smoothly between those steps, so the animation looks continuous. Temperature is the starting layer of the site, which makes it a good place to learn the controls.",
     ],
-    menuLabel: "Temperature", ogImage: OG, ogAlt: "Temperature map on a 3D globe",
+    menuLabel: "Temperature", ogImage: "/og/temperature-map.jpg", ogAlt: "Temperature map on a 3D globe",
     related: ["europe-heatwave-map", "antarctica-temperature-map", "arctic-temperature-map"],
   },
   {
@@ -80,7 +80,7 @@ export const PAGES: readonly PageDef[] = [
       "A few patterns are worth finding. Near the equator the trade winds blow steadily from the east. At mid-latitudes the flow turns into the strong westerlies, with waves and swirls that mark passing storms. Around the poles the circulation tightens into large vortices.",
       "Press play on the timeline to see the next 48 hours in steps of 3 hours. The motion between steps is blended, so storms appear to travel rather than jump. If your device asks for reduced animation, the wind starts switched off, and you can turn it on with the Wind switch.",
     ],
-    menuLabel: "Wind", ogImage: OG, ogAlt: "Animated wind streamlines on a 3D globe",
+    menuLabel: "Wind", ogImage: "/og/wind-map.jpg", ogAlt: "Animated wind streamlines on a 3D globe",
     related: ["pressure-map", "atlantic-hurricane-map", "pacific-typhoon-map"],
   },
   {
@@ -95,7 +95,7 @@ export const PAGES: readonly PageDef[] = [
       "Several shapes are easy to spot. Long comma-shaped bands mark fronts attached to storm systems at mid-latitudes. A belt of cloud near the equator follows the zone where warm air rises. Large clear areas sit over the subtropical deserts and the high-pressure zones over the oceans.",
       "Each model run gives 48 hours of forecast in 3-hour steps, and there are four runs a day. Drag the slider to see cloud bands move east, or press play and watch a whole system cross an ocean in a few seconds.",
     ],
-    menuLabel: "Clouds", ogImage: OG, ogAlt: "Cloud cover map on a 3D globe",
+    menuLabel: "Clouds", ogImage: "/og/cloud-map.jpg", ogAlt: "Cloud cover map on a 3D globe",
     related: ["rain-map", "humidity-map", "pressure-map"],
   },
   {
@@ -110,22 +110,22 @@ export const PAGES: readonly PageDef[] = [
       "Look for the long rain bands of mid-latitude storms, the narrow ribbon of showers along the equator, and the seasonal monsoon systems over South and Southeast Asia. Dry zones, such as the Sahara and the Atacama, stay empty for days.",
       "The map is a forecast, not a radar. It shows what the model expects, and small, intense storms are smoothed out at this resolution. Each run covers 48 hours in 3-hour steps and is refreshed four times a day.",
     ],
-    menuLabel: "Rain", ogImage: OG, ogAlt: "Rain and precipitation map on a 3D globe",
+    menuLabel: "Rain", ogImage: "/og/rain-map.jpg", ogAlt: "Rain and precipitation map on a 3D globe",
     related: ["amazon-rainfall-map", "cloud-map", "humidity-map"],
   },
   {
-    slug: "pressure-map", kind: "layer", layer: "pressure", windForced: false, view: null,
+    slug: "pressure-map", kind: "layer", layer: "pressure", windForced: true, view: null,
     title: "Sea Level Pressure Map: Isobars on a 3D Globe",
     description: "Sea level pressure map with isobars on a 3D globe: mean sea-level pressure in hPa and a 48-hour forecast from NOAA GFS. Spot highs and lows easily.",
     h1: "Sea level pressure map",
-    summary: "Mean sea-level pressure in hectopascals, drawn with isobars every 4 hPa. Tight circles of low pressure mark storms; broad highs bring settled weather. Turn on the wind to see how the air spirals around them.",
+    summary: "Mean sea-level pressure in hectopascals, drawn with isobars every 4 hPa. Tight circles of low pressure mark storms; broad highs bring settled weather. The animated wind shows how the air spirals around them.",
     body: [
       "Pressure is the weight of the air above you. To compare places at different altitudes, forecasters convert it to what it would be at sea level. This map shows that value in hectopascals, hPa, with thin isobars drawn every 4 hPa. The data comes from the NOAA GFS model on a 0.25 degree grid.",
       "Average sea-level pressure is about 1013 hPa. Values well below that mark low-pressure systems, where air rises, clouds build and rain is likely. Values well above it mark highs, which usually bring clear and calm weather.",
       "Isobars work like contour lines on a hill. The closer they are together, the steeper the pressure change and the stronger the wind. In the northern hemisphere the air circulates anticlockwise around a low and clockwise around a high; in the southern hemisphere it is the other way round.",
-      "Combine this layer with the animated wind to watch the circulation form. Press play on the timeline to see lows deepen and move over 48 hours, with a new forecast run four times a day.",
+      "The animated wind is drawn on top, so you can watch the circulation form. Press play on the timeline to see lows deepen and move over 48 hours, with a new forecast run four times a day.",
     ],
-    menuLabel: "Pressure", ogImage: OG, ogAlt: "Sea level pressure and isobars on a 3D globe",
+    menuLabel: "Pressure", ogImage: "/og/pressure-map.jpg", ogAlt: "Sea level pressure and isobars on a 3D globe",
     related: ["wind-map", "atlantic-hurricane-map", "pacific-typhoon-map"],
   },
   {
@@ -140,7 +140,7 @@ export const PAGES: readonly PageDef[] = [
       "Because relative humidity depends on temperature, it changes strongly over a day. Air that is nearly saturated at dawn can feel dry by mid-afternoon, even though the amount of water in it has not changed. Step through the forecast and notice the patterns follow the sun.",
       "Tropical oceans and rainforests stay humid almost all the time, while the subtropical deserts are among the driest areas. Each forecast run covers 48 hours in 3-hour steps and the data is renewed four times a day.",
     ],
-    menuLabel: "Humidity", ogImage: OG, ogAlt: "Relative humidity map on a 3D globe",
+    menuLabel: "Humidity", ogImage: "/og/humidity-map.jpg", ogAlt: "Relative humidity map on a 3D globe",
     related: ["cloud-map", "rain-map", "temperature-map"],
   },
   {
@@ -155,7 +155,7 @@ export const PAGES: readonly PageDef[] = [
       "The map covers all sources the model includes, such as smoke from fires, dust, sea salt and the emissions of cities and industry. Expect hot spots over densely populated and industrial regions, plumes of smoke downwind of large fires, and haze that follows the wind for hundreds of kilometres.",
       "This is a model forecast on a coarse grid, not a measurement from a sensor, so it describes regional patterns rather than a particular street. The forecast runs four times a day, and each run reaches 48 hours in 3-hour steps.",
     ],
-    menuLabel: "Air quality (PM2.5)", ogImage: OG, ogAlt: "PM2.5 air quality map on a 3D globe",
+    menuLabel: "Air quality (PM2.5)", ogImage: "/og/air-quality-map.jpg", ogAlt: "PM2.5 air quality map on a 3D globe",
     related: ["india-air-quality-map", "dust-forecast", "wind-map"],
   },
   {
@@ -170,7 +170,7 @@ export const PAGES: readonly PageDef[] = [
       "Dust matters for several reasons. It reduces visibility, it can trigger breathing problems, it settles on snow and darkens it, and it delivers minerals to distant oceans and forests. A strong event shows up on the map as a broad, dense tongue extending from the source.",
       "Compare this map with the animated wind to see what drives each outbreak. The forecast is refreshed four times a day and covers 48 hours in 3-hour steps, so the plume moves smoothly when you press play.",
     ],
-    menuLabel: "Dust", ogImage: OG, ogAlt: "Dust forecast map on a 3D globe",
+    menuLabel: "Dust", ogImage: "/og/dust-forecast.jpg", ogAlt: "Dust forecast map on a 3D globe",
     related: ["sahara-dust-forecast", "air-quality-map", "wind-map"],
   },
   {
@@ -186,7 +186,7 @@ export const PAGES: readonly PageDef[] = [
       "Plumes can reach the Caribbean, the Gulf of Mexico and northern South America in about five to seven days. Along the way they haze the sky, produce red sunsets and lower air quality. Over the Amazon, the dust brings phosphorus that fertilises the forest.",
       "Another route runs north, when southerly winds push dust over the Mediterranean towards Spain, Italy and further into Europe. Switch on the wind layer to see which flow carries the dust. The values are in micrograms per cubic metre, and the forecast shows 48 hours in 3-hour steps.",
     ],
-    menuLabel: "Sahara dust", ogImage: OG, ogAlt: "Saharan dust plumes over the Atlantic on a 3D globe",
+    menuLabel: "Sahara dust", ogImage: "/og/sahara-dust-forecast.jpg", ogAlt: "Saharan dust plumes over the Atlantic on a 3D globe",
     related: ["dust-forecast", "air-quality-map", "wind-map"],
   },
   {
@@ -202,7 +202,7 @@ export const PAGES: readonly PageDef[] = [
       "Use the slider to check how the hot air moves. Over 48 hours you can see whether the heat spreads towards Germany and Central Europe, stays in place, or is pushed away by a cooler Atlantic front. Compare daytime and night-time to spot tropical nights, when temperatures remain high after dark.",
       "Remember that the scale is in absolute temperature, not in comparison with the local average, and the grid is 0.25 degrees, so cities and valleys can be warmer than the map shows. The forecast is renewed four times a day.",
     ],
-    menuLabel: "Europe heatwave", ogImage: OG, ogAlt: "Europe temperature map on a 3D globe",
+    menuLabel: "Europe heatwave", ogImage: "/og/europe-heatwave-map.jpg", ogAlt: "Europe temperature map on a 3D globe",
     related: ["temperature-map", "pressure-map", "wind-map"],
   },
   {
@@ -218,23 +218,23 @@ export const PAGES: readonly PageDef[] = [
       "Weaker systems look like open waves or broad, loose swirls with little pressure drop. They may or may not develop. Watch how the swirl tightens as you move through the forecast, and how the flow of the surrounding trade winds steers it west.",
       "This is a global model with a 0.25 degree grid, around 28 kilometres, which is too coarse to resolve the sharp core of a storm, so winds in the centre are underestimated. For official warnings and the position of named storms, always rely on national hurricane services.",
     ],
-    menuLabel: "Atlantic hurricanes", ogImage: OG, ogAlt: "Wind and pressure over the Atlantic on a 3D globe",
+    menuLabel: "Atlantic hurricanes", ogImage: "/og/atlantic-hurricane-map.jpg", ogAlt: "Wind and pressure over the Atlantic on a 3D globe",
     related: ["wind-map", "pressure-map", "pacific-typhoon-map"],
   },
   {
-    slug: "pacific-typhoon-map", kind: "region", layer: "pressure", windForced: true,
+    slug: "pacific-typhoon-map", kind: "region", layer: "rain", windForced: true,
     view: { lon: 135, lat: 20, d: 2.0 },
-    title: "Pacific Typhoon Wind and Pressure Map on a 3D Globe",
-    description: "Pacific typhoon wind map on a 3D globe: animated wind and sea-level pressure over the western Pacific, with a 48-hour forecast from NOAA GFS.",
-    h1: "Western Pacific typhoon wind and pressure map",
-    summary: "The globe looks at the western Pacific, with animated wind over sea-level pressure. A typhoon appears as a closed spiral of strong wind around a deep low, usually heading west or north-west.",
+    title: "Pacific Typhoon Map: Wind and Rain on a 3D Globe",
+    description: "Pacific typhoon map on a 3D globe: animated wind and rain over the western Pacific, with a 48-hour forecast from NOAA GFS.",
+    h1: "Western Pacific typhoon wind and rain map",
+    summary: "The globe looks at the western Pacific, with animated wind over the rain layer. A typhoon appears as a closed spiral of strong wind wrapped in curved bands of heavy rain, usually heading west or north-west.",
     body: [
       "The western Pacific is the most active region in the world for tropical cyclones, called typhoons there. They can form in any month, though most appear between July and November, over water warmer than about 26 degrees.",
-      "To spot one, start with the pressure layer. Look for a compact group of tightly spaced isobars around a deep centre, well under 1000 hPa. Then look at the wind: the streamlines should turn anticlockwise around that centre, with the fastest flow packed on one side, often the side facing the direction of travel.",
+      "To spot one, look for curved bands of heavy rain spiralling into a compact centre. Then look at the wind: the streamlines should turn anticlockwise around that centre, with the fastest flow packed on one side, often the side facing the direction of travel. Switch to the Pressure layer to see the deep low at its core, well under 1000 hPa.",
       "Typhoons usually move west or north-west along the southern edge of a subtropical high, then recurve towards Japan, Korea or China as they meet the westerlies. Press play on the timeline to see how the pattern shifts in the next 48 hours.",
       "The model grid is 0.25 degrees, so this map gives the broad picture, not the exact intensity at the centre. Do not use it for safety decisions; follow the bulletins of national meteorological agencies for warnings, forecasts and the official names of storms.",
     ],
-    menuLabel: "Pacific typhoons", ogImage: OG, ogAlt: "Wind and pressure over the western Pacific on a 3D globe",
+    menuLabel: "Pacific typhoons", ogImage: "/og/pacific-typhoon-map.jpg", ogAlt: "Wind and rain over the western Pacific on a 3D globe",
     related: ["wind-map", "pressure-map", "atlantic-hurricane-map"],
   },
   {
@@ -250,7 +250,7 @@ export const PAGES: readonly PageDef[] = [
       "Seasons change the picture. From October to November smoke from crop burning in the north-west adds to city emissions. In spring, dust from the Thar Desert and the Arabian Peninsula adds more particles. In the summer monsoon, heavy rain washes the air and the map clears.",
       "The model works on a coarse grid, so it shows regional haze rather than the level on a single street, which can differ a lot. Press play to see 48 hours in steps of 3 hours, and add the wind layer to understand where the haze is travelling.",
     ],
-    menuLabel: "India air quality", ogImage: OG, ogAlt: "PM2.5 over India on a 3D globe",
+    menuLabel: "India air quality", ogImage: "/og/india-air-quality-map.jpg", ogAlt: "PM2.5 over India on a 3D globe",
     related: ["air-quality-map", "dust-forecast", "wind-map"],
   },
   {
@@ -266,7 +266,7 @@ export const PAGES: readonly PageDef[] = [
       "The coast is much milder. Around the margin and over the Antarctic Peninsula, which reaches towards South America, temperatures can sit close to freezing in summer. Notice the sharp contrast between the plateau and the sea along the edge of the continent.",
       "Because over most of the continent the sun never sets in summer and never rises in winter, the daily cycle that shapes other regions is almost absent here. Expect slow changes in the forecast rather than daily swings. Data is updated four times a day, with 48 hours of forecast.",
     ],
-    menuLabel: "Antarctica", ogImage: OG, ogAlt: "Antarctica temperature seen from above the South Pole",
+    menuLabel: "Antarctica", ogImage: "/og/antarctica-temperature-map.jpg", ogAlt: "Antarctica temperature seen from above the South Pole",
     related: ["temperature-map", "arctic-temperature-map", "pressure-map"],
   },
   {
@@ -282,7 +282,7 @@ export const PAGES: readonly PageDef[] = [
       "Follow the forecast for sudden changes. When a strong low-pressure system pushes into the Arctic from the Atlantic or the Pacific, a surge of mild air can raise temperatures by tens of degrees in a day or two, and the map shows it as a patch of lighter colour. Cold air can also spill south from the pole into mid-latitudes.",
       "Summer brings long days with constant sunlight and temperatures close to freezing over the ocean. The grid is 0.25 degrees, and each of the four daily runs covers 48 hours in 3-hour steps.",
     ],
-    menuLabel: "Arctic", ogImage: OG, ogAlt: "Arctic temperature seen from above the North Pole",
+    menuLabel: "Arctic", ogImage: "/og/arctic-temperature-map.jpg", ogAlt: "Arctic temperature seen from above the North Pole",
     related: ["temperature-map", "antarctica-temperature-map", "pressure-map"],
   },
   {
@@ -298,7 +298,7 @@ export const PAGES: readonly PageDef[] = [
       "Over longer periods, look at the broad band of cloud and showers called the Intertropical Convergence Zone. It lies near the equator and moves slightly north and south through the year, which gives the basin its wetter and drier seasons. In the Andes, to the west, air forced upward by the mountains produces some of the heaviest rain.",
       "The forest also makes its own rain: trees release water vapour that feeds later storms downwind. The forecast shows 48 hours in 3-hour steps, renewed four times a day.",
     ],
-    menuLabel: "Amazon rainfall", ogImage: OG, ogAlt: "Rainfall over the Amazon basin on a 3D globe",
+    menuLabel: "Amazon rainfall", ogImage: "/og/amazon-rainfall-map.jpg", ogAlt: "Rainfall over the Amazon basin on a 3D globe",
     related: ["rain-map", "cloud-map", "humidity-map"],
   },
 ];
