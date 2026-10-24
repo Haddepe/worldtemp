@@ -873,8 +873,10 @@ async function boot(): Promise<void> {
   };
 
   /** Applique la page `p` sans recharger (tiroir, « Read more », retour arrière — spec §5) : ses
-   * défauts complètent l'URL courante, comme au démarrage ; une vue déclenche le vol animé. */
-  const applyPage = (p: PageDef): void => {
+   * défauts complètent l'URL courante, comme au démarrage ; une vue déclenche le vol animé.
+   * `fromHistory` (popstate) : chaque entrée est canonique (`wind` absent = défaut de la page), le
+   * vent est donc relu de l'entrée, comme au démarrage. */
+  const applyPage = (p: PageDef, fromHistory = false): void => {
     page = p;
     const s = pageDefaultsSearch(location.search, p, reduced);
     const q = new URLSearchParams(s);
@@ -883,9 +885,9 @@ async function boot(): Promise<void> {
     const layer = m
       ? parseLayerParam(s, orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)))
       : parseLayerParam(s, LAYERS.map((d) => d.id));
-    // Vent : `?wind=` explicite (ou posé par la page à vent forcé), ou page à vent forcé en
-    // reduced-motion (éteint) ; sinon on n'y touche pas.
-    const wantWind = q.has("wind") ? parseWindParam(s, decision.tier, reduced) : p.windForced ? false : windOn;
+    // Vent : historique → relu de l'entrée (défaut de la page si absent). Navigation : `?wind=` posé
+    // par la page à vent forcé, ou page à vent forcé en reduced-motion (éteint) ; sinon inchangé.
+    const wantWind = fromHistory || q.has("wind") ? parseWindParam(s, decision.tier, reduced) : p.windForced ? false : windOn;
     const windChanged = wantWind !== windOn;
     if (windChanged) {
       windOn = wantWind;
@@ -917,7 +919,7 @@ async function boot(): Promise<void> {
     else history.pushState({ slug: target.slug }, "", url);
     applyPage(target);
   };
-  window.addEventListener("popstate", () => applyPage(pageForPath(location.pathname)));
+  window.addEventListener("popstate", () => applyPage(pageForPath(location.pathname), true));
 
   await applyData();
   geo.start();
