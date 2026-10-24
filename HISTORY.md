@@ -745,7 +745,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | ✅ **livré 2026-09-19** (merge `1295853`, correctif de cache `e359ebd`) ; site vérifié et sitemap envoyé dans Google Search Console et Bing Webmaster |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | ✅ **livré 2026-09-27** (merge `9339e47`) : frise f003→f060 (pas 3 h) par run, curseur live/fixed avec lecture, fondu GPU entre échéances |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | ✅ **livré 2026-09-26** (merge `98928fd`) : ~138 500 villes GeoNames de détail, recherche hors ligne, « ma position », vol animé |
-| **G — pages de référencement par couche** (chantier audience ③) | Pages statiques indexables par couche (« temperature map », « dust forecast »…), peut-être par grande ville, image Open Graph par couche (ligne R8) | Search Console : page unique indexée, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (§5 du 2026-10-03) | ✅ **livré 2026-10-24** (merge `964b001`) — 8 pages couche + 8 région, tiroir ☰, 16 images OG ; reste : sitemap renvoyé à Google et Bing, puis suivi des impressions (critère : 17 URLs indexées, impressions non nulles sous 4–6 semaines) |
+| **G — pages de référencement par couche** (chantier audience ③) | Pages statiques indexables par couche (« temperature map », « dust forecast »…), peut-être par grande ville, image Open Graph par couche (ligne R8) | Search Console : page unique indexée, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (§5 du 2026-10-03) | ✅ **livré 2026-10-24** (merge `964b001`) — 8 pages couche + 8 région, tiroir ☰, 16 images OG ; sitemap renvoyé à Google et Bing le 2026-10-24 ; reste : indexation demandée page par page dans Google, puis suivi des impressions (critère : 17 URLs indexées, impressions non nulles sous 4–6 semaines) |
 
 **Hors plan d'origine, manquant sur un site public**
 
@@ -775,6 +775,13 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-24 (3) — Arrêt de session : lot G en ligne, sitemap envoyé aux moteurs
+
+- **Déploiement** de `64b971c` par la CI : 5 jobs verts ; en prod, `/`, `/sitemap.xml` (17 `<loc>`), `/rain-map/`, `/atlantic-hurricane-map/`, `/og/rain-map.jpg` en 200, canonical de `/rain-map/` correct ; IndexNow : 17 URLs envoyées, HTTP 200.
+- **Bing Webmaster** (connecteur) : sitemap soumis, 17 URLs soumises en lot (quota 100/jour, 800/mois).
+- **Google Search Console** (connecteur, propriété `sc-domain:globelayers.com`) : sitemap soumis (statut « pending »). Indexation demandée à la main par l'utilisateur pour `/temperature-map/` seulement ; pour les autres, Google répond « un problème est survenu, réessayez dans quelques heures » (pas d'API pour cette demande).
+- **Prochaine action :** l'utilisateur redemande l'indexation dans Search Console (inspection de l'URL) pour `/wind-map/`, `/rain-map/`, `/sahara-dust-forecast/`, `/atlantic-hurricane-map/`, `/antarctica-temperature-map/` (≈ 10 par jour) ; vers le 2026-10-31, vérifier l'exploration des 17 pages dans les deux outils ; suivre les impressions sur 4–6 semaines (critère du lot G). Ensuite : couches neige / forêt (R5) ou P2.
 
 ### 2026-10-24 (2) — Lot G livré : 16 pages de référencement, résumé, tiroir ☰ (merge `964b001`)
 
@@ -1887,7 +1894,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-24 (**lot G livré** — merge `964b001` : 16 pages couche/région + sitemap généré, résumé, tiroir ☰, 16 images OG ; vent éteint par défaut sauf vent/pression/cyclones ; 779 vitest, 283 pytest)
+**Dernière mise à jour :** 2026-10-24 (**arrêt de session** — lot G déployé (`64b971c`) ; sitemap soumis à Google et Bing, 17 URLs à Bing ; indexation Google demandée pour `/temperature-map/` seule, les autres à redemander)
+**Entrée précédente :** 2026-10-24 (**lot G livré** — merge `964b001` : 16 pages couche/région + sitemap généré, résumé, tiroir ☰, 16 images OG ; vent éteint par défaut sauf vent/pression/cyclones ; 779 vitest, 283 pytest)
 **Entrée précédente :** 2026-10-24 (**lot G conçu** — spec `2026-10-24-landing-pages-design.md` validée : 8 pages couche + 8 région, résumé, tiroir ☰ ; couches neige et forêt notées en R5 ; aucun code)
 **Entrée précédente :** 2026-10-03 (**arrêt de session** — tout mergé et déployé ; critère 4 de `worldtemp-cron` atteint (22/22) ; lot G reporté à la prochaine session)
 **Entrée précédente :** 2026-10-03 (**profil GPU juste sous Brave, globe aux 42 % sur mobile, merge `d6aed4a`** — Brave brouillait le nombre de cœurs (low à tort) ; beacon d'audience bloqué par Brave Shields (dette n° 67) ; ce commit HISTORY précède le push de `master`)
