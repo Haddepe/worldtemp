@@ -32,7 +32,7 @@ import { TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseManifest } from "./tiles/manifest";
 import { TimeCursor } from "./time/cursor";
 import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
-import { createAbout } from "./ui/about";
+import { createDialog } from "./ui/about";
 import { createCaptureMenu } from "./ui/capture-menu";
 import { formatBanner, formatWhen } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
@@ -59,7 +59,7 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
 
 async function boot(): Promise<void> {
   const ui = createOverlay();
-  createAbout(byId<HTMLDialogElement>("about"), byId<HTMLButtonElement>("about-open"), byId<HTMLButtonElement>("about-close"));
+  createDialog(byId<HTMLDialogElement>("about"), byId<HTMLButtonElement>("about-open"), byId<HTMLButtonElement>("about-close"));
   const canvas = document.getElementById("globe") as HTMLCanvasElement | null;
   if (!canvas) throw new Error("canvas #globe not found");
 
