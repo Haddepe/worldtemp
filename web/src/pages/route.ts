@@ -1,7 +1,7 @@
 /** Routage pur des pages d'entrée (lot G, spec §5) : aucun accès au DOM. */
 import { PAGES, type PageDef } from "./registry";
 
-const HOME = PAGES[0];
+const HOME = PAGES[0]!; // l'accueil est toujours la première entrée
 
 /** "/wind-map/" et "/wind-map" → page vent ; inconnu → accueil (sensible à la casse). */
 export function pageForPath(pathname: string): PageDef {
