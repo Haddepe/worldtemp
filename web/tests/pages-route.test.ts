@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PAGES, pagePath } from "../src/pages/registry";
-import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, searchForPageChange, searchForPageState } from "../src/pages/route";
+import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, searchForPageChange, searchForPageState, searchWithShownView } from "../src/pages/route";
 
 const page = (slug: string) => PAGES.find((p) => p.slug === slug)!;
 
@@ -70,8 +70,8 @@ describe("pageAfterLayerChange", () => {
 });
 
 describe("searchForPageChange", () => {
-  it("retire layer, wind et vue, garde le reste", () => {
-    expect(searchForPageChange("?layer=rain&wind=1&labels=0&lon=1&lat=2&d=3")).toBe("?labels=0");
+  it("retire layer et wind, garde la vue et le reste", () => {
+    expect(searchForPageChange("?layer=rain&wind=1&labels=0&lon=1&lat=2&d=3")).toBe("?labels=0&lon=1&lat=2&d=3");
   });
   it("chaîne vide quand rien ne reste", () => expect(searchForPageChange("?layer=rain")).toBe(""));
 });
@@ -90,5 +90,32 @@ describe("searchForPageState", () => {
   it("wind absent et égal au défaut : reste absent", () => expect(searchForPageState("", page("rain-map"), "rain", true, true)).toBe(""));
   it("la vue est gardée", () => {
     expect(searchForPageState("?layer=temp&lon=1&lat=2&d=3", page("rain-map"), "rain", false, false)).toBe("?lon=1&lat=2&d=3");
+  });
+});
+
+describe("searchWithShownView", () => {
+  const shown = () => ({ lon: 10, lat: 45, d: 1.8 });
+  const never = () => {
+    throw new Error("shown() ne doit pas être consulté");
+  };
+  it("page cible à vue (région) : vue retirée, son vol l'écrira", () => {
+    expect(searchWithShownView("?labels=0&lon=1&lat=2&d=3", page("rain-map"), page("europe-heatwave-map"), never)).toBe("?labels=0");
+    expect(searchWithShownView("?lon=1&lat=2&d=3", page("europe-heatwave-map"), page("europe-heatwave-map"), never)).toBe("");
+  });
+  it("page cible sans vue : la vue de l'adresse est gardée (y compris vers la page courante)", () => {
+    expect(searchWithShownView("?lon=1&lat=2&d=3", page("rain-map"), page("rain-map"), never)).toBe("?lon=1&lat=2&d=3");
+    expect(searchWithShownView("?lon=1&lat=2&d=3", page("sahara-dust-forecast"), page("dust-forecast"), never)).toBe("?lon=1&lat=2&d=3");
+  });
+  it("région non touchée vers une page sans vue : la vue affichée est écrite", () => {
+    expect(searchWithShownView("", page("sahara-dust-forecast"), page("dust-forecast"), shown)).toBe("?lon=10.00&lat=45.00&d=1.800");
+    expect(searchWithShownView("?labels=0", page("europe-heatwave-map"), page("rain-map"), shown)).toBe("?labels=0&lon=10.00&lat=45.00&d=1.800");
+  });
+  it("garde « ma position » ou vol en cours (shown() null) : aucune vue écrite", () => {
+    expect(searchWithShownView("?labels=0", page("europe-heatwave-map"), page("rain-map"), () => null)).toBe("?labels=0");
+    expect(searchWithShownView("", page("europe-heatwave-map"), page("rain-map"), () => null)).toBe("");
+  });
+  it("page sans vue et adresse sans vue : caméra sur la vue par défaut, rien n'est écrit", () => {
+    expect(searchWithShownView("", page(""), page("rain-map"), never)).toBe("");
+    expect(searchWithShownView("?layer=none", page("wind-map"), page(""), never)).toBe("?layer=none");
   });
 });

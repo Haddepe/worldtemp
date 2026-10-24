@@ -1,5 +1,6 @@
 /** Routage pur des pages d'entrée (lot G, spec §5) : aucun accès au DOM. */
-import { PAGES, type PageDef } from "./registry";
+import { withView, withoutView } from "../geo/params";
+import { PAGES, type PageDef, type PageView } from "./registry";
 
 const HOME = PAGES[0]!; // l'accueil est toujours la première entrée
 
@@ -38,10 +39,11 @@ export function pageAfterLayerChange(current: PageDef, layer: string | null, win
   return PAGES.find((p) => p.kind === "layer" && p.layer === layer) ?? current;
 }
 
-/** Query string à garder en changeant de page : retire layer, wind, lon, lat, d. "" si vide. */
+/** Query string à garder en changeant de page : retire layer et wind ; la vue est l'affaire de
+ * `searchWithShownView`. "" si vide. */
 export function searchForPageChange(search: string): string {
   const params = new URLSearchParams(search);
-  for (const k of ["layer", "wind", "lon", "lat", "d"]) params.delete(k);
+  for (const k of ["layer", "wind"]) params.delete(k);
   const s = params.toString();
   return s ? "?" + s : "";
 }
@@ -61,4 +63,22 @@ export function searchForPageState(search: string, next: PageDef, layer: string 
   else if (params.has("wind") || windOn !== windDefault) params.set("wind", windOn ? "1" : "0");
   const s = params.toString();
   return s ? "?" + s : "";
+}
+
+/**
+ * Vue de l'adresse en passant de `current` à `next` sans recharger (revue finale I1). Une page à vue
+ * (région) la retire : son vol l'écrira à l'arrivée. Sur une page sans vue la caméra ne bouge pas,
+ * l'adresse doit donc décrire l'écran : la vue de `search` est gardée (déjà écrite sous la garde
+ * « ma position ») ; sans vue dans `search`, la caméra est sur la vue par défaut, sauf si `current`
+ * a une vue (région non touchée) — on écrit alors `shown()`, la vue affichée, ou rien si elle
+ * renvoie null (garde « ma position », vol en cours). Les autres paramètres sont gardés. "" si vide.
+ */
+export function searchWithShownView(search: string, current: PageDef, next: PageDef, shown: () => PageView | null): string {
+  let s = search;
+  if (next.view !== null) s = withoutView(search);
+  else if (!new URLSearchParams(search).has("lon") && current.view !== null) {
+    const v = shown();
+    if (v) s = withView(search, v.lon, v.lat, v.d);
+  }
+  return s === "?" ? "" : s;
 }

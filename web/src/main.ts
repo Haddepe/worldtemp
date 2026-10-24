@@ -15,8 +15,8 @@ import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
 import { orderedLayers, parseLayerParam } from "./layers/select";
-import { pagePath, type PageDef } from "./pages/registry";
-import { pageAfterLayerChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState } from "./pages/route";
+import { pagePath, type PageDef, type PageView } from "./pages/registry";
+import { pageAfterLayerChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
@@ -318,13 +318,16 @@ async function boot(): Promise<void> {
   let windOn = parseWindParam(bootSearch, decision.tier, reduced);
   /** Vent qu'aurait la page `p` au démarrage sans `?wind=` : sert à n'écrire `wind` que s'il en diffère. */
   const windDefault = (p: PageDef): boolean => parseWindParam(pageDefaultsSearch("", p, reduced), decision.tier, reduced);
-  /** Bascule d'adresse vers `next` sans recharger (spec §5) : couche et vent fidèles, vue gardée. */
+  /** Avis reduced-motion d'après l'état courant : page à vent forcé, vent éteint (revue finale, mineur 1). */
+  const windNoticeFor = (p: PageDef): string | null => (p.windForced && reduced && !windOn ? STRINGS.pages.windReducedMotion : null);
+  /** Bascule d'adresse vers `next` sans recharger (spec §5) : couche et vent fidèles, vue affichée. */
   const switchPage = (next: PageDef, layer: string | null, push: boolean): void => {
-    const url = pagePath(next) + searchForPageState(location.search, next, layer, windOn, windDefault(next));
-    if (push) history.pushState({ slug: next.slug }, "", url);
-    else history.replaceState({ slug: next.slug }, "", url);
+    const state = searchForPageState(location.search, next, layer, windOn, windDefault(next));
+    const url = pagePath(next) + searchWithShownView(state, page, next, shownView);
+    if (push) history.pushState(null, "", url);
+    else history.replaceState(null, "", url);
     page = next;
-    summary.show(page, null);
+    summary.show(page, windNoticeFor(page));
     drawer.setCurrent(page);
   };
   /** Vent demandé et disponible : ses échéances sont voulues et son champ suit le curseur. */
@@ -341,7 +344,11 @@ async function boot(): Promise<void> {
     // Sans couche, le vent décide de la page : /wind-map/ (allumé) ou l'accueil (éteint).
     const next = activeId === null ? pageAfterLayerChange(page, null, on) : page;
     if (next !== page) switchPage(next, null, true);
-    else history.replaceState(null, "", withWindParam(location.search, on));
+    else {
+      history.replaceState(null, "", withWindParam(location.search, on));
+      // Vent allumé sur place : l'avis reduced-motion n'a plus lieu d'être.
+      if (on && page.windForced && reduced) summary.show(page, null);
+    }
     void applyWind();
   }, STRINGS.toggles.windUnavailable);
   windToggle.setOn(windOn);
@@ -539,6 +546,14 @@ async function boot(): Promise<void> {
     search: () => location.search,
     replace: (s) => history.replaceState(null, "", s),
   });
+  /** Vue affichée pour l'adresse (revue finale I1), mêmes règles que `attachViewUrl` : rien pendant
+   * un vol (son arrivée écrit sa vue) ni près de « ma position ». */
+  const shownView = (): PageView | null => {
+    if (flight.active) return null;
+    const p = sceneHandle.camera.position;
+    const { lon, lat } = vec3ToLonLat(p);
+    return viewGuard.mayWrite(lon, lat) ? { lon, lat, d: p.length() } : null;
+  };
   const goTo = (lon: number, lat: number, name: string | undefined, shareView: boolean): void => {
     // Ville : garde levée à l'arrivée seulement — un vol annulé (geste) laisse la caméra près de
     // « ma position », qui doit rester protégée (revue finale).
@@ -886,7 +901,8 @@ async function boot(): Promise<void> {
       ? parseLayerParam(s, orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)))
       : parseLayerParam(s, LAYERS.map((d) => d.id));
     // Vent : historique → relu de l'entrée (défaut de la page si absent). Navigation : `?wind=` posé
-    // par la page à vent forcé, ou page à vent forcé en reduced-motion (éteint) ; sinon inchangé.
+    // par chaque page d'entrée (wind=1 si vent forcé, wind=0 sinon), ou page à vent forcé en
+    // reduced-motion (éteint) ; l'accueil, sans `?wind=`, garde le vent inchangé.
     const wantWind = fromHistory || q.has("wind") ? parseWindParam(s, decision.tier, reduced) : p.windForced ? false : windOn;
     const windChanged = wantWind !== windOn;
     if (windChanged) {
@@ -901,7 +917,8 @@ async function boot(): Promise<void> {
     const lon = Number(q.get("lon"));
     const lat = Number(q.get("lat"));
     const d = Number(q.get("d"));
-    if (q.has("lon") && q.has("lat") && Number.isFinite(lon) && Number.isFinite(lat)) {
+    // Navigation vers une page sans vue : la vue de l'adresse est celle de l'écran, pas de vol.
+    if ((fromHistory || p.view !== null) && q.has("lon") && q.has("lat") && Number.isFinite(lon) && Number.isFinite(lat)) {
       const dist = q.has("d") && Number.isFinite(d) ? d : 1.3;
       flight.start(lon, lat, dist, () => {
         // Garde « ma position » (spec capture §2) : on vole quand même, mais la vue n'est écrite
@@ -914,9 +931,9 @@ async function boot(): Promise<void> {
     drawer.setCurrent(p);
   };
   navigate = (target) => {
-    const url = pagePath(target) + searchForPageChange(location.search);
-    if (target === page) history.replaceState({ slug: target.slug }, "", url);
-    else history.pushState({ slug: target.slug }, "", url);
+    const url = pagePath(target) + searchWithShownView(searchForPageChange(location.search), page, target, shownView);
+    if (target === page) history.replaceState(null, "", url);
+    else history.pushState(null, "", url);
     applyPage(target);
   };
   window.addEventListener("popstate", () => applyPage(pageForPath(location.pathname), true));
