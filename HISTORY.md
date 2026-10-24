@@ -89,6 +89,7 @@ docs/
     specs/2026-09-05-tiles-design.md          # pyramide de tuiles, filtre, domaine (spec 3, §11 audit Ventusky)
     specs/2026-09-06-navigation-design.md     # zoom ancré sur l'altitude, pincement, tooltip, fondu (spec 4 lot A)
     specs/2026-09-12-layers-design.md         # 7 couches scalaires, pipeline à deux sources, manifeste v2 (spec 4 lot B1)
+    specs/2026-10-24-landing-pages-design.md  # lot G : 16 pages couche/région indexables, résumé, tiroir ☰ (conception validée, non exécutée)
     plans/2026-08-30-pipeline-gfs.md          # plan d'exécution (12 tâches)
     plans/2026-09-02-globe-heatmap.md         # plan d'exécution (10 tâches)
     plans/2026-09-05-tiles.md                 # plan d'exécution (20 tâches)
@@ -523,6 +524,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Globe recentré sur mobile par `camera.setViewOffset`** plutôt qu'en déplaçant le canvas *(2026-10-03, demande utilisateur « le globe a l'air trop bas »)* | L'interface du bas (couches + crédits, ~150 px) dépasse le bandeau du haut (~50–115 px) : centré sur l'écran entier, le globe paraissait bas. Décaler la projection garde un canvas plein écran, et tout ce qui lit la caméra suit (pick, étiquettes, tuiles, zoom ancré, vent) ; déplacer le canvas aurait cassé les repères écran (étiquettes, tooltip, `canvasPoint`) |
 | **Centre du globe aux 42 % de l'espace libre** (et non 50 %) *(2026-10-03, retour utilisateur « encore trop bas »)* | À 50 % le globe paraissait encore bas sur téléphone ; 42 % le remonte d'environ 55 px de plus sur 412 × 915 (décalage total 80 px), validé à l'œil en émulation |
 | **Sous Brave, le nombre de cœurs est ignoré pour le profil GPU** *(2026-10-03)* | Brave brouille `navigator.hardwareConcurrency` (anti-pistage, valeur au hasard ≤ la vraie, différente par site) : la machine de l'utilisateur annonçait 4 cœurs sur globelayers.com (`tier low — hardwareConcurrency 4`, 1 500 particules, tuiles plus grossières) et le vrai nombre sur localhost (`tier high`). Les autres critères restent (nom de GPU, mobile à dpr < 2, `?tier=`) ; contrepartie : un vrai petit PC sous Brave passe en high (dette n° 68) |
+| **Lot G : 8 pages couche + 8 pages région, texte fixe rédigé par Claude et relu, globe ouvert directement sur la page, résumé sous le bandeau + « Read more », tiroir ☰, l'adresse suit la couche** *(2026-10-24, choix utilisateur en brainstorming, spec `2026-10-24-landing-pages-design.md`)* | Search Console : une seule URL, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (« world temperature map », « Sahara dust forecast »). Peu de pages soignées plutôt que des milliers par ville (risque de contenu mince). Pages pôles et Amazonie voulues par l'utilisateur pour sortir de l'ordinaire. Le tiroir prépare les futurs articles. Pas de « tracker » de cyclones : on n'a ni trajectoires ni noms. Vent forcé sur les pages vent/ouragans/typhons sauf « réduire les animations », sinon le texte ne correspondrait plus au globe. `/` et `/temperature-map/` gardés tous deux avec des textes distincts. Succès = 17 URLs indexées et impressions non nulles sous 4–6 semaines |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -717,7 +719,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 
 La spec 4 (lots A, B1, B2, C) est terminée. Ce tableau est la **référence pour choisir les
 chantiers suivants** : y rayer ce qui est livré (avec le sha de merge), y ajouter ce qui apparaît.
-Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4 (P4 différé le 2026-10-03 au profit d'un chantier « audience », §5 : ① IndexNow livré `593bc4c`, ② capture d'image livrée `8fea4fb`, ③ pages de référencement par couche = **prochain chantier**, lot G).
+Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → finitions. Reste : P2, P4 (P4 différé le 2026-10-03 au profit d'un chantier « audience », §5 : ① IndexNow livré `593bc4c`, ② capture d'image livrée `8fea4fb`, ③ pages de référencement par couche = **prochain chantier**, lot G, conception validée le 2026-10-24).
 
 **Lots identifiés**
 
@@ -726,7 +728,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | **D — « site public »** | **Site entièrement en anglais** (décision utilisateur 2026-09-19 : site mondial, une seule langue), référencement, partage, panneau « About », mesure d'audience sans cookie (lignes R1–R2) ; spec `docs/superpowers/specs/2026-09-19-public-site-design.md` | Petit, sans risque pour le rendu ; prérequis de la monétisation visée par `docs/PLAN.md` (pas d'audience mesurée = publicité sans valeur ; pas d'Open Graph = lien partagé sans image) | ✅ **livré 2026-09-19** (merge `1295853`, correctif de cache `e359ebd`) ; site vérifié et sitemap envoyé dans Google Search Console et Bing Webmaster |
 | **E — curseur temporel** | Prévisions : plusieurs échéances GFS, curseur ou animation sur 24–48 h (ligne R3) | Plus grosse valeur d'usage (la photo de l'instant devient un outil de prévision) ; le plus lourd : pipeline multi-échéances, volume R2, préchargement, interface | ✅ **livré 2026-09-27** (merge `9339e47`) : frise f003→f060 (pas 3 h) par run, curseur live/fixed avec lecture, fondu GPU entre échéances |
 | **F — recherche et localisation** | Recherche de ville, bouton « ma position » (ligne R4) | Peu coûteux : `geo/places.json` porte déjà 7 332 villes | ✅ **livré 2026-09-26** (merge `98928fd`) : ~138 500 villes GeoNames de détail, recherche hors ligne, « ma position », vol animé |
-| **G — pages de référencement par couche** (chantier audience ③) | Pages statiques indexables par couche (« temperature map », « dust forecast »…), peut-être par grande ville, image Open Graph par couche (ligne R8) | Search Console : page unique indexée, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (§5 du 2026-10-03) | ⏭ **PROCHAIN CHANTIER** (décision utilisateur 2026-10-03) — à brainstormer |
+| **G — pages de référencement par couche** (chantier audience ③) | Pages statiques indexables par couche (« temperature map », « dust forecast »…), peut-être par grande ville, image Open Graph par couche (ligne R8) | Search Console : page unique indexée, 0 impression en 28 jours ; il faut des pages qui répondent à des recherches réelles (§5 du 2026-10-03) | ⏭ **PROCHAIN CHANTIER** (décision utilisateur 2026-10-03) — conception validée le 2026-10-24 (`docs/superpowers/specs/2026-10-24-landing-pages-design.md` : 8 pages couche + 8 région, tiroir ☰) ; plan à écrire |
 
 **Hors plan d'origine, manquant sur un site public**
 
@@ -736,7 +738,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | R2 | ~~**Mesure d'audience**~~ ✅ lot D : beacon Cloudflare Web Analytics au build de production (actif dès que `CF_BEACON_TOKEN` est renseigné, voir §9) | ~~Aucun script d'analytics dans le code~~ | D |
 | R3 | ~~**Dimension temporelle**~~ ✅ lot E : curseur temporel sur 48 h, pas de 3 h, lecture automatique | ~~Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances~~ | E |
 | R4 | ~~**Recherche et localisation**~~ ✅ lot F | ~~Ni recherche de ville ni « ma position »~~ | F |
-| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS) | — |
+| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS). **Demandé par l'utilisateur le 2026-10-24 : une couche neige et une couche forêt / déforestation (si possible : source hors GFS, ex. Global Forest Watch, statique ou annuelle)** | après G |
 | R6 | **PWA et hors-ligne** | Rien | — |
 | R7 | **Autres langues, unités impériales** | Après le lot D le site est en anglais seul, unités métriques ; `web/src/i18n/` est prévu pour accueillir d'autres langues (pas de sélecteur aujourd'hui) | — |
 | R8 | **Pages de contenu par couche, événements d'usage (PostHog), image Open Graph par couche** | Écartés du lot D (spec §10) | — |
@@ -756,6 +758,14 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-24 — Lot G : brainstorming fait, conception écrite et validée
+
+- **Conception** `docs/superpowers/specs/2026-10-24-landing-pages-design.md`, validée par l'utilisateur après relecture par un sous-agent « constructeur » (3 questions : place du résumé, vent par défaut, doublon `/` ↔ `/temperature-map/`, tranchées par l'utilisateur, §5).
+- **Contenu :** 16 pages (`/temperature-map/`, `/wind-map/`… ; Sahara, Europe, ouragans Atlantique, typhons Pacifique, Inde, Antarctique, Arctique, Amazonie) + accueil avec résumé « mode d'emploi » ; tiroir ☰ avec section Articles réservée ; images Open Graph = captures fixes (accord utilisateur à demander avant d'ouvrir le globe, RAM).
+- **Noté pour plus tard (demande utilisateur) :** couches neige et forêt/déforestation (§8, R5).
+- **Aucun code modifié** ; tests non relancés (rien à tester).
+- **Prochaine action :** écrire le plan du lot G (`superpowers:writing-plans`), puis l'exécuter sur une branche dédiée.
 
 ### 2026-10-03 (8) — Arrêt de session : tout est mergé, poussé et déployé ; lot G pour la prochaine session
 
@@ -1851,7 +1861,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-03 (**arrêt de session** — tout mergé et déployé ; critère 4 de `worldtemp-cron` atteint (22/22) ; lot G reporté à la prochaine session)
+**Dernière mise à jour :** 2026-10-24 (**lot G conçu** — spec `2026-10-24-landing-pages-design.md` validée : 8 pages couche + 8 région, résumé, tiroir ☰ ; couches neige et forêt notées en R5 ; aucun code)
+**Entrée précédente :** 2026-10-03 (**arrêt de session** — tout mergé et déployé ; critère 4 de `worldtemp-cron` atteint (22/22) ; lot G reporté à la prochaine session)
 **Entrée précédente :** 2026-10-03 (**profil GPU juste sous Brave, globe aux 42 % sur mobile, merge `d6aed4a`** — Brave brouillait le nombre de cœurs (low à tort) ; beacon d'audience bloqué par Brave Shields (dette n° 67) ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**mobile : bords collés, globe recentré, densité de vent corrigée, merge `14bbdd1`** — téléphone en `high` et non `low`, densité 0,0133 / px², plafond 8 500 mesuré à 60 fps ; ce commit HISTORY précède le push de `master`)
 **Entrée précédente :** 2026-10-03 (**légende et frise verticales sur téléphone, vent à densité d'écran, merge `c2b91e2`** — globe entier visible sur mobile ; particules à 0,004 / px CSS², plafond 7 500 à 60 fps ; ce commit HISTORY précède le push de `master`)
