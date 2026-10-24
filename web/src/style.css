@@ -336,7 +336,8 @@ html, body {
 #more-open:focus-visible, #summary-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (max-width: 600px) {
   #summary { grid-column: 1 / -1; justify-self: stretch; max-width: none; }
-  #summary p { font-size: 0.85rem; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  #summary-text, #summary-notice { font-size: 0.85rem; }
+  #summary-text { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
 
 /* « Read more » : même habillage que About. */
