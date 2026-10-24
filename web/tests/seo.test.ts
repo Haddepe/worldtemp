@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { renderSitemap } from "../src/build/pages";
+import { PAGES, pagePath } from "../src/pages/registry";
 
 const WEB = join(__dirname, "..");
 const SITE = "https://globelayers.com";
@@ -79,9 +81,11 @@ describe("référencement — fichiers statiques (spec site public §6)", () => 
     expect(robots).toContain(`Sitemap: ${SITE}/sitemap.xml`);
   });
 
-  it("sitemap.xml : une URL, celle du canonical", () => {
-    const locs = [...read("public/sitemap.xml").matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-    expect(locs).toEqual([`${SITE}/`]);
+  it("sitemap.xml (généré au build) : l'accueil, celle du canonical, en premier", () => {
+    const locs = [...renderSitemap(PAGES).matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
+    expect(locs[0]).toBe(`${SITE}/`);
+    expect(html).toContain(`<link rel="canonical" href="${locs[0]}" />`);
+    expect(locs).toHaveLength(PAGES.length);
   });
 
   it("favicon.svg et manifeste", () => {
@@ -100,8 +104,15 @@ describe("référencement — fichiers statiques (spec site public §6)", () => 
     }
   });
 
+  it("_headers : chaque page d'entrée revalidée à chaque visite", () => {
+    const headers = read("public/_headers");
+    for (const page of PAGES.slice(1)) {
+      expect(headers, page.slug).toContain(`\n${pagePath(page)}\n  Cache-Control: public, max-age=0, must-revalidate\n`);
+    }
+  });
+
   it("aucun fichier statique en CRLF", () => {
-    for (const path of ["public/robots.txt", "public/sitemap.xml", "public/favicon.svg", "public/site.webmanifest", "public/_headers"]) {
+    for (const path of ["public/robots.txt", "public/favicon.svg", "public/site.webmanifest", "public/_headers"]) {
       expect(existsSync(join(WEB, path)), path).toBe(true);
       expect(read(path).includes("\r"), path).toBe(false);
     }
@@ -110,7 +121,7 @@ describe("référencement — fichiers statiques (spec site public §6)", () => 
 
 describe("panneau About (spec site public §5)", () => {
   it("texte indexable dans le HTML initial", () => {
-    for (const heading of ['<h1 id="about-title">GlobeLayers — live 3D weather globe</h1>', "<h2>Layers</h2>", "<h2>Data &amp; freshness</h2>", "<h2>Sources &amp; credits</h2>", "<h2>Privacy</h2>"]) {
+    for (const heading of ['<h2 id="about-title">GlobeLayers — live 3D weather globe</h2>', "<h2>Layers</h2>", "<h2>Data &amp; freshness</h2>", "<h2>Sources &amp; credits</h2>", "<h2>Privacy</h2>"]) {
       expect(html, heading).toContain(heading);
     }
     expect(html).toContain("cookie-free audience measurement");

@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stripGlslComments } from "../src/build/glsl";
+import { renderPageHtml } from "../src/build/pages";
+import { PAGES } from "../src/pages/registry";
 
 /**
  * Garde-fou « tout ce qui est livré est en anglais » (spec site public §8.1). Seuls les littéraux
@@ -57,7 +59,13 @@ describe("tout ce qui est livré est en anglais (spec site public §3.1)", () =>
     expect(html.match(FRENCH_WORD)).toBeNull();
   });
 
-  const statics = ["public/robots.txt", "public/sitemap.xml", "public/site.webmanifest", "public/favicon.svg"];
+  it.each(PAGES.map((p) => ({ page: p, name: p.slug || "accueil" })))("page $name : aucun texte français", ({ page }) => {
+    const out = renderPageHtml(readFileSync(join(WEB, "index.html"), "utf8"), page);
+    expect(out.match(FRENCH_LETTER)).toBeNull();
+    expect(out.match(FRENCH_WORD)).toBeNull();
+  });
+
+  const statics = ["public/robots.txt", "public/site.webmanifest", "public/favicon.svg"];
 
   it.each(statics)("%s : aucun texte français", (rel) => {
     const text = readFileSync(join(WEB, rel), "utf8");

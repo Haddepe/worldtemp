@@ -16,16 +16,16 @@
     <meta property="og:locale" content="en_US" />
     <meta property="og:url" content="https://globelayers.com/" />
     <meta property="og:title" content="GlobeLayers — Live 3D Weather Globe" />
-    <meta property="og:description" content="Explore the weather and the next 48 hours on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta property="og:description" content="Interactive 3D weather globe with a 48-hour forecast: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data." />
     <meta property="og:image" content="https://globelayers.com/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
+    <meta property="og:image:alt" content="GlobeLayers 3D weather globe showing temperature" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="GlobeLayers — Live 3D Weather Globe" />
-    <meta name="twitter:description" content="Explore the weather and the next 48 hours on an interactive 3D globe: temperature, animated wind, clouds, rain, pressure, humidity and air quality." />
+    <meta name="twitter:description" content="Interactive 3D weather globe with a 48-hour forecast: temperature, wind, clouds, rain, pressure, humidity and air quality worldwide, from NOAA GFS data." />
     <meta name="twitter:image" content="https://globelayers.com/og.jpg" />
-    <meta name="twitter:image:alt" content="3D globe showing world temperature and animated wind over Europe and the Atlantic" />
+    <meta name="twitter:image:alt" content="GlobeLayers 3D weather globe showing temperature" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -49,6 +49,7 @@
     <div id="labels" aria-hidden="true"></div>
     <div id="overlay">
       <header id="banner" class="panel">
+        <button id="drawer-open" type="button" aria-label="Menu" aria-haspopup="dialog">☰</button>
         <span id="banner-text">Loading…</span>
         <button id="search-open" type="button" aria-label="Search for a city" aria-expanded="false" aria-controls="search">🔍</button>
         <button id="locate" type="button" aria-label="Go to my location">📍</button>
@@ -56,6 +57,7 @@
         <button id="about-open" type="button" aria-label="About GlobeLayers" aria-haspopup="dialog">?</button>
         <button id="toggle-overlay" type="button" aria-expanded="true" aria-controls="legend controls timeline" aria-label="Collapse or expand panels">▾</button>
       </header>
+      <section id="summary" class="panel" aria-labelledby="summary-title"><h1 id="summary-title">GlobeLayers, a live 3D weather globe</h1><p id="summary-text">Pick a layer from the top bar, search a town with the magnifier, tap the pin for your own location, the camera to save an image, and drag the slider to move through the next 48 hours. The ? button explains the data.</p><button id="more-open" type="button" aria-haspopup="dialog">Read more</button><button id="summary-close" type="button" aria-label="Hide summary">✕</button></section>
       <div id="capture-menu" class="panel" role="group" aria-label="Captured image" hidden>
         <button id="capture-share" type="button">Share…</button>
         <button id="capture-save" type="button">Save image</button>
@@ -85,7 +87,7 @@
     <dialog id="about" aria-labelledby="about-title">
       <div class="about-body">
         <button id="about-close" type="button" aria-label="Close">×</button>
-        <h1 id="about-title">GlobeLayers — live 3D weather globe</h1>
+        <h2 id="about-title">GlobeLayers — live 3D weather globe</h2>
         <p>GlobeLayers is a live 3D weather globe. Spin it, zoom in, and read today's weather anywhere on Earth, straight from open forecast data.</p>
         <h2>Layers</h2>
         <ul>
@@ -108,6 +110,8 @@
         <p>GlobeLayers uses cookie-free audience measurement by Cloudflare Web Analytics. No personal data is collected and there are no advertising trackers. The “My location” button uses your device's location only in your browser: it is never sent or stored.</p>
       </div>
     </dialog>
+    <dialog id="more" aria-labelledby="more-title"><div class="about-body"><button id="more-close" type="button" aria-label="Close">×</button><div id="more-body"><h2 id="more-title">GlobeLayers, a live 3D weather globe</h2><p>GlobeLayers draws the weather of the whole planet on one rotating globe. Drag to turn it, scroll or pinch to zoom, and open the layer menu to switch between temperature, wind, clouds, rain, pressure, humidity, PM2.5 and dust.</p><p>To find a place, use the magnifier: it searches every town above 1,000 inhabitants. The pin button centres the globe on where you are. Your position is read once by your browser and never leaves it, and it is never written into a link or a saved image.</p><p>The slider at the bottom steps through the forecast, three hours at a time, over two days. Press play to watch the weather move. The camera button saves what you see as an image, or shares it, and the address bar keeps your view so a link opens the same place. Three switches next to the layer menu turn on the animated wind, place names and rivers.</p><p>Weather fields come from the NOAA GFS model at 0.25 degree resolution, and the air quality layers from NOAA GEFS-Aerosols. The data refreshes four times a day. Each map page of this site opens the globe on one layer, and the menu in the top left lists them all.</p><ul class="more-related" aria-label="Related maps"><li><a href="/temperature-map/">Temperature</a></li><li><a href="/wind-map/">Wind</a></li><li><a href="/rain-map/">Rain</a></li></ul></div></div></dialog>
+    <dialog id="drawer" aria-label="Site menu"><div class="drawer-body"><header><a id="drawer-home" href="/">GlobeLayers</a><button id="drawer-close" type="button" aria-label="Close menu">✕</button></header><a id="drawer-howto" href="/">How to use</a><nav id="drawer-nav"><h2 class="drawer-section">Maps</h2><ul><li><a href="/temperature-map/">Temperature</a></li><li><a href="/wind-map/">Wind</a></li><li><a href="/cloud-map/">Clouds</a></li><li><a href="/rain-map/">Rain</a></li><li><a href="/pressure-map/">Pressure</a></li><li><a href="/humidity-map/">Humidity</a></li><li><a href="/air-quality-map/">Air quality (PM2.5)</a></li><li><a href="/dust-forecast/">Dust</a></li></ul><h2 class="drawer-section">Regions</h2><ul><li><a href="/sahara-dust-forecast/">Sahara dust</a></li><li><a href="/europe-heatwave-map/">Europe heatwave</a></li><li><a href="/atlantic-hurricane-map/">Atlantic hurricanes</a></li><li><a href="/pacific-typhoon-map/">Pacific typhoons</a></li><li><a href="/india-air-quality-map/">India air quality</a></li><li><a href="/antarctica-temperature-map/">Antarctica</a></li><li><a href="/arctic-temperature-map/">Arctic</a></li><li><a href="/amazon-rainfall-map/">Amazon rainfall</a></li></ul></nav><button id="drawer-about" type="button">About</button></div></dialog>
     <div id="tooltip" class="panel" role="status" aria-live="off" hidden></div>
     <div id="marker" aria-hidden="true" hidden></div>
     <div id="fatal" role="alert" hidden></div>
