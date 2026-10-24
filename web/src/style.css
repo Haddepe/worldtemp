@@ -319,7 +319,10 @@ html, body {
   position: relative; padding-right: 2.25rem;
 }
 #summary[hidden] { display: none; }
-#overlay:has(#search:not([hidden])) #summary { display: none; }
+#overlay:has(#search:not([hidden])) #summary,
+#overlay:has(#capture-menu:not([hidden])) #summary { display: none; }
+#summary-notice { font-size: 0.8rem; line-height: 1.4; margin: 0 0 0.35rem; }
+#summary-notice[hidden] { display: none; }
 #summary h1 { font-size: 0.95rem; margin: 0 0 0.25rem; }
 #summary p { font-size: 0.8rem; line-height: 1.4; margin: 0 0 0.35rem; color: var(--panel-muted); }
 #more-open {
