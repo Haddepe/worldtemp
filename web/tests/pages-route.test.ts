@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { PAGES } from "../src/pages/registry";
-import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, searchForPageChange } from "../src/pages/route";
+import { PAGES, pagePath } from "../src/pages/registry";
+import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, searchForPageChange, searchForPageState } from "../src/pages/route";
 
 const page = (slug: string) => PAGES.find((p) => p.slug === slug)!;
 
@@ -12,6 +12,9 @@ describe("pageForPath", () => {
   });
   it("un chemin inconnu donne l'accueil", () => expect(pageForPath("/foo/").slug).toBe(""));
   it("est sensible à la casse", () => expect(pageForPath("/WIND-MAP/").slug).toBe(""));
+  it("aller-retour exact pagePath → pageForPath pour toutes les pages (popstate)", () => {
+    for (const p of PAGES) expect(pageForPath(pagePath(p))).toBe(p);
+  });
 });
 
 describe("pageDefaultsSearch", () => {
@@ -61,4 +64,21 @@ describe("searchForPageChange", () => {
     expect(searchForPageChange("?layer=rain&wind=1&labels=0&lon=1&lat=2&d=3")).toBe("?labels=0");
   });
   it("chaîne vide quand rien ne reste", () => expect(searchForPageChange("?layer=rain")).toBe(""));
+});
+
+describe("searchForPageState", () => {
+  it("couche exprimée par le chemin : pas de layer", () => {
+    expect(searchForPageState("?layer=temp&labels=0", page("rain-map"), "rain", false, false)).toBe("?labels=0");
+  });
+  it("accueil sans couche : layer=none écrit", () => expect(searchForPageState("", page(""), null, false, false)).toBe("?layer=none"));
+  it("vent différent du défaut de la page : écrit", () => {
+    expect(searchForPageState("", page("rain-map"), "rain", true, false)).toBe("?wind=1");
+    expect(searchForPageState("?wind=1", page("wind-map"), null, false, true)).toBe("?wind=0");
+  });
+  it("page à vent forcé, vent au défaut : retiré", () => expect(searchForPageState("?wind=1", page("wind-map"), null, true, true)).toBe(""));
+  it("wind explicite gardé ailleurs, même égal au défaut", () => expect(searchForPageState("?wind=1", page("rain-map"), "rain", true, true)).toBe("?wind=1"));
+  it("wind absent et égal au défaut : reste absent", () => expect(searchForPageState("", page("rain-map"), "rain", true, true)).toBe(""));
+  it("la vue est gardée", () => {
+    expect(searchForPageState("?layer=temp&lon=1&lat=2&d=3", page("rain-map"), "rain", false, false)).toBe("?lon=1&lat=2&d=3");
+  });
 });

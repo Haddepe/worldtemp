@@ -14,7 +14,9 @@ import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
-import { orderedLayers, parseLayerParam, withLayerParam } from "./layers/select";
+import { orderedLayers, parseLayerParam } from "./layers/select";
+import { pagePath, type PageDef } from "./pages/registry";
+import { pageAfterLayerChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState } from "./pages/route";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
@@ -34,10 +36,12 @@ import { TimeCursor } from "./time/cursor";
 import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
 import { createDialog } from "./ui/about";
 import { createCaptureMenu } from "./ui/capture-menu";
+import { createDrawer } from "./ui/drawer";
 import { formatBanner, formatWhen } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { locate } from "./ui/locate";
 import { byId, createOverlay } from "./ui/overlay";
+import { createSummary } from "./ui/summary";
 import { createTimeline } from "./ui/timeline";
 import { TapDetector, createTooltip, mouseInput, type Reading, type TooltipData } from "./ui/tooltip";
 import { createToggle } from "./ui/toggle";
@@ -60,6 +64,35 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
 async function boot(): Promise<void> {
   const ui = createOverlay();
   createDialog(byId<HTMLDialogElement>("about"), byId<HTMLButtonElement>("about-open"), byId<HTMLButtonElement>("about-close"));
+  // Page d'entrée (lot G, spec §5) : ses défauts complètent les paramètres explicites de l'URL.
+  // `bootSearch` ne sert qu'au démarrage et n'est jamais écrit dans l'URL.
+  let page = pageForPath(location.pathname);
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const bootSearch = pageDefaultsSearch(location.search, page, reduced);
+  /** Avis du résumé : vent forcé par la page mais éteint par reduced-motion (sans `?wind=` explicite). */
+  const pageNotice = (p: PageDef, search: string): string | null =>
+    p.windForced && reduced && !new URLSearchParams(search).has("wind") ? STRINGS.pages.windReducedMotion : null;
+  /** Navigation interne, assignée plus bas une fois le globe câblé ; avant : rechargement complet
+   * (même schéma que `stopWind` — pas de TDZ si un lien est cliqué pendant le chargement). */
+  let navigate = (p: PageDef): void => location.assign(pagePath(p));
+  const storage = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
+  const summary = createSummary(storage, (p) => navigate(p));
+  const drawer = createDrawer({
+    navigate: (p) => navigate(p),
+    openAbout: () => {
+      const about = byId<HTMLDialogElement>("about");
+      if (!about.open) about.showModal();
+    },
+    revealSummary: () => summary.reveal(),
+  });
+  summary.show(page, pageNotice(page, location.search));
+  drawer.setCurrent(page);
   const canvas = document.getElementById("globe") as HTMLCanvasElement | null;
   if (!canvas) throw new Error("canvas #globe not found");
 
@@ -88,7 +121,7 @@ async function boot(): Promise<void> {
     ui.showFatal(STRINGS.fatal.contextLost, { reload: true });
   });
 
-  const params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(bootSearch);
   const lon = Number(params.get("lon"));
   const lat = Number(params.get("lat"));
   const d = Number(params.get("d"));
@@ -212,14 +245,20 @@ async function boot(): Promise<void> {
   const mobileLayout = matchMedia("(max-width: 600px)");
   const bannerEl = byId<HTMLElement>("banner");
   const controlsEl = byId<HTMLElement>("controls");
+  const summaryEl = byId<HTMLElement>("summary");
   const applyShift = (): void => {
     if (!mobileLayout.matches) return sceneHandle.setViewShift(0);
-    const top = bannerEl.getBoundingClientRect().bottom;
+    // Résumé (lot G) collé sous le bandeau : il borne le haut quand il est affiché (rectangle vide
+    // s'il est masqué, par ✕ ou par le CSS pendant la recherche / le menu capture).
+    const s = summaryEl.getBoundingClientRect();
+    const top = Math.max(bannerEl.getBoundingClientRect().bottom, s.height > 0 ? s.bottom : 0);
     const bottom = controlsEl.getBoundingClientRect().top;
     sceneHandle.setViewShift(globeShiftPx(window.innerHeight, top, bottom));
   };
   new ResizeObserver(applyShift).observe(bannerEl);
   new ResizeObserver(applyShift).observe(controlsEl);
+  new ResizeObserver(applyShift).observe(summaryEl);
+  summary.onLayout(applyShift);
   window.addEventListener("resize", applyShift);
   mobileLayout.addEventListener("change", applyShift);
   ui.onLayoutChange(applyShift);
@@ -276,7 +315,18 @@ async function boot(): Promise<void> {
    * (M1) ou un échec plus vieux que RETRY_AFTER_MS (revue finale F1) rend la couche retentable. */
   const failed = new Map<string, { generatedAt: string; at: number }>();
 
-  let windOn = parseWindParam(location.search, decision.tier, matchMedia("(prefers-reduced-motion: reduce)").matches);
+  let windOn = parseWindParam(bootSearch, decision.tier, reduced);
+  /** Vent qu'aurait la page `p` au démarrage sans `?wind=` : sert à n'écrire `wind` que s'il en diffère. */
+  const windDefault = (p: PageDef): boolean => parseWindParam(pageDefaultsSearch("", p, reduced), decision.tier, reduced);
+  /** Bascule d'adresse vers `next` sans recharger (spec §5) : couche et vent fidèles, vue gardée. */
+  const switchPage = (next: PageDef, layer: string | null, push: boolean): void => {
+    const url = pagePath(next) + searchForPageState(location.search, next, layer, windOn, windDefault(next));
+    if (push) history.pushState({ slug: next.slug }, "", url);
+    else history.replaceState({ slug: next.slug }, "", url);
+    page = next;
+    summary.show(page, null);
+    drawer.setCurrent(page);
+  };
   /** Vent demandé et disponible : ses échéances sont voulues et son champ suit le curseur. */
   let windActive = false;
   let windUnsub: (() => void) | null = null;
@@ -288,7 +338,10 @@ async function boot(): Promise<void> {
   let userNoticeTimer: ReturnType<typeof setTimeout> | undefined;
   const windToggle = createToggle(ui.windToggle, (on) => {
     windOn = on;
-    history.replaceState(null, "", withWindParam(location.search, on));
+    // Sans couche, le vent décide de la page : /wind-map/ (allumé) ou l'accueil (éteint).
+    const next = activeId === null ? pageAfterLayerChange(page, null, on) : page;
+    if (next !== page) switchPage(next, null, true);
+    else history.replaceState(null, "", withWindParam(location.search, on));
     void applyWind();
   }, STRINGS.toggles.windUnavailable);
   windToggle.setOn(windOn);
@@ -637,12 +690,20 @@ async function boot(): Promise<void> {
   };
 
   /** Applique la couche `id` (null = Aucune) : charge la paire autour de t, pose LUT, isolignes, légende ; `applyTime` fait le reste. */
-  const activate = async (id: string | null, fromUser: boolean): Promise<void> => {
+  /** `push` : faux pour le repli après un échec — l'adresse est remplacée, pas empilée (le retour
+   * arrière ne ramène pas vers la couche en échec). */
+  const activate = async (id: string | null, fromUser: boolean, push = true): Promise<void> => {
     const manifest = manifests.manifest;
     const previous = activeId;
     activeId = id;
     menu.setActive(id);
-    if (fromUser) history.replaceState(null, "", withLayerParam(location.search, id));
+    if (fromUser) {
+      // L'adresse suit la couche (lot G, spec §5) — seulement si elle change : une page région qui
+      // re-sélectionne sa propre couche reste sur la page région.
+      const next = id !== previous ? pageAfterLayerChange(page, id, windOn) : page;
+      if (next !== page) switchPage(next, id, push);
+      else history.replaceState(null, "", pagePath(page) + searchForPageState(location.search, page, id, windOn, windDefault(page)));
+    }
     const def = id ? layerDef(id) : undefined;
     const entry = id && manifest ? manifest.layers[id] : undefined;
     if (!def || !entry || !manifest) {
@@ -687,7 +748,7 @@ async function boot(): Promise<void> {
       failed.set(id!, { generatedAt: entry.generated_at, at: Date.now() });
       menu.setDisabled(id!, true);
       const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
-      await activate(fallback, fromUser);
+      await activate(fallback, fromUser, false);
       layerNotice = STRINGS.status.layerUnavailable;
       refreshBanner();
       return;
@@ -792,7 +853,8 @@ async function boot(): Promise<void> {
         const firstLoad = !hadManifest;
         hadManifest = true;
         const target = firstLoad
-          ? parseLayerParam(location.search, available)
+          ? // Défauts de la page courante (= `bootSearch`, sauf navigation interne avant le 1er manifeste)
+            parseLayerParam(pageDefaultsSearch(location.search, page, reduced), available)
           : activeId !== null && !available.includes(activeId)
             ? parseLayerParam("", available)
             : activeId;
@@ -809,6 +871,53 @@ async function boot(): Promise<void> {
       refreshBanner(); // manifeste jamais chargé : refreshBanner pose « Données indisponibles » (I2)
     }
   };
+
+  /** Applique la page `p` sans recharger (tiroir, « Read more », retour arrière — spec §5) : ses
+   * défauts complètent l'URL courante, comme au démarrage ; une vue déclenche le vol animé. */
+  const applyPage = (p: PageDef): void => {
+    page = p;
+    const s = pageDefaultsSearch(location.search, p, reduced);
+    const q = new URLSearchParams(s);
+    const m = manifests.manifest;
+    // Sans manifeste, `activate` ne fait que retenir l'id : le premier manifeste repartira de l'URL.
+    const layer = m
+      ? parseLayerParam(s, orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)))
+      : parseLayerParam(s, LAYERS.map((d) => d.id));
+    // Vent : `?wind=` explicite (ou posé par la page à vent forcé), ou page à vent forcé en
+    // reduced-motion (éteint) ; sinon on n'y touche pas.
+    const wantWind = q.has("wind") ? parseWindParam(s, decision.tier, reduced) : p.windForced ? false : windOn;
+    const windChanged = wantWind !== windOn;
+    if (windChanged) {
+      windOn = wantWind;
+      windToggle.setOn(windOn);
+    }
+    history.replaceState(history.state, "", pagePath(p) + searchForPageState(location.search, p, layer, windOn, windDefault(p)));
+    void (async () => {
+      if (layer !== activeId) await activate(layer, false);
+      if (windChanged) await applyWind();
+    })();
+    const lon = Number(q.get("lon"));
+    const lat = Number(q.get("lat"));
+    const d = Number(q.get("d"));
+    if (q.has("lon") && q.has("lat") && Number.isFinite(lon) && Number.isFinite(lat)) {
+      const dist = q.has("d") && Number.isFinite(d) ? d : 1.3;
+      flight.start(lon, lat, dist, () => {
+        // Garde « ma position » (spec capture §2) : on vole quand même, mais la vue n'est écrite
+        // que si l'arrivée est hors du rayon protégé — même règle que `attachViewUrl`.
+        if (viewGuard.mayWrite(lon, lat)) history.replaceState(history.state, "", withView(location.search, lon, lat, dist));
+        sceneHandle.requestRender();
+      });
+    }
+    summary.show(p, pageNotice(p, location.search));
+    drawer.setCurrent(p);
+  };
+  navigate = (target) => {
+    const url = pagePath(target) + searchForPageChange(location.search);
+    if (target === page) history.replaceState({ slug: target.slug }, "", url);
+    else history.pushState({ slug: target.slug }, "", url);
+    applyPage(target);
+  };
+  window.addEventListener("popstate", () => applyPage(pageForPath(location.pathname)));
 
   await applyData();
   geo.start();

@@ -40,3 +40,20 @@ export function searchForPageChange(search: string): string {
   const s = params.toString();
   return s ? "?" + s : "";
 }
+
+/**
+ * Query string fidèle à l'état après une bascule de page sans rechargement (une adresse par
+ * combinaison couche/vent) : `layer` n'y figure que s'il diffère de la couche de `next` ; `wind`
+ * est gardé s'il était explicite (lien portable d'un appareil à l'autre), ajouté s'il diffère du
+ * défaut de `next` sur cet appareil, retiré si le chemin l'exprime déjà (page à vent forcé, vent
+ * allumé). La vue et les autres paramètres sont gardés. "" si vide.
+ */
+export function searchForPageState(search: string, next: PageDef, layer: string | null, windOn: boolean, windDefault: boolean): string {
+  const params = new URLSearchParams(search);
+  if (layer === next.layer) params.delete("layer");
+  else params.set("layer", layer ?? "none");
+  if (next.windForced && windOn === windDefault) params.delete("wind");
+  else if (params.has("wind") || windOn !== windDefault) params.set("wind", windOn ? "1" : "0");
+  const s = params.toString();
+  return s ? "?" + s : "";
+}
