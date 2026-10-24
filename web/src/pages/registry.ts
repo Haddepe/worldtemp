@@ -47,7 +47,7 @@ export const PAGES: readonly PageDef[] = [
     body: [
       "GlobeLayers draws the weather of the whole planet on one rotating globe. Drag to turn it, scroll or pinch to zoom, and open the layer menu to switch between temperature, wind, clouds, rain, pressure, humidity, PM2.5 and dust.",
       "To find a place, use the magnifier: it searches every town above 1,000 inhabitants. The pin button centres the globe on where you are. Your position is read once by your browser and never leaves it, and it is never written into a link or a saved image.",
-      "The slider at the bottom steps through the forecast, three hours at a time, over two days. Press play to watch the weather move. The camera button saves what you see as an image, or shares it, and the address bar keeps your view so a link opens the same place. Two switches at the top add place names and rivers.",
+      "The slider at the bottom steps through the forecast, three hours at a time, over two days. Press play to watch the weather move. The camera button saves what you see as an image, or shares it, and the address bar keeps your view so a link opens the same place. Three switches next to the layer menu turn on the animated wind, place names and rivers.",
       "Weather fields come from the NOAA GFS model at 0.25 degree resolution, and the air quality layers from NOAA GEFS-Aerosols. The data refreshes four times a day. Each map page of this site opens the globe on one layer, and the menu in the top left lists them all.",
     ],
     menuLabel: "How to use", ogImage: OG, ogAlt: "GlobeLayers 3D weather globe showing temperature",
@@ -62,7 +62,7 @@ export const PAGES: readonly PageDef[] = [
     body: [
       "This map shows the air temperature measured two metres above the ground, the same height as a standard weather station. Values are in degrees Celsius and come from the NOAA GFS forecast model, computed on a grid of 0.25 degrees, which is roughly 28 kilometres at the equator.",
       "Read the colour bar on the side of the globe: deep blue and violet are well below freezing, green and yellow are mild, orange and red are hot. Hover or tap anywhere to read the exact value at that point.",
-      "Look for the daily rhythm. As the slider moves through the forecast, a band of warmth follows the sun around the planet, and deserts swing between hot afternoons and cool nights far more than oceans do. Continental interiors in winter, such as Siberia and northern Canada, hold the lowest values on the map.",
+      "Look for the daily rhythm. As the slider moves through the forecast, a band of warmth follows the sun around the planet, and deserts swing between hot afternoons and cool nights far more than oceans do. Continental interiors in winter, such as Siberia and northern Canada, hold the lowest values outside Antarctica.",
       "The model runs four times a day. Every run covers 48 hours in steps of 3 hours, and the globe blends smoothly between those steps, so the animation looks continuous. Temperature is the starting layer of the site, which makes it a good place to learn the controls.",
     ],
     menuLabel: "Temperature", ogImage: OG, ogAlt: "Temperature map on a 3D globe",
@@ -78,7 +78,7 @@ export const PAGES: readonly PageDef[] = [
       "Each moving line on this globe follows the wind at 10 metres above the ground, the standard height for surface wind. Particles drift along the flow and leave a short trail, so fast air shows up as long, bright streaks and calm areas look almost still.",
       "Hover over the globe, or tap on a phone, to read the speed and direction of the wind at that spot. The data comes from the NOAA GFS model at 0.25 degree resolution and is updated four times a day.",
       "A few patterns are worth finding. Near the equator the trade winds blow steadily from the east. At mid-latitudes the flow turns into the strong westerlies, with waves and swirls that mark passing storms. Around the poles the circulation tightens into large vortices.",
-      "Press play on the timeline to see the next 48 hours in steps of 3 hours. The motion between steps is blended, so storms appear to travel rather than jump. If your device asks for reduced animation, the wind starts switched off, and you can turn it on from the layer menu.",
+      "Press play on the timeline to see the next 48 hours in steps of 3 hours. The motion between steps is blended, so storms appear to travel rather than jump. If your device asks for reduced animation, the wind starts switched off, and you can turn it on with the Wind switch.",
     ],
     menuLabel: "Wind", ogImage: OG, ogAlt: "Animated wind streamlines on a 3D globe",
     related: ["pressure-map", "atlantic-hurricane-map", "pacific-typhoon-map"],
@@ -106,7 +106,7 @@ export const PAGES: readonly PageDef[] = [
     summary: "Precipitation rate in millimetres per hour. Blue patches are light rain, stronger colours mean heavier downpours. Move the slider to see where the rain is heading in the next two days.",
     body: [
       "The rain layer shows the precipitation rate, in millimetres per hour, forecast by the NOAA GFS model on a 0.25 degree grid. Rain, snow and other falling water are all counted. One millimetre of rain over one hour is a light shower; ten or more is a heavy downpour.",
-      "Colours start with pale blue for drizzle and move to deeper and warmer tones as the rate rises. Areas without colour have no precipitation at that moment. Hover or tap on the globe to read the value at a point.",
+      "Colours start with pale blue for drizzle and move to deeper and warmer tones as the rate rises. Areas without colour have little or no precipitation at that moment. Hover or tap on the globe to read the value at a point.",
       "Look for the long rain bands of mid-latitude storms, the narrow ribbon of showers along the equator, and the seasonal monsoon systems over South and Southeast Asia. Dry zones, such as the Sahara and the Atacama, stay empty for days.",
       "The map is a forecast, not a radar. It shows what the model expects, and small, intense storms are smoothed out at this resolution. Each run covers 48 hours in 3-hour steps and is refreshed four times a day.",
     ],
@@ -148,7 +148,7 @@ export const PAGES: readonly PageDef[] = [
     title: "World Air Quality Map: PM2.5 Forecast on a 3D Globe",
     description: "World air quality map on a 3D globe: PM2.5 fine particles near the surface in µg/m³, with a 48-hour forecast from NOAA GEFS-Aerosols.",
     h1: "World air quality map (PM2.5)",
-    summary: "Fine particles (PM2.5) near the surface, in micrograms per cubic metre. Clean air is transparent; yellow to purple marks increasingly polluted air. Use the slider to follow smoke and haze as they drift.",
+    summary: "Fine particles (PM2.5) near the surface, in micrograms per cubic metre. Clean air is transparent; green, yellow, orange, red and purple mark increasingly polluted air. Use the slider to follow smoke and haze as they drift.",
     body: [
       "PM2.5 means particles smaller than 2.5 micrometres, small enough to be breathed deep into the lungs. This layer shows their concentration near the surface in micrograms per cubic metre, forecast by the NOAA GEFS-Aerosols model, which simulates how particles are emitted, carried and removed.",
       "Colours begin to appear above a few micrograms and climb to deep tones for very polluted air. As a rough reference, the World Health Organization recommends an annual average below 5 micrograms per cubic metre. Hover or tap to read the value at one point.",
@@ -163,7 +163,7 @@ export const PAGES: readonly PageDef[] = [
     title: "World Dust Forecast Map: Desert Dust on a 3D Globe",
     description: "World dust forecast on a 3D globe: desert dust near the surface in µg/m³ with a 48-hour forecast from NOAA GEFS-Aerosols. Follow dust plumes across oceans.",
     h1: "World dust forecast",
-    summary: "Mineral dust lifted from deserts, shown near the surface in micrograms per cubic metre. Look for plumes leaving the Sahara and the Gobi, and press play to watch them travel for days.",
+    summary: "Mineral dust lifted from deserts, shown near the surface in micrograms per cubic metre. Look for plumes leaving the Sahara and the Gobi, and press play to watch them move over the next two days.",
     body: [
       "Strong winds over bare, dry ground lift fine mineral particles into the air. This layer shows that dust near the surface in micrograms per cubic metre, forecast by the NOAA GEFS-Aerosols model on a global grid.",
       "The biggest source on Earth is the Sahara, followed by the Arabian Peninsula, central Asia and the Gobi. Dust from these regions can travel thousands of kilometres. Saharan plumes cross the Atlantic towards the Caribbean and South America, while Asian dust can reach the Pacific.",
@@ -264,7 +264,7 @@ export const PAGES: readonly PageDef[] = [
       "Antarctica is the coldest, driest and windiest continent. The globe here looks straight down at the South Pole and shows the air temperature at two metres above the ground, in degrees Celsius, from the NOAA GFS model.",
       "Find the high plateau of East Antarctica, a dome of ice more than 3,000 metres high. Its interior holds the lowest values on the map, often below minus 50 degrees in winter. The coldest air ever measured on Earth, near minus 90 degrees, was recorded on this plateau.",
       "The coast is much milder. Around the margin and over the Antarctic Peninsula, which reaches towards South America, temperatures can sit close to freezing in summer. Notice the sharp contrast between the plateau and the sea along the edge of the continent.",
-      "Because the sun never sets in summer and never rises in winter, the daily cycle that shapes other regions is almost absent here. Expect slow changes in the forecast rather than daily swings. Data is updated four times a day, with 48 hours of forecast.",
+      "Because over most of the continent the sun never sets in summer and never rises in winter, the daily cycle that shapes other regions is almost absent here. Expect slow changes in the forecast rather than daily swings. Data is updated four times a day, with 48 hours of forecast.",
     ],
     menuLabel: "Antarctica", ogImage: OG, ogAlt: "Antarctica temperature seen from above the South Pole",
     related: ["temperature-map", "arctic-temperature-map", "pressure-map"],
