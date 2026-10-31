@@ -21,10 +21,12 @@ Actions (`gdal-bin`), sauté sous Windows.
 """
 from __future__ import annotations
 
+import http.client
 import math
 import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from collections import OrderedDict
 from pathlib import Path
@@ -79,7 +81,7 @@ def granules_for(bounds: Bounds) -> list[str]:
         if wrapped not in lefts:
             lefts.append(wrapped)
         lon += GRANULE_DEG
-    return [granule_name(t, l) for t in tops for l in lefts]
+    return [granule_name(top, left) for top in tops for left in lefts]
 
 
 def parse_list(text: str, layer: str) -> set[str]:
@@ -97,25 +99,79 @@ def _is_url(base: str) -> bool:
     return base.startswith(("http://", "https://"))
 
 
-def _download(url: str, dest: Path, retries: int = 3) -> None:
-    """GET complet vers `dest`, vérifié contre Content-Length ; lève HansenReadError après `retries` essais."""
-    part = dest.with_name(dest.name + ".part")
+RETRIES = 5
+BACKOFF_CAP = 60.0  # secondes
+
+
+def backoff(attempt: int) -> float:
+    """Délai avant l'essai `attempt + 1` : 2, 4, 8, 16, 32 s… plafonné à BACKOFF_CAP."""
+    return min(BACKOFF_CAP, 2.0 * 2 ** attempt)
+
+
+class _ShortRead(OSError):
+    """Corps plus court que Content-Length : réessayé comme une coupure réseau."""
+
+
+def _with_retries(what: str, fn, *, retries: int = RETRIES, delay=backoff, sleep=time.sleep):
+    """Appelle `fn()` jusqu'à `retries` fois (erreurs réseau, 5xx, réponse tronquée).
+
+    Un 4xx (404…) lève tout de suite : réessayer ne le corrigera pas. Pas d'attente après le
+    dernier essai. `delay` et `sleep` sont injectables (tests rapides).
+    """
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
-                expected = int(r.headers.get("Content-Length", -1))
-                shutil.copyfileobj(r, f, length=1 << 22)
-            got = part.stat().st_size
-            if expected >= 0 and got != expected:
-                raise OSError(f"{got} octets reçus sur {expected}")
-            part.replace(dest)
-            return
-        except OSError as e:  # URLError, HTTPError, coupure, taille fausse
+            return fn()
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                raise HansenReadError(f"{what} : HTTP {e.code}") from e
             last = e
+        except (OSError, http.client.HTTPException) as e:  # URLError, coupure, IncompleteRead, _ShortRead
+            last = e
+        if attempt < retries - 1:
+            sleep(delay(attempt))
+    raise HansenReadError(f"{what} : échec après {retries} essais ({last!r})")
+
+
+def _download(url: str, dest: Path, **retry) -> None:
+    """GET complet vers `dest` (via `dest.part`), vérifié contre Content-Length.
+
+    Content-Length absent → HansenReadError immédiate (taille invérifiable). Le `.part` est
+    toujours supprimé en cas d'échec. `retry` : options de `_with_retries`.
+    """
+    part = dest.with_name(dest.name + ".part")
+
+    def attempt() -> None:
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                length = r.headers.get("Content-Length")
+                if length is None:
+                    raise HansenReadError(f"{url} : Content-Length absent, taille invérifiable")
+                expected = int(length)
+                with open(part, "wb") as f:
+                    shutil.copyfileobj(r, f, length=1 << 22)
+            got = part.stat().st_size
+            if got != expected:
+                raise _ShortRead(f"{got} octets reçus sur {expected}")
+            part.replace(dest)
+        finally:
             part.unlink(missing_ok=True)
-            time.sleep(2 * (attempt + 1))
-    raise HansenReadError(f"téléchargement impossible : {url} ({last})")
+
+    _with_retries(f"téléchargement {url}", attempt, **retry)
+
+
+def _fetch_text(url: str, **retry) -> str:
+    """Petit fichier texte (listes officielles) avec les mêmes essais que les dalles."""
+
+    def attempt() -> str:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            length = r.headers.get("Content-Length")
+            body = r.read()
+        if length is not None and len(body) != int(length):
+            raise _ShortRead(f"{len(body)} octets reçus sur {length}")
+        return body.decode("utf-8")
+
+    return _with_retries(f"lecture {url}", attempt, **retry)
 
 
 class HansenBackend:
@@ -130,18 +186,20 @@ class HansenBackend:
     """
 
     def __init__(self, work_dir: Path, base: str = HANSEN_BASE,
-                 available: dict[str, set[str]] | None = None, max_cached: int = 8) -> None:
+                 available: dict[str, set[str]] | None = None, max_cached: int = 8,
+                 sleep=time.sleep) -> None:
         self.work = Path(work_dir)
         self.work.mkdir(parents=True, exist_ok=True)
         self.base = base if not _is_url(base) or base.endswith("/") else base + "/"
         self.max_cached = max_cached
         self._cache: OrderedDict[Path, None] = OrderedDict()
-        self.available = available if available is not None else {l: self._load_list(l) for l in LAYERS}
+        self._sleep = sleep  # injectable : attentes entre essais réseau (tests rapides)
+        self.available = (available if available is not None
+                          else {layer: self._load_list(layer) for layer in LAYERS})
 
     def _load_list(self, layer: str) -> set[str]:
         if _is_url(self.base):
-            with urllib.request.urlopen(f"{self.base}{layer}.txt", timeout=60) as r:
-                text = r.read().decode("utf-8")
+            text = _fetch_text(f"{self.base}{layer}.txt", sleep=self._sleep)
         else:
             text = (Path(self.base) / f"{layer}.txt").read_text(encoding="utf-8")
         names = parse_list(text, layer)
@@ -167,7 +225,7 @@ class HansenBackend:
             if old not in keep:
                 old.unlink(missing_ok=True)
                 del self._cache[old]
-        _download(self.base + fname, path)
+        _download(self.base + fname, path, sleep=self._sleep)
         self._cache[path] = None
         return path
 
@@ -216,6 +274,8 @@ class HansenBackend:
         for p in self._cache:
             p.unlink(missing_ok=True)
         self._cache.clear()
+        for p in self.work.glob("*.part"):  # restes d'un téléchargement interrompu
+            p.unlink(missing_ok=True)
 
     def __enter__(self) -> "HansenBackend":
         return self

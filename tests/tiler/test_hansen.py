@@ -6,6 +6,8 @@ tournent sur Actions (gdal-bin installé) et sont sautés sans GDAL (Windows). A
 """
 import shutil
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 import pytest
@@ -163,6 +165,32 @@ def test_read_block_straddling_two_granules(tmp_path, pair):
 
 
 @needs_gdal
+def test_read_block_seam_is_pixel_exact(tmp_path):
+    # Valeurs distinctes par colonne (couvert) et par ligne (perte) : un décalage d'un pixel à la
+    # jointure ou en latitude ferait échouer le test (règle R1 : grille exacte du bloc).
+    src = tmp_path / "hansen"
+    src.mkdir()
+    cols = np.arange(40, dtype=np.uint8)
+    rows = np.arange(40, dtype=np.uint8)[:, None]
+    _granule(src, "treecover2000", "10N_000E", np.broadcast_to(100 + cols, (40, 40)))  # 100..139
+    _granule(src, "treecover2000", "10N_010E", np.broadcast_to(150 + cols, (40, 40)))  # 150..189
+    _granule(src, "lossyear", "10N_000E", np.broadcast_to(1 + rows, (40, 40)))         # 1..40
+    _granule(src, "lossyear", "10N_010E", np.broadcast_to(101 + rows, (40, 40)))       # 101..140
+    names = {"10N_000E", "10N_010E"}
+    be = hansen.HansenBackend(tmp_path / "work", base=str(src),
+                              available={"treecover2000": set(names), "lossyear": set(names)})
+    # lon 9..11, lat 5..7 à 0,25°/px (résolution native des dalles synthétiques) : 8 × 8 px
+    cover, year = be.read_block(Bounds(9, 11, 5, 7), 4, 4, 2)
+    # Colonnes : lon 9..10 = colonnes 36..39 de l'ouest ; lon 10..11 = colonnes 0..3 de l'est
+    expected_cols = np.array([136, 137, 138, 139, 150, 151, 152, 153], np.uint8)
+    assert (cover == expected_cols[None, :]).all()
+    # Lignes : lat 7..5 = lignes 12..19 des dalles (ligne 0 = lat 10..9,75)
+    expected_rows = np.arange(13, 21, dtype=np.uint8)
+    assert (year[:, :4] == expected_rows[:, None]).all()
+    assert (year[:, 4:] == 100 + expected_rows[:, None]).all()
+
+
+@needs_gdal
 def test_read_block_mixes_absent_granule_as_zeros(tmp_path, pair):
     src, available = pair
     be = hansen.HansenBackend(tmp_path / "work", base=str(src), available=available)
@@ -199,7 +227,7 @@ def test_download_cache_is_bounded_and_keeps_current_block(tmp_path, monkeypatch
     # et n'évince jamais une dalle du bloc en cours.
     got = []
 
-    def fake_download(url, dest, retries=3):
+    def fake_download(url, dest, **retry):
         got.append(url.rsplit("/", 1)[-1])
         dest.write_bytes(b"x")
 
@@ -218,3 +246,121 @@ def test_download_cache_is_bounded_and_keeps_current_block(tmp_path, monkeypatch
     assert got.count(hansen.file_name("lossyear", "10N_000E")) == 1
     be.close()
     assert not list(work.glob("*.tif"))
+
+
+# --- Téléchargement réel sur un serveur HTTP local (127.0.0.1, aucun réseau externe) -----------
+
+BODY = bytes(range(256)) * 40  # 10 240 octets
+
+
+class _Handler(BaseHTTPRequestHandler):
+    hits: dict = {}
+
+    def log_message(self, *args):  # silence
+        pass
+
+    def do_GET(self):
+        n = self.hits[self.path] = self.hits.get(self.path, 0) + 1
+        if self.path == "/full.tif" or (self.path == "/flaky.tif" and n > 1):
+            self._send(200, BODY, len(BODY))
+        elif self.path == "/flaky.tif" or self.path == "/down.tif":
+            self._send(500, b"oops", 4)
+        elif self.path == "/short.tif":
+            self._send(200, BODY[:100], len(BODY))  # Content-Length > corps, puis fermeture
+        elif self.path == "/nolen.tif":
+            self._send(200, BODY, None)  # HTTP/1.0 : corps délimité par la fermeture
+        elif self.path in ("/treecover2000.txt", "/lossyear.txt"):
+            layer = self.path[1:-4]
+            if n == 1:
+                self._send(503, b"busy", 4)
+            else:
+                self._send(200, (f"http://x/{hansen.file_name(layer, '00N_060W')}" + chr(10)).encode(), None)
+        else:
+            self._send(404, b"no", 2)
+
+    def _send(self, code, body, length):
+        self.send_response(code)
+        if length is not None:
+            self.send_header("Content-Length", str(length))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def server():
+    _Handler.hits = {}
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def _no_sleep(record):
+    return lambda s: record.append(s)
+
+
+def test_download_complete_file(tmp_path, server):
+    dest = tmp_path / "full.tif"
+    hansen._download(f"{server}/full.tif", dest, sleep=_no_sleep([]))
+    assert dest.read_bytes() == BODY
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_download_truncated_raises_and_leaves_no_part(tmp_path, server):
+    waits = []
+    dest = tmp_path / "short.tif"
+    with pytest.raises(hansen.HansenReadError):
+        hansen._download(f"{server}/short.tif", dest, sleep=_no_sleep(waits))
+    assert not dest.exists() and not list(tmp_path.glob("*.part"))
+    assert _Handler.hits["/short.tif"] == hansen.RETRIES  # réessayé
+    assert waits == [2.0, 4.0, 8.0, 16.0]  # pas d'attente après le dernier essai
+
+
+def test_download_one_failure_then_success(tmp_path, server):
+    waits = []
+    dest = tmp_path / "flaky.tif"
+    hansen._download(f"{server}/flaky.tif", dest, sleep=_no_sleep(waits))
+    assert dest.read_bytes() == BODY
+    assert _Handler.hits["/flaky.tif"] == 2 and waits == [2.0]
+
+
+def test_download_4xx_is_not_retried(tmp_path, server):
+    waits = []
+    with pytest.raises(hansen.HansenReadError, match="404"):
+        hansen._download(f"{server}/missing.tif", tmp_path / "m.tif", sleep=_no_sleep(waits))
+    assert _Handler.hits["/missing.tif"] == 1 and waits == []
+    assert not list(tmp_path.glob("*"))
+
+
+def test_download_5xx_exhausts_retries(tmp_path, server):
+    with pytest.raises(hansen.HansenReadError):
+        hansen._download(f"{server}/down.tif", tmp_path / "d.tif", sleep=_no_sleep([]))
+    assert _Handler.hits["/down.tif"] == hansen.RETRIES
+
+
+def test_download_without_content_length_raises(tmp_path, server):
+    with pytest.raises(hansen.HansenReadError, match="Content-Length"):
+        hansen._download(f"{server}/nolen.tif", tmp_path / "n.tif", sleep=_no_sleep([]))
+    assert _Handler.hits["/nolen.tif"] == 1
+    assert not list(tmp_path.glob("*"))
+
+
+def test_backoff_is_exponential_and_capped():
+    assert [hansen.backoff(a) for a in range(7)] == [2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
+
+
+def test_official_lists_are_retried(tmp_path, server):
+    waits = []
+    be = hansen.HansenBackend(tmp_path / "work", base=server, sleep=_no_sleep(waits))
+    assert be.available == {"treecover2000": {"00N_060W"}, "lossyear": {"00N_060W"}}
+    assert _Handler.hits["/treecover2000.txt"] == 2 and _Handler.hits["/lossyear.txt"] == 2
+    assert waits == [2.0, 2.0]
+
+
+def test_close_removes_leftover_part_files(tmp_path):
+    be = hansen.HansenBackend(tmp_path / "work", available={"treecover2000": set(), "lossyear": set()})
+    (tmp_path / "work" / "x.tif.part").write_bytes(b"x")
+    be.close()
+    assert not list((tmp_path / "work").glob("*.part"))
