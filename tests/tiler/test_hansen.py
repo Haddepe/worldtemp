@@ -192,3 +192,29 @@ def test_read_block_truncated_granule_raises(tmp_path, pair):
     be = hansen.HansenBackend(tmp_path / "work", base=str(src), available=available)
     with pytest.raises(hansen.HansenReadError):
         be.read_block(Bounds(8, 12, 0, 10), 4, 10, 2)
+
+
+def test_download_cache_is_bounded_and_keeps_current_block(tmp_path, monkeypatch):
+    # Téléchargement simulé (aucun réseau) : le cache LRU ne garde que max_cached dalles sur disque
+    # et n'évince jamais une dalle du bloc en cours.
+    got = []
+
+    def fake_download(url, dest, retries=3):
+        got.append(url.rsplit("/", 1)[-1])
+        dest.write_bytes(b"x")
+
+    monkeypatch.setattr(hansen, "_download", fake_download)
+    be = hansen.HansenBackend(tmp_path / "work", available={"treecover2000": set(), "lossyear": set()}, max_cached=2)
+    work = tmp_path / "work"
+    keep = {work / hansen.file_name("lossyear", n) for n in ("00N_000E", "00N_010E", "00N_020E")}
+    for n in ("00N_000E", "00N_010E", "00N_020E"):
+        be._fetch("lossyear", n, keep)
+    assert len(list(work.glob("*.tif"))) == 3  # bloc en cours : rien d'évincé
+    be._fetch("lossyear", "10N_000E", {work / hansen.file_name("lossyear", "10N_000E")})
+    # Les plus anciennes sont évincées jusqu'à revenir à max_cached
+    assert sorted(p.name for p in work.glob("*.tif")) == sorted(
+        hansen.file_name("lossyear", n) for n in ("00N_020E", "10N_000E"))
+    be._fetch("lossyear", "10N_000E", set())  # déjà en cache : pas de second téléchargement
+    assert got.count(hansen.file_name("lossyear", "10N_000E")) == 1
+    be.close()
+    assert not list(work.glob("*.tif"))
