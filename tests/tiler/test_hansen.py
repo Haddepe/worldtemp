@@ -259,9 +259,13 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # silence
         pass
 
+    files: dict = {}  # chemin -> corps servi en 200 (dalles des tests R6)
+
     def do_GET(self):
         n = self.hits[self.path] = self.hits.get(self.path, 0) + 1
-        if self.path == "/full.tif" or (self.path == "/flaky.tif" and n > 1):
+        if self.path in self.files:
+            self._send(200, self.files[self.path], len(self.files[self.path]))
+        elif self.path == "/full.tif" or (self.path == "/flaky.tif" and n > 1):
             self._send(200, BODY, len(BODY))
         elif self.path == "/flaky.tif" or self.path == "/down.tif":
             self._send(500, b"oops", 4)
@@ -289,6 +293,7 @@ class _Handler(BaseHTTPRequestHandler):
 @pytest.fixture
 def server():
     _Handler.hits = {}
+    _Handler.files = {}
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -364,3 +369,91 @@ def test_close_removes_leftover_part_files(tmp_path):
     (tmp_path / "work" / "x.tif.part").write_bytes(b"x")
     be.close()
     assert not list((tmp_path / "work").glob("*.part"))
+
+
+# --- R6 : dalle listée mais absente du serveur (HTTP 404) -------------------------------------
+# Une dalle listée qui répond 404 n'est traitée comme vide (zéros) que si elle ne peut pas cacher
+# de forêt ; tout autre échec lève toujours. Téléchargements réels sur le serveur local ; le
+# gdalwarp est simulé (valeur constante lue dans le fichier téléchargé) pour tourner sans GDAL.
+
+R6 = "00N_000E"  # dalle testée : lon 0..10, lat -10..0
+R6_BOUNDS = Bounds(2, 4, -4, -2)  # bloc entièrement dans la dalle
+
+
+def _r6_backend(tmp_path, server, files):
+    """`files` : {couche: octet constant servi} ; une couche absente de `files` répond 404."""
+    for layer, value in files.items():
+        _Handler.files[f"/{hansen.file_name(layer, R6)}"] = bytes([value]) * 16
+    be = hansen.HansenBackend(tmp_path / "work", base=server + "/",
+                              available={layer: {R6} for layer in hansen.LAYERS}, sleep=_no_sleep([]))
+    be._warp = lambda sources, bounds, w, h, layer: np.full((h, w), sources[0].read_bytes()[0], np.uint8)
+    return be
+
+
+def test_r6_both_layers_404_is_absent_with_warning(tmp_path, server):
+    be = _r6_backend(tmp_path, server, {})
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert not cover.any() and not loss.any()
+    assert be.missing == {("treecover2000", R6), ("lossyear", R6)}
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)  # mémorisé : pas de second GET
+    assert _Handler.hits[f"/{hansen.file_name('lossyear', R6)}"] == 1
+
+
+def test_r6_lossyear_404_without_forest_is_zero_loss(tmp_path, server):
+    be = _r6_backend(tmp_path, server, {"treecover2000": 29})  # sous le seuil : pas de forêt
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert (cover == 29).all() and not loss.any()
+    assert be.missing == {("lossyear", R6)}
+
+
+def test_r6_lossyear_404_with_forest_raises(tmp_path, server):
+    be = _r6_backend(tmp_path, server, {"treecover2000": 30})  # forêt : des pertes disparaîtraient
+    with pytest.raises(hansen.HansenReadError, match="lossyear"):
+        be.read_block(R6_BOUNDS, 2, 2, 2)
+
+
+def test_r6_treecover_404_with_loss_raises(tmp_path, server):
+    be = _r6_backend(tmp_path, server, {"lossyear": 5})
+    with pytest.raises(hansen.HansenReadError, match="treecover2000"):
+        be.read_block(R6_BOUNDS, 2, 2, 2)
+
+
+def test_r6_treecover_404_without_loss_is_zero_cover(tmp_path, server):
+    be = _r6_backend(tmp_path, server, {"lossyear": 0})
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert not cover.any() and not loss.any()
+    assert be.missing == {("treecover2000", R6)}
+
+
+def test_r6_forest_check_is_limited_to_the_missing_granule(tmp_path, server):
+    # Bloc à cheval sur 2 dalles : forêt dans la voisine (lisible), perte absente (404) dans R6
+    # sans forêt sur sa partie du bloc → zéros de perte pour R6 seulement, pas d'erreur.
+    east = "00N_010E"
+    _Handler.files[f"/{hansen.file_name('treecover2000', R6)}"] = bytes([0]) * 16
+    _Handler.files[f"/{hansen.file_name('treecover2000', east)}"] = bytes([80]) * 16
+    _Handler.files[f"/{hansen.file_name('lossyear', east)}"] = bytes([7]) * 16
+    be = hansen.HansenBackend(tmp_path / "work", base=server + "/",
+                              available={layer: {R6, east} for layer in hansen.LAYERS}, sleep=_no_sleep([]))
+
+    def warp(sources, bounds, w, h, layer):  # moitié ouest = R6, moitié est = voisine
+        out = np.zeros((h, w), np.uint8)
+        for src in sources:
+            v = src.read_bytes()[0]
+            if east in src.name:
+                out[:, w // 2:] = v
+            else:
+                out[:, : w // 2] = v
+        return out
+
+    be._warp = warp
+    cover, loss = be.read_block(Bounds(9, 11, -4, -2), 2, 2, 2)
+    assert (loss[:, 2:] == 7).all() and not loss[:, :2].any()
+    assert be.missing == {("lossyear", R6)}
+
+
+def test_r6_server_error_still_raises(tmp_path, server, monkeypatch):
+    be = _r6_backend(tmp_path, server, {})
+    monkeypatch.setattr(hansen, "_download", lambda url, dest, **kw: (_ for _ in ()).throw(
+        hansen.HansenReadError(f"téléchargement {url} : échec après 5 essais")))
+    with pytest.raises(hansen.HansenReadError, match="échec après"):
+        be.read_block(R6_BOUNDS, 2, 2, 2)

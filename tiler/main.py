@@ -509,6 +509,9 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             print(f"dalles Hansen : {backend.downloads} téléchargements, {backend.downloaded_bytes} octets "
                   f"(cache {backend.max_cached} fichiers)")
+            miss = sorted(backend.missing)
+            print(f"dalles absentes (404, traitées comme vides, R6) : {len(miss)}"
+                  + (" — " + ", ".join(f"{layer} {n}" for layer, n in miss) if miss else ""))
             backend.close()  # dalles téléchargées supprimées, même en cas d'échec
         _print_forest_sizes(a.box, index, sizes, a.sample)
         return 0

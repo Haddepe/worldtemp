@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .forest import FOREST_THRESHOLD
 from .grid import Bounds
 
 HANSEN_BASE = "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2024-v1.12/"
@@ -47,6 +48,10 @@ GRANULE_DEG = 10
 
 class HansenReadError(RuntimeError):
     """Dalle officielle illisible (téléchargement incomplet, GeoTIFF corrompu, erreur GDAL)."""
+
+
+class GranuleNotFound(HansenReadError):
+    """Dalle listée à laquelle le serveur répond 404 (définitif) : voir la règle R6 de `read_block`."""
 
 
 def granule_name(lat_top: int, lon_left: int) -> str:
@@ -123,6 +128,8 @@ def _with_retries(what: str, fn, *, retries: int = RETRIES, delay=backoff, sleep
         try:
             return fn()
         except urllib.error.HTTPError as e:
+            if e.code == 404:
+                raise GranuleNotFound(f"{what} : HTTP 404") from e
             if 400 <= e.code < 500:
                 raise HansenReadError(f"{what} : HTTP {e.code}") from e
             last = e
@@ -193,6 +200,7 @@ class HansenBackend:
         self.base = base if not _is_url(base) or base.endswith("/") else base + "/"
         self.max_cached = max_cached
         self._cache: OrderedDict[Path, None] = OrderedDict()
+        self.missing: set[tuple[str, str]] = set()  # (couche, dalle) listées mais 404 (R6)
         self.downloads = 0  # nombre de GET de dalles et octets reçus (mesure sur Actions)
         self.downloaded_bytes = 0
         self._sleep = sleep  # injectable : attentes entre essais réseau (tests rapides)
@@ -257,21 +265,55 @@ class HansenBackend:
                 p.unlink(missing_ok=True)
 
     def read_block(self, bounds: Bounds, width: int, height: int, factor: int) -> tuple[np.ndarray, np.ndarray]:
-        """(couvert, année) de forme (height·factor, width·factor) sur la grille exacte de `bounds`."""
+        """(couvert, année) de forme (height·factor, width·factor) sur la grille exacte de `bounds`.
+
+        Règle R6 : une dalle listée qui répond 404 n'est traitée comme vide (zéros) que si elle ne
+        peut pas cacher de forêt, vérifié sur sa partie du bloc : les 2 couches 404 → zéros ;
+        `lossyear` seul 404 → lève s'il y a de la forêt (couvert ≥ FOREST_THRESHOLD) ;
+        `treecover2000` seul 404 → lève s'il y a une perte. Tout autre échec lève toujours.
+        """
         if bounds.lon_min < -180 or bounds.lon_max > 180:
             raise ValueError("bloc au-delà de l'antiméridien : découper en [-180, 180] avant read_block")
         w, h = width * factor, height * factor
         names = granules_for(bounds)
         out = []
+        absent: dict[str, set[str]] = {}
         for layer in LAYERS:
             present = [n for n in names if n in self.available[layer]]
-            if not present:
-                out.append(np.zeros((h, w), np.uint8))
-                continue
             keep = {self.work / file_name(layer, n) for n in present}
-            paths = [self._fetch(layer, n, keep) for n in present]
-            out.append(self._warp(paths, bounds, w, h, layer))
-        return out[0], out[1]
+            paths = []
+            for n in present:
+                if (layer, n) in self.missing:
+                    continue
+                try:
+                    paths.append(self._fetch(layer, n, keep))
+                except GranuleNotFound as e:
+                    print(f"avertissement : dalle listée absente du serveur (404), {layer} {n} : {e}")
+                    self.missing.add((layer, n))
+            absent[layer] = {n for n in present if (layer, n) in self.missing}
+            out.append(self._warp(paths, bounds, w, h, layer) if paths else np.zeros((h, w), np.uint8))
+        cover, loss = out
+        only_loss = absent["lossyear"] - absent["treecover2000"]
+        only_cover = absent["treecover2000"] - absent["lossyear"]
+        for n in sorted(only_loss):
+            if (cover[self._window(n, bounds, w, h)] >= FOREST_THRESHOLD).any():
+                raise HansenReadError(f"lossyear {n} absent (404) sur une zone de forêt : pertes perdues")
+        for n in sorted(only_cover):
+            if loss[self._window(n, bounds, w, h)].any():
+                raise HansenReadError(f"treecover2000 {n} absent (404) sur une zone de pertes")
+        return cover, loss
+
+    @staticmethod
+    def _window(name: str, bounds: Bounds, w: int, h: int) -> tuple[slice, slice]:
+        """Pixels du bloc couverts par la dalle `name` (10° × 10°, coin haut-gauche dans le nom)."""
+        top = int(name[:2]) * (1 if name[2] == "N" else -1)
+        left = int(name[4:7]) * (1 if name[7] == "E" else -1)
+        sx, sy = w / bounds.width, h / bounds.height
+        c0 = max(0, math.floor((left - bounds.lon_min) * sx))
+        c1 = min(w, math.ceil((left + GRANULE_DEG - bounds.lon_min) * sx))
+        r0 = max(0, math.floor((bounds.lat_max - top) * sy))
+        r1 = min(h, math.ceil((bounds.lat_max - (top - GRANULE_DEG)) * sy))
+        return slice(r0, r1), slice(c0, c1)
 
     def close(self) -> None:
         """Supprime les dalles téléchargées (dossier de travail des runners ≈ 14 Go)."""

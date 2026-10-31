@@ -22,6 +22,7 @@ class FakeHansen:
         self.fail_at = fail_at
         self.closed = False
         self.downloads = self.downloaded_bytes = self.max_cached = 0
+        self.missing = set()
 
     def read_block(self, bounds, width, height, factor):
         self.calls.append((bounds, width, height, factor))

@@ -107,7 +107,7 @@ jobs:
             grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
             echo "- pic de disque : $(cat disk-peak-mb) Mo"
             echo "- tuiles : $(du -sh out/forest | cut -f1)"
-            grep -h "dalles Hansen\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
+            grep -h "dalles Hansen\|dalles absentes\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sample != '' }}
