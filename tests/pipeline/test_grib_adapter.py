@@ -146,7 +146,7 @@ def test_decode_snow_layers_from_real_file():
         lo, hi = float(fields[s.id].values.min()), float(fields[s.id].values.max())
         assert s.plausible[0] <= lo <= hi <= s.plausible[1], (s.id, lo, hi)
     cp = fields["cpofp"].values
-    assert -50 <= float(cp.min()) and float(cp.max()) <= 100
+    assert -50.001 <= float(cp.min()) and float(cp.max()) <= 100.001  # -50 : sentinelle « pas de précip. »
     # Mesure demandée par la spec §6 (borne de snow_depth), lue dans le log Actions.
     f = fields["snow_depth"]
     lat, lon, v = f.lat[:, None], f.lon[None, :], f.values
