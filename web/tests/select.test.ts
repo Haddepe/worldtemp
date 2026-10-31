@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseForecast } from "../src/data/manifest";
 import { LAYERS } from "../src/layers/registry";
-import { DEFAULT_LAYER, availableModes, layerModes, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
+import { DEFAULT_LAYER, availableModes, failureFallback, layerModes, menuEntries, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
 import { FORECAST } from "./fixtures";
 
 const M = parseForecast(FORECAST);
@@ -72,6 +72,21 @@ describe("modes de couche (neige)", () => {
     expect(availableModes("snowfall", ["snowfall"], LAYERS)).toEqual([]);
     expect(availableModes("temp", ["temp"], LAYERS)).toEqual([]);
     expect(availableModes(null, ["snowfall", "snow_depth"], LAYERS)).toEqual([]);
+  });
+  it("menuEntries : une entrée par base, ordre du registre, présente si la base ou un mode est au manifeste", () => {
+    const only = (ids: string[]) => ({ layers: Object.fromEntries(ids.map((id) => [id, M.layers.temp!])) });
+    expect(menuEntries(LAYERS, only(["temp", "snow_depth", "rain"])).map((d) => d.id)).toEqual(["temp", "rain", "snowfall"]);
+    expect(menuEntries(LAYERS, only(["snowfall", "snow_depth"])).map((d) => d.id)).toEqual(["snowfall"]);
+    expect(menuEntries(LAYERS, only(["temp"])).map((d) => d.id)).toEqual(["temp"]);
+  });
+  it("failureFallback : le mode voisin disponible d'abord, sinon la couche précédente, sinon aucune", () => {
+    expect(failureFallback("snowfall", "temp", ["temp", "snow_depth"], LAYERS)).toBe("snow_depth");
+    expect(failureFallback("snow_depth", "snowfall", ["temp", "snowfall"], LAYERS)).toBe("snowfall");
+    expect(failureFallback("snowfall", "temp", ["temp"], LAYERS)).toBe("temp");
+    expect(failureFallback("rain", "temp", ["temp"], LAYERS)).toBe("temp");
+    expect(failureFallback("rain", "temp", [], LAYERS)).toBeNull(); // précédente en échec
+    expect(failureFallback("rain", "rain", ["temp"], LAYERS)).toBeNull();
+    expect(failureFallback("rain", null, ["temp"], LAYERS)).toBeNull();
   });
   it("parseLayerParam accepte un mode", () => {
     expect(parseLayerParam("?layer=snow_depth", [...LAYERS.map((d) => d.id)])).toBe("snow_depth");

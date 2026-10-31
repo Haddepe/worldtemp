@@ -60,3 +60,18 @@ export function availableModes(id: string | null, available: readonly string[], 
   const modes = layerModes(id, defs).filter((d) => available.includes(d.id));
   return modes.length >= 2 ? modes : [];
 }
+
+/** Entrées du menu (ordre du registre) : chaque base dont la base ou un mode est au manifeste —
+ * « Snow » reste joignable quand seul `snow_depth` est publié. */
+export function menuEntries(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">): LayerDef[] {
+  const ids = orderedLayers(defs, manifest).map((d) => d.id);
+  return menuLayers(defs).filter((d) => menuTarget(d.id, ids, defs) !== null);
+}
+
+/** Couche de repli après l'échec de `id` (`available` exclut déjà les couches en échec) : le mode
+ * voisin disponible (Snowfall en échec → Depth), sinon la couche précédente si disponible, sinon aucune. */
+export function failureFallback(id: string, previous: string | null, available: readonly string[], defs: readonly LayerDef[]): string | null {
+  const sibling = menuTarget(menuKey(id, defs)!, available, defs);
+  if (sibling !== null && sibling !== id) return sibling;
+  return previous !== null && previous !== id && available.includes(previous) ? previous : null;
+}

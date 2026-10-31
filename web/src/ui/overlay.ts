@@ -66,8 +66,8 @@ export function createOverlay(): Overlay {
     labels,
     panelRects() {
       const rects: { x0: number; y0: number; x1: number; y1: number }[] = [];
-      // #layer-modes : hors du cadre de la légende sur mobile (positionné sous elle).
-      for (const el of overlay.querySelectorAll<HTMLElement>(".panel, #attribution, #layer-modes")) {
+      // #layer-modes, #legend .note : hors du cadre de la légende sur mobile (sous et au-dessus d'elle).
+      for (const el of overlay.querySelectorAll<HTMLElement>(".panel, #attribution, #layer-modes, #legend .note")) {
         const r = el.getBoundingClientRect(); // masqué (`hidden`, replié) = rectangle vide
         if (r.width > 0 && r.height > 0) rects.push({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom });
       }
@@ -92,11 +92,12 @@ export function createOverlay(): Overlay {
         .map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${t.label}</span>`)
         .join("");
       const iso = def.isoStep !== null ? ` · ${STRINGS.legend.isolines} ${def.isoStep} ${def.unit}` : "";
-      const extra = note ? ` · ${note}` : "";
+      // Séparateur à part : sur mobile la note quitte le titre (au-dessus de la légende verticale).
+      const extra = note ? `<span class="note-sep"> · </span><span class="note">${note}</span>` : "";
       // Le corps seul est réécrit : le sélecteur de mode (#layer-modes), frère du corps, garde ses boutons et le focus.
       legendBody.innerHTML =
         // Orientation choisie par le CSS (`--stops`, `--pct`) : horizontale, ou verticale sur mobile.
-        `<div class="title"><span class="name">${legendName(def)} · </span><span class="unit">${def.unit}</span><span class="note">${extra}</span><span class="iso">${iso}</span></div>` +
+        `<div class="title"><span class="name">${legendName(def)} · </span><span class="unit">${def.unit}</span>${extra}<span class="iso">${iso}</span></div>` +
         `<div class="bar" style="--stops:${legendStopsCss(def, enc)}"></div>` +
         `<div class="ticks">${ticks}</div>` +
         `<div class="extremes"><span>${STRINGS.legend.min} ${def.format(stats.min)}</span><span>${STRINGS.legend.max} ${def.format(stats.max)}</span></div>`;

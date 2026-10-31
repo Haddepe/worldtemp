@@ -14,7 +14,7 @@ import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
-import { availableModes, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam } from "./layers/select";
+import { availableModes, failureFallback, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam } from "./layers/select";
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
 import { pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildLut, createLutTexture } from "./render/colormap";
@@ -311,7 +311,7 @@ async function boot(): Promise<void> {
     const m = manifests.manifest;
     if (!m) return;
     const available = availableIds();
-    for (const d of menuLayers(orderedLayers(LAYERS, m))) menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+    for (const d of menuEntries(LAYERS, m)) menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
   };
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
@@ -782,8 +782,10 @@ async function boot(): Promise<void> {
       console.warn(`[worldtemp] layer ${id} unavailable:`, lastError);
       failed.set(id!, { generatedAt: entry.generated_at, at: Date.now() });
       syncMenuDisabled();
-      const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
-      await activate(fallback, fromUser, false, keepPage);
+      // Mode voisin d'abord (Snowfall en échec → Depth) : c'est un changement de mode, la page reste.
+      const fallback = failureFallback(id!, previous, availableIds(), LAYERS);
+      const sibling = fallback !== null && menuKey(fallback, LAYERS) === menuKey(id, LAYERS);
+      await activate(fallback, fromUser, false, keepPage || sibling);
       layerNotice = STRINGS.status.layerUnavailable;
       refreshBanner();
       return;
@@ -882,7 +884,7 @@ async function boot(): Promise<void> {
           windSet.setFrames(framesKey(fresh.layers["wind_u"]!), fresh.layers["wind_u"]!.frames);
         }
         const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
-        menu.setLayers(menuLayers(defs)); // une entrée par couche de base : les modes passent par le sélecteur
+        menu.setLayers(menuEntries(LAYERS, fresh)); // une entrée par couche de base : les modes passent par le sélecteur
         syncMenuDisabled();
         const available = defs.map((d) => d.id).filter((id) => !failed.has(id));
         const firstLoad = !hadManifest;
