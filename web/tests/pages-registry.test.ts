@@ -7,13 +7,13 @@ const mots = (p: PageDef) => p.body.join(" ").split(/\s+/).filter(Boolean).lengt
 const textes = (p: PageDef) => [p.title, p.description, p.h1, p.summary, p.menuLabel, p.ogAlt, ...p.body];
 
 describe("registre des pages — lot G", () => {
-  it("21 pages, slugs uniques, accueil en tête", () => {
-    expect(PAGES).toHaveLength(21);
+  it("25 pages, slugs uniques, accueil en tête", () => {
+    expect(PAGES).toHaveLength(25);
     expect(PAGES[0]!.kind).toBe("home");
-    expect(new Set(PAGES.map((p) => p.slug)).size).toBe(21);
-    expect(PAGES.filter((p) => p.kind === "layer")).toHaveLength(9);
-    expect(PAGES.filter((p) => p.kind === "region")).toHaveLength(11);
-    for (const s of ["snow-map", "alps-snow-forecast", "rocky-mountains-snow-forecast", "japan-snow-forecast"]) expect(PAGES.some((p) => p.slug === s), s).toBe(true);
+    expect(new Set(PAGES.map((p) => p.slug)).size).toBe(25);
+    expect(PAGES.filter((p) => p.kind === "layer")).toHaveLength(10);
+    expect(PAGES.filter((p) => p.kind === "region")).toHaveLength(14);
+    for (const s of ["snow-map", "alps-snow-forecast", "rocky-mountains-snow-forecast", "japan-snow-forecast", "deforestation-map", "amazon-deforestation-map", "borneo-deforestation-map", "congo-basin-deforestation-map"]) expect(PAGES.some((p) => p.slug === s), s).toBe(true);
     expect(SITE).toBe("https://globelayers.com");
   });
 
@@ -26,7 +26,7 @@ describe("registre des pages — lot G", () => {
       expect(p.description.length, p.slug).toBeGreaterThanOrEqual(80);
       expect(p.description.length, p.slug).toBeLessThanOrEqual(160);
     }
-    expect(new Set(PAGES.map((p) => p.title)).size).toBe(21);
+    expect(new Set(PAGES.map((p) => p.title)).size).toBe(25);
   });
 
   it("Read more : 150 à 300 mots, textes distincts", () => {
