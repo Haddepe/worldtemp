@@ -457,3 +457,39 @@ def test_r6_server_error_still_raises(tmp_path, server, monkeypatch):
         hansen.HansenReadError(f"téléchargement {url} : échec après 5 essais")))
     with pytest.raises(hansen.HansenReadError, match="échec après"):
         be.read_block(R6_BOUNDS, 2, 2, 2)
+
+
+# --- R7 : repli lossyear v1.11 quand la dalle v1.12 manque sur une zone de forêt ---------------
+
+def _r7_backend(tmp_path, server, cover, fallback_loss=None):
+    _Handler.files[f"/{hansen.file_name('treecover2000', R6)}"] = bytes([cover]) * 16
+    if fallback_loss is not None:
+        _Handler.files[f"/v111/{hansen.fallback_file_name('lossyear', R6)}"] = bytes([fallback_loss]) * 16
+    be = hansen.HansenBackend(tmp_path / "work", base=server + "/", fallback_base=server + "/v111",
+                              available={layer: {R6} for layer in hansen.LAYERS}, sleep=_no_sleep([]))
+    be._warp = lambda sources, bounds, w, h, layer: np.full((h, w), sources[0].read_bytes()[0], np.uint8)
+    return be
+
+
+def test_r7_lossyear_404_over_forest_uses_v111(tmp_path, server):
+    be = _r7_backend(tmp_path, server, cover=80, fallback_loss=12)
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert (cover == 80).all() and (loss == 12).all()  # données v1.11
+    assert be.fallback == {R6}
+    be.read_block(R6_BOUNDS, 2, 2, 2)  # 2e bloc : repli direct, ni nouveau 404 ni nouveau GET
+    assert _Handler.hits[f"/{hansen.file_name('lossyear', R6)}"] == 1
+    assert _Handler.hits[f"/v111/{hansen.fallback_file_name('lossyear', R6)}"] == 1
+
+
+def test_r7_lossyear_404_without_forest_needs_no_fallback(tmp_path, server):
+    be = _r7_backend(tmp_path, server, cover=10, fallback_loss=12)
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert not loss.any() and be.fallback == set()
+    assert f"/v111/{hansen.fallback_file_name('lossyear', R6)}" not in _Handler.hits
+
+
+def test_r7_both_versions_404_over_forest_raises(tmp_path, server):
+    be = _r7_backend(tmp_path, server, cover=80)
+    with pytest.raises(hansen.HansenReadError, match="v1.11"):
+        be.read_block(R6_BOUNDS, 2, 2, 2)
+    assert be.fallback == set()

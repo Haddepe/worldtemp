@@ -114,13 +114,15 @@ def write_forest_manifest(
     tropics_requested: dict[str, float],
     channels: dict[str, int],
     threshold: int,
+    lossyear_fallback: dict[str, list[str]] | None = None,
 ) -> None:
     """Manifeste du jeu `forest` (spec forêt §6), publié sous `tiles/forest/<version>/manifest.json`.
 
     `tropics` = bande où `max_level` existe, déjà alignée sur la grille du niveau `max_level_outside`
     (union des tuiles coupant la bande demandée) ; `tropics_requested` = bornes passées en CLI.
     Ailleurs la pyramide s'arrête à `max_level_outside`. L'index de présence (`index.bin`) fait foi
-    tuile par tuile.
+    tuile par tuile. `lossyear_fallback` = {version: dalles dont l'année de perte vient de cette
+    version (règle R7, sans l'année 2024)}.
     """
     manifest = {
         "schema_version": 1,
@@ -138,5 +140,6 @@ def write_forest_manifest(
         "source": FOREST_SOURCE,
         "license": FOREST_LICENSE,
         "generated_at": generated_at,
+        "lossyear_fallback": {v: sorted(n) for v, n in (lossyear_fallback or {}).items()},
     }
     Path(path).write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

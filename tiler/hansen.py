@@ -38,6 +38,11 @@ from .grid import Bounds
 
 HANSEN_BASE = "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2024-v1.12/"
 HANSEN_VERSION = "v1.12"
+# Règle R7 : une dalle `lossyear` v1.12 en 404 sur une zone de forêt est remplacée par la même dalle
+# de GFC-2023-v1.11 (même grille, années 1–23 : 2024 manque sur ces dalles, signalé au manifeste).
+FALLBACK_BASE = "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2023-v1.11/"
+FALLBACK_VERSION = "v1.11"
+_FALLBACK_PREFIX = "Hansen_GFC-2023-v1.11_"
 _PREFIX = "Hansen_GFC-2024-v1.12_"
 LAYERS = ("treecover2000", "lossyear")  # ordre des sorties de read_block : couvert, année
 
@@ -65,6 +70,10 @@ def granule_name(lat_top: int, lon_left: int) -> str:
 
 def file_name(layer: str, name: str) -> str:
     return f"{_PREFIX}{layer}_{name}.tif"
+
+
+def fallback_file_name(layer: str, name: str) -> str:
+    return f"{_FALLBACK_PREFIX}{layer}_{name}.tif"
 
 
 def granules_for(bounds: Bounds) -> list[str]:
@@ -194,12 +203,16 @@ class HansenBackend:
 
     def __init__(self, work_dir: Path, base: str = HANSEN_BASE,
                  available: dict[str, set[str]] | None = None, max_cached: int = 8,
-                 sleep=time.sleep) -> None:
+                 sleep=time.sleep, fallback_base: str | None = None) -> None:
         self.work = Path(work_dir)
         self.work.mkdir(parents=True, exist_ok=True)
         self.base = base if not _is_url(base) or base.endswith("/") else base + "/"
         self.max_cached = max_cached
         self._cache: OrderedDict[Path, None] = OrderedDict()
+        # Dépôt de repli R7 (URL) ; None → pas de repli, un lossyear 404 sur forêt lève.
+        self.fallback_base = (fallback_base if fallback_base is None or fallback_base.endswith("/")
+                              else fallback_base + "/")
+        self.fallback: set[str] = set()  # dalles dont le lossyear vient de FALLBACK_VERSION
         self.missing: set[tuple[str, str]] = set()  # (couche, dalle) listées mais 404 (R6)
         self.downloads = 0  # nombre de GET de dalles et octets reçus (mesure sur Actions)
         self.downloaded_bytes = 0
@@ -217,10 +230,14 @@ class HansenBackend:
             raise HansenReadError(f"liste officielle vide : {layer}")
         return names
 
-    def _fetch(self, layer: str, name: str, keep: set[Path]) -> Path:
-        """Chemin local de la dalle ; téléchargée si besoin. Ne supprime jamais une dalle de `keep`."""
-        fname = file_name(layer, name)
-        if not _is_url(self.base):
+    def _fetch(self, layer: str, name: str, keep: set[Path], *, fallback: bool = False) -> Path:
+        """Chemin local de la dalle ; téléchargée si besoin. Ne supprime jamais une dalle de `keep`.
+
+        `fallback` : la dalle de même nom du dépôt de repli R7 (`fallback_base`).
+        """
+        fname = fallback_file_name(layer, name) if fallback else file_name(layer, name)
+        base = self.fallback_base if fallback else self.base
+        if not fallback and not _is_url(self.base):
             path = Path(self.base) / fname
             if not path.is_file():
                 raise FileNotFoundError(f"dalle listée mais introuvable : {path}")
@@ -235,7 +252,7 @@ class HansenBackend:
             if old not in keep:
                 old.unlink(missing_ok=True)
                 del self._cache[old]
-        _download(self.base + fname, path, sleep=self._sleep)
+        _download(base + fname, path, sleep=self._sleep)
         self.downloads += 1
         self.downloaded_bytes += path.stat().st_size
         self._cache[path] = None
@@ -271,6 +288,10 @@ class HansenBackend:
         peut pas cacher de forêt, vérifié sur sa partie du bloc : les 2 couches 404 → zéros ;
         `lossyear` seul 404 → lève s'il y a de la forêt (couvert ≥ FOREST_THRESHOLD) ;
         `treecover2000` seul 404 → lève s'il y a une perte. Tout autre échec lève toujours.
+
+        Règle R7 : `lossyear` seul 404 sur une zone de forêt → la même dalle du dépôt de repli
+        (v1.11) est lue à la place, consignée dans `self.fallback` ; si elle manque aussi (ou sans
+        dépôt de repli), lève.
         """
         if bounds.lon_min < -180 or bounds.lon_max > 180:
             raise ValueError("bloc au-delà de l'antiméridien : découper en [-180, 180] avant read_block")
@@ -281,16 +302,31 @@ class HansenBackend:
         for layer in LAYERS:
             present = [n for n in names if n in self.available[layer]]
             keep = {self.work / file_name(layer, n) for n in present}
+            keep |= {self.work / fallback_file_name(layer, n) for n in present if layer == "lossyear"}
             paths = []
             for n in present:
-                if (layer, n) in self.missing:
+                if layer == "lossyear" and n in self.fallback:
+                    paths.append(self._fetch(layer, n, keep, fallback=True))
                     continue
-                try:
-                    paths.append(self._fetch(layer, n, keep))
-                except GranuleNotFound as e:
-                    print(f"avertissement : dalle listée absente du serveur (404), {layer} {n} : {e}")
-                    self.missing.add((layer, n))
-            absent[layer] = {n for n in present if (layer, n) in self.missing}
+                if (layer, n) not in self.missing:
+                    try:
+                        paths.append(self._fetch(layer, n, keep))
+                        continue
+                    except GranuleNotFound as e:
+                        print(f"avertissement : dalle listée absente du serveur (404), {layer} {n} : {e}")
+                        self.missing.add((layer, n))
+                if (layer == "lossyear" and ("treecover2000", n) not in self.missing
+                        and (out[0][self._window(n, bounds, w, h)] >= FOREST_THRESHOLD).any()):
+                    if self.fallback_base is None:
+                        raise HansenReadError(f"lossyear {n} absent (404) sur une zone de forêt, sans dépôt de repli")
+                    try:
+                        paths.append(self._fetch(layer, n, keep, fallback=True))
+                    except GranuleNotFound as e:
+                        raise HansenReadError(
+                            f"lossyear {n} absent (404) sur une zone de forêt, en v1.12 et en {FALLBACK_VERSION}") from e
+                    print(f"repli : lossyear {n} lu en {FALLBACK_VERSION} (absent en v1.12, forêt présente)")
+                    self.fallback.add(n)
+            absent[layer] = {n for n in present if (layer, n) in self.missing and n not in self.fallback}
             out.append(self._warp(paths, bounds, w, h, layer) if paths else np.zeros((h, w), np.uint8))
         cover, loss = out
         only_loss = absent["lossyear"] - absent["treecover2000"]

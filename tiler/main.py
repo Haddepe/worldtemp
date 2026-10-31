@@ -361,6 +361,7 @@ def merge_forest_indexes(
     max_level_outside: int,
     tropics: Bounds = TROPICS,
     level1_dir: Path,
+    lossyear_fallback: dict[str, list[str]] | None = None,
 ) -> Path:
     """Fusionne les index des boîtes, assemble le niveau 0 (2x2 depuis `level1_dir/forest/1`), écrit le manifeste.
 
@@ -388,6 +389,7 @@ def merge_forest_indexes(
         out_dir / "manifest.json", version=version, generated_at=generated_at, max_level=max_level,
         max_level_outside=max_level_outside, tropics=_bounds_dict(tropical_bounds(tropics, max_level_outside)),
         tropics_requested=_bounds_dict(tropics), channels=forest_mod.CHANNELS, threshold=forest_mod.FOREST_THRESHOLD,
+        lossyear_fallback=lossyear_fallback,
     )
     return out
 
@@ -465,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="K : ne lit qu'un bloc sur K, imprime l'estimation du stockage et écrit sample-sizes.json "
                         "(jamais d'index-partial.bin : non publiable). Prendre K premier avec 22 et 16 (blocs par rangée "
                         "aux niveaux 8 et 7), par exemple 7 ou 13 ; les niveaux réduits sont surestimés (prudent).")
+    p.add_argument("--fallback-base", default=None, help="dépôt de repli lossyear (R7, défaut : v1.11 officiel)")
     p.add_argument("--hansen-base", default=None, help="URL ou dossier des dalles Hansen (défaut : dépôt officiel v1.12)")
 
     p = sub.add_parser("merge-forest-index")
@@ -475,6 +478,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-level-outside", type=int, required=True, help="même valeur que pour forest (le manifeste la publie)")
     p.add_argument("--tropics", type=parse_bounds, default=TROPICS, help="mêmes bornes que pour forest")
     p.add_argument("--level1-dir", type=Path, required=True, help="dossier contenant forest/1/x/y.png (assemblage du niveau 0)")
+    p.add_argument("--fallbacks", nargs="*", type=Path, default=[],
+                   help="lossyear-fallback.json des boîtes (règle R7, recopié au manifeste)")
 
     a = ap.parse_args(argv)
     if a.cmd == "extract-gebco":
@@ -501,7 +506,8 @@ def main(argv: list[str] | None = None) -> int:
 
         box = box_for_job(a.box)
         backend = hansen.HansenBackend(a.work, base=a.hansen_base or hansen.HANSEN_BASE,
-                                       max_cached=forest_cache_files(box))
+                                       max_cached=forest_cache_files(box),
+                                       fallback_base=a.fallback_base or (None if a.hansen_base else hansen.FALLBACK_BASE))
         sizes: dict[int, int] = {}
         try:
             index = build_forest_box(backend, box, a.out, a.min_level, a.max_level, a.max_level_outside,
@@ -509,15 +515,25 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             print(f"dalles Hansen : {backend.downloads} téléchargements, {backend.downloaded_bytes} octets "
                   f"(cache {backend.max_cached} fichiers)")
-            miss = sorted(backend.missing)
+            miss = sorted((layer, n) for layer, n in backend.missing if not (layer == "lossyear" and n in backend.fallback))
+            fb = sorted(backend.fallback)
+            print(f"repli lossyear {hansen.FALLBACK_VERSION} (R7) : {len(fb)}" + (" — " + ", ".join(fb) if fb else ""))
+            a.out.mkdir(parents=True, exist_ok=True)
+            (a.out / "lossyear-fallback.json").write_text(
+                json.dumps({hansen.FALLBACK_VERSION: fb}) + "\n", encoding="utf-8")
             print(f"dalles absentes (404, traitées comme vides, R6) : {len(miss)}"
                   + (" — " + ", ".join(f"{layer} {n}" for layer, n in miss) if miss else ""))
             backend.close()  # dalles téléchargées supprimées, même en cas d'échec
         _print_forest_sizes(a.box, index, sizes, a.sample)
         return 0
     if a.cmd == "merge-forest-index":
+        fallback: dict[str, set[str]] = {}
+        for f in a.fallbacks:
+            for version, names in json.loads(f.read_text(encoding="utf-8")).items():
+                fallback.setdefault(version, set()).update(names)
         print(merge_forest_indexes(a.inputs, a.out_dir, version=a.version, generated_at=_now(), max_level=a.max_level,
-                                   max_level_outside=a.max_level_outside, tropics=a.tropics, level1_dir=a.level1_dir))
+                                   max_level_outside=a.max_level_outside, tropics=a.tropics, level1_dir=a.level1_dir,
+                                   lossyear_fallback={v: sorted(n) for v, n in fallback.items()}))
         return 0
     return 2
 

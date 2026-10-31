@@ -23,6 +23,7 @@ class FakeHansen:
         self.closed = False
         self.downloads = self.downloaded_bytes = self.max_cached = 0
         self.missing = set()
+        self.fallback = set()
 
     def read_block(self, bounds, width, height, factor):
         self.calls.append((bounds, width, height, factor))
@@ -265,6 +266,8 @@ def test_cli_forest_sample_prints_estimate(tmp_path, fake_cli, capsys):
     assert f"{measured} octets" in line and f"{measured * 2} octets extrapolés" in line
     assert not (tmp_path / "out" / "index-partial.bin").exists()
     assert json.loads((tmp_path / "out" / "sample-sizes.json").read_text(encoding="utf-8"))["sample"] == 2
+    assert json.loads((tmp_path / "out" / "lossyear-fallback.json").read_text(encoding="utf-8")) == {"v1.11": []}
+    assert "repli lossyear v1.11 (R7) : 0" in out
 
 
 def test_cli_forest_backend_error_fails(tmp_path, monkeypatch):
@@ -337,6 +340,19 @@ def test_cli_merge_forest_index(tmp_path):
     assert m["max_level_outside"] == 7 and m["tropics"]["lat_min"] == -25.3125 and m["tropics"]["lat_max"] == 25.3125
     assert m["tropics_requested"]["lat_min"] == -25
     assert encode.TileIndex.from_bytes((tmp_path / "o" / "index.bin").read_bytes()).has(8, 3, 4)
+    assert m["lossyear_fallback"] == {}
+
+
+def test_cli_merge_forest_index_records_lossyear_fallbacks(tmp_path):
+    # R7 : les dalles lues en v1.11 par chaque boîte sont réunies dans le manifeste.
+    a = encode.TileIndex(8); a.set(8, 3, 4)
+    pa = tmp_path / "a.bin"; pa.write_bytes(a.to_bytes())
+    f1 = tmp_path / "f1.json"; f1.write_text('{"v1.11": ["20N_120W"]}', encoding="utf-8")
+    f2 = tmp_path / "f2.json"; f2.write_text('{"v1.11": ["10S_180W", "20N_120W"]}', encoding="utf-8")
+    assert main.main(["merge-forest-index", "--inputs", str(pa), "--out-dir", str(tmp_path / "o"), "--version", "v1.12",
+                      "--max-level-outside", "7", "--level1-dir", str(tmp_path), "--fallbacks", str(f1), str(f2)]) == 0
+    m = json.loads((tmp_path / "o" / "manifest.json").read_text(encoding="utf-8"))
+    assert m["lossyear_fallback"] == {"v1.11": ["10S_180W", "20N_120W"]}
 
 
 # --- Parcours des blocs et cache des dalles Hansen (décision R5 du contrôleur) ------------------

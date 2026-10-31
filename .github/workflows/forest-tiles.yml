@@ -112,7 +112,7 @@ jobs:
             grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
             echo "- disque : départ $base Mo, pic $peak Mo, cache + tuiles $((peak - base)) Mo"
             echo "- tuiles : $(du -sh out/forest | cut -f1)"
-            grep -h "dalles Hansen\|dalles absentes\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
+            grep -h "dalles Hansen\|repli lossyear\|dalles absentes\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sample != '' }}
@@ -124,7 +124,10 @@ jobs:
         if: ${{ inputs.sample == '' }}
         with:
           name: index-${{ matrix.box }}
-          path: out/index-partial.bin
+          # Index de la boîte + dalles lossyear lues en v1.11 (règle R7, recopiées au manifeste).
+          path: |
+            out/index-partial.bin
+            out/lossyear-fallback.json
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sample == '' }}
@@ -220,7 +223,7 @@ jobs:
           [ "$want" = "$got" ] || { echo "::error::$got index partiels pour $want boîtes"; exit 1; }
           python -m tiler.main merge-forest-index --inputs partial/*/index-partial.bin --out-dir out \
             --version ${{ inputs.version }} --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
-            --tropics=$TROPICS --level1-dir level1
+            --tropics=$TROPICS --level1-dir level1 --fallbacks partial/*/lossyear-fallback.json
           ls -la out out/forest/0
           cat out/manifest.json
       - uses: actions/upload-artifact@v4
