@@ -38,6 +38,11 @@ export function forestTileFor(t: TileId, manifest: ForestManifest, index: TileIn
   return index.has(q.z, q.x, q.y) ? q : null;
 }
 
+/** Adresse d'une tuile forêt (mêmes chemins que `tile_path` du tiler) : loader et lecteur du tooltip. */
+export function forestTileUrl(src: ForestSource, t: TileId): string {
+  return `${src.baseUrl}/forest/${t.z}/${t.x}/${t.y}.${src.manifest.ext}`;
+}
+
 export interface TileLoaderDeps {
   fetchBitmap(url: string, signal: AbortSignal): Promise<ImageBitmap>;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -245,11 +250,8 @@ export class TileLoader {
   }
 
   private url(job: Job): string {
+    if (job.set === "forest") return forestTileUrl(this.opts.forest!, job.tile);
     const { z, x, y } = job.tile;
-    if (job.set === "forest") {
-      const f = this.opts.forest!;
-      return `${f.baseUrl}/forest/${z}/${x}/${y}.${f.manifest.ext}`;
-    }
     const ext = this.opts.manifest[job.set].ext;
     return `${this.opts.baseUrl}/${job.set}/${z}/${x}/${y}.${ext}`;
   }

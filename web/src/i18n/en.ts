@@ -61,6 +61,17 @@ export const STRINGS = {
     calm: "Calm",
     compass: ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
   },
+  forest: {
+    cover: (pct: number) => `Tree cover ${pct}%`,
+    lost: (year: number) => `Forest lost in ${year}`,
+    none: "No forest",
+    pending: "…",
+    coverTitle: "Tree cover 2000",
+    lossTitle: "Forest loss by year",
+    lossShort: "Loss",
+    captureSource: "Global Forest Change 2000–2024 (v1.12)",
+    captureCredit: "Hansen/UMD/Google/USGS/NASA · CC BY 4.0",
+  },
   legend: { isolines: "isolines", min: "min", max: "max", since: (time: string) => `since ${time}` },
   search: {
     noMatches: "No matches",

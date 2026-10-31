@@ -1,8 +1,8 @@
 import type { Encoding } from "../data/encoding";
 import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
-import { legendStopsCss } from "../render/colormap";
-import { legendName, legendTicks } from "./format";
+import { legendStopsCss, stopsCss } from "../render/colormap";
+import { forestLegend, legendName, legendTicks } from "./format";
 
 export interface Overlay {
   /** Conteneur du menu radio des couches (ui/layers-menu.ts). */
@@ -25,8 +25,29 @@ export interface Overlay {
   layerModes: HTMLElement;
   /** `note` : mention après l'unité (« since Sat 3 09:00 » pour les chutes de neige). */
   setLegend(def: LayerDef, enc: Encoding, stats: { min: number; max: number }, note?: string): void;
+  /** Légende Forest : deux barres (couvert, pertes), horizontales sur ordinateur, verticales côte à côte sur mobile. */
+  setForestLegend(def: LayerDef): void;
   setLegendVisible(on: boolean): void;
+  /** Crédit Hansen/UMD (CC BY 4.0) dans `#attribution`, tant que Forest est active. */
+  setForestCredit(on: boolean): void;
   showFatal(text: string, options?: { reload?: boolean }): void;
+}
+
+/**
+ * Corps de la légende Forest : une `.part` par barre, chacune avec les classes de la légende d'une
+ * couche météo (`.title`, `.bar` + `--stops`, `.ticks`) ; titre long (`.name`) sur ordinateur, court
+ * (`.short`) sous la barre verticale du téléphone.
+ */
+export function forestLegendHtml(def: LayerDef): string {
+  return forestLegend(def)
+    .map((p) => {
+      const ticks = p.ticks.map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${t.label}</span>`).join("");
+      return (
+        `<div class="part"><div class="title"><span class="name">${p.title}</span><span class="short">${p.short}</span></div>` +
+        `<div class="bar" style="--stops:${stopsCss(p.stops)}"></div><div class="ticks">${ticks}</div></div>`
+      );
+    })
+    .join("");
 }
 
 export function byId<T extends HTMLElement>(id: string): T {
@@ -40,6 +61,7 @@ export function createOverlay(): Overlay {
   const status = byId<HTMLElement>("status");
   const legend = byId<HTMLElement>("legend");
   const legendBody = byId<HTMLElement>("legend-body");
+  const forestCredit = byId<HTMLElement>("attribution-forest");
   const layerModes = byId<HTMLElement>("layer-modes");
   const layersMenu = byId<HTMLElement>("layers-menu");
   const windToggle = byId<HTMLButtonElement>("wind-toggle");
@@ -102,8 +124,14 @@ export function createOverlay(): Overlay {
         `<div class="ticks">${ticks}</div>` +
         `<div class="extremes"><span>${STRINGS.legend.min} ${def.format(stats.min)}</span><span>${STRINGS.legend.max} ${def.format(stats.max)}</span></div>`;
     },
+    setForestLegend(def) {
+      legendBody.innerHTML = forestLegendHtml(def);
+    },
     setLegendVisible(on) {
       legend.hidden = !on;
+    },
+    setForestCredit(on) {
+      forestCredit.hidden = !on;
     },
     showFatal(text, options) {
       fatal.textContent = text;

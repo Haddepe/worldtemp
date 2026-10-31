@@ -1,6 +1,7 @@
 import { encode, type Encoding } from "../data/encoding";
 import type { LayerDef } from "../layers/registry";
 import { STRINGS } from "../i18n";
+import { rangeStops } from "../render/colormap";
 import { HOUR_MS } from "../time/timeline";
 
 /** Formateurs mis en cache par fuseau (revue T12 round 1, finding 4) : `formatBanner`/`formatWhen`
@@ -91,6 +92,38 @@ function tickLabel(v: number): string {
 /** Graduations de la légende : valeurs du registre, positions encode(v)/255 (spec couches §11). */
 export function legendTicks(def: LayerDef, enc: Encoding): { v: number; label: string; pct: number }[] {
   return def.ticks.map((v) => ({ v, label: (def.tickLabel ?? tickLabel)(v), pct: (encode(v, enc) / 255) * 100 }));
+}
+
+/** Une barre de la légende Forest : titre, titre court (légende verticale du téléphone), arrêts, graduations. */
+export interface LegendPart {
+  title: string;
+  short: string;
+  stops: { at: number; color: string }[];
+  ticks: { label: string; pct: number }[];
+}
+
+/**
+ * Légende Forest en deux barres (spec forêt §7), pour le DOM et la capture : couvert de la première à
+ * la dernière graduation (30 → 100 %, rien n'est dessiné sous le seuil), pertes de la première à la
+ * dernière année de `lossStops` (2001 → 2024), graduées à chaque arrêt.
+ */
+export function forestLegend(def: LayerDef): [LegendPart, LegendPart] {
+  const lo = def.ticks[0] ?? 0;
+  const hi = def.ticks[def.ticks.length - 1] ?? 100;
+  const loss = def.lossStops ?? [];
+  const y0 = loss[0]?.v ?? 0;
+  const y1 = loss[loss.length - 1]?.v ?? 1;
+  const at = (v: number, a: number, b: number) => ((v - a) / (b - a)) * 100;
+  return [
+    {
+      title: `${STRINGS.forest.coverTitle} · ${def.unit}`, short: def.unit, stops: rangeStops(def.stops, lo, hi),
+      ticks: def.ticks.map((v) => ({ label: String(v), pct: at(v, lo, hi) })),
+    },
+    {
+      title: STRINGS.forest.lossTitle, short: STRINGS.forest.lossShort, stops: rangeStops(loss, y0, y1),
+      ticks: loss.map((st) => ({ label: String(st.v), pct: at(st.v, y0, y1) })),
+    },
+  ];
 }
 
 /** Nom affiché par la légende : le mode s'il existe (« Snowfall », « Depth »), sinon la couche. */

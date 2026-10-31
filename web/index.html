@@ -81,7 +81,7 @@
         <span id="timeline-label" aria-hidden="true"></span>
         <button id="timeline-now" type="button" aria-label="Back to now" hidden>Now</button>
       </div>
-      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · GeoNames · NOAA GFS · GEFS-Aerosols</p>
+      <p id="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · NASA · GEBCO · Natural Earth · GeoNames · NOAA GFS · GEFS-Aerosols<span id="attribution-forest" hidden> · Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12), CC BY 4.0</span></p>
       <div id="ad-slot" hidden></div>
     </div>
     <dialog id="about" aria-labelledby="about-title">
@@ -99,6 +99,7 @@
           <li><strong>Humidity</strong> — relative humidity 2 m above ground, in %.</li>
           <li><strong>PM2.5</strong> and <strong>Dust</strong> — fine particles and desert dust near the surface, in µg/m³.</li>
           <li><strong>Snow</strong> — forecast snowfall since the model run (10:1) or snow depth on the ground, in cm.</li>
+          <li><strong>Forest</strong> — tree cover in 2000 where the canopy is at least 30 %, and forest loss coloured by year, 2001–2024, down to about 150 m.</li>
           <li><strong>Labels</strong> and <strong>Rivers</strong> — cities with the value of the active layer, countries, and major rivers.</li>
           <li><strong>Search</strong> and <strong>My location</strong> — find any town of more than 1,000 inhabitants, or fly to where you are.</li>
           <li><strong>Timeline</strong> — the forecast for the next 48 hours: drag the slider or press play.</li>
@@ -106,7 +107,7 @@
         <h2>Data &amp; freshness</h2>
         <p>Weather layers come from the NOAA GFS model at 0.25° resolution; air quality comes from NOAA GEFS-Aerosols. Four times a day, each new model run brings a 48-hour forecast in 3-hour steps, and the globe blends smoothly between steps. The banner shows the model run; the timeline shows the time you are looking at.</p>
         <h2>Sources &amp; credits</h2>
-        <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth · GeoNames (CC BY 4.0).</p>
+        <p>NOAA GFS and GEFS-Aerosols (public domain) · NASA Blue Marble · GEBCO bathymetry and relief · © OpenStreetMap contributors · Natural Earth · GeoNames (CC BY 4.0) · Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12), CC BY 4.0. In a few small areas, the year of forest loss comes from the 2023 release (v1.11).</p>
         <h2>Privacy</h2>
         <p>GlobeLayers uses cookie-free audience measurement by Cloudflare Web Analytics. No personal data is collected and there are no advertising trackers. The “My location” button uses your device's location only in your browser: it is never sent or stored.</p>
       </div>

@@ -66,6 +66,21 @@ export function legendStops(def: LayerDef, enc: Encoding): { at: number; color: 
   });
 }
 
+/** Arrêts compris entre `lo` et `hi`, positions linéaires (lo → 0, hi → 1) : légende Forest, DOM et capture. */
+export function rangeStops(stops: readonly Stop[], lo: number, hi: number): { at: number; color: string }[] {
+  return stops
+    .filter((st) => st.v >= lo && st.v <= hi)
+    .map((st) => {
+      const [r, g, b, a] = st.rgba;
+      return { at: (st.v - lo) / (hi - lo), color: `rgba(${r}, ${g}, ${b}, ${Number((a / 255).toFixed(3))})` };
+    });
+}
+
+/** Arrêts CSS (« rgba(…) 42.86%, … ») d'une liste `{ at, color }`, sans orientation. */
+export function stopsCss(stops: readonly { at: number; color: string }[]): string {
+  return stops.map((st) => `${st.color} ${Number((st.at * 100).toFixed(2))}%`).join(", ");
+}
+
 /** Arrêts CSS de la légende (« rgba(…) 33.33%, … »), sans orientation : le CSS choisit `to right`
  * (ordinateur) ou `to top` (mobile, légende verticale) via `--stops`. */
 export function legendStopsCss(def: LayerDef, enc: Encoding): string {

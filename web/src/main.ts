@@ -34,6 +34,7 @@ import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
 import { type ForestSource, TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseForestManifest, parseManifest } from "./tiles/manifest";
+import { browserDecodeTile, createTileReader } from "./tiles/reader";
 import { TimeCursor } from "./time/cursor";
 import { type TimelineHold, fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineAfterLayerChange, timelineRange } from "./time/timeline";
 import { createDialog } from "./ui/about";
@@ -253,12 +254,16 @@ async function boot(): Promise<void> {
 
   /** Couches tuiles dont le jeu est chargé (`orderedLayers`) : Forest une fois son manifeste lu. */
   let forestReady = false;
+  let forestSrc: ForestSource | null = null;
+  /** Lecture du texel sous le curseur pour le tooltip Forest (tuile la plus fine présente à l'index). */
+  const forestReader = createTileReader({ source: () => forestSrc, decode: browserDecodeTile });
   const tileLayers = (): string[] => (forestReady ? ["forest"] : []);
   /** Charge le jeu `forest` ; vrai s'il vient d'arriver (le menu est alors à refaire). */
   const loadForest = async (): Promise<boolean> => {
     try {
       const src = await fetchForest();
       loader.configureForest(src);
+      forestSrc = src;
       globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
       forestReady = true;
       console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere`);
@@ -355,6 +360,8 @@ async function boot(): Promise<void> {
   let shownSet: FrameSet<ScalarFrame> | null = null;
   /** Échéance dont la légende affiche les min/max ; −1 = à recalculer. */
   let legendIndex = -1;
+  /** Légende Forest affichée : à masquer dès qu'on la quitte pour une grille (chargement en cours). */
+  let forestLegendShown = false;
   let lastLabelsPush = 0;
   let updateFailed = false;
   /** Statut d'échec de couche (spec §13), prioritaire sur les autres statuts tant que non nul. */
@@ -640,12 +647,17 @@ async function boot(): Promise<void> {
       const entry = shownId && m ? m.layers[shownId] : undefined;
       const def = shownId ? layerDef(shownId) : undefined;
       const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run, note: legendNote(def, entry.run) } : null;
+      // Forest (tuiles) : ses deux barres et son crédit, sans échéance ni run.
+      const active = activeId ? layerDef(activeId) : undefined;
+      const forest = active && layerKind(active) === "tiles" ? active : null;
       const tMs = layer ? cursor.state.t : Date.now();
-      const blob = await captureImage(sceneHandle, { layer, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
+      const blob = await captureImage(sceneHandle, { layer, forest, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
       const text = layer
         ? `${layer.def.label} · ${captureWhen(tMs)} — ${STRINGS.capture.site}`
-        : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
-      const name = captureFileName(layer ? layer.def.id : null, tMs);
+        : forest
+          ? `${forest.label} — ${STRINGS.capture.site}`
+          : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
+      const name = captureFileName(layer ? layer.def.id : forest ? forest.id : null, tMs);
       const data = shareData(blob, name, text, location.href);
       const env = browserShareEnv();
       // Tactile : choix Share / Save (Android : Save → Download/, visible dans la Galerie) ; ordinateur : téléchargement direct.
@@ -798,6 +810,11 @@ async function boot(): Promise<void> {
     // elle suit la branche « Aucune » ci-dessous pour la couche météo, la légende et les valeurs.
     const tiles = def !== undefined && layerKind(def) === "tiles";
     globe.setForest(tiles);
+    ui.setForestCredit(tiles);
+    tooltip.setForest(tiles ? forestReader : null);
+    // Retour de Forest vers une grille : sa légende ne doit pas rester pendant le chargement.
+    if (!tiles && forestLegendShown) ui.setLegendVisible(false);
+    forestLegendShown = false;
     holdTimeline(tiles ? "tiles" : id === null ? null : "grid");
     const entry = id && manifest && !tiles ? manifest.layers[id] : undefined;
     if (!def || !entry || !manifest) {
@@ -808,6 +825,11 @@ async function boot(): Promise<void> {
       globe.setLayer(null, 1440, 721);
       globe.setIsoStep(0);
       ui.setLegendVisible(false);
+      if (tiles) {
+        ui.setForestLegend(def);
+        ui.setLegendVisible(true);
+        forestLegendShown = true;
+      }
       tooltip.setData(null);
       geo.setValueSource(null);
       applyTime();

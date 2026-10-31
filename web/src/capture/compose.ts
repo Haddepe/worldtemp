@@ -8,7 +8,7 @@ import { STRINGS } from "../i18n";
 import type { LabelView } from "../labels/layer";
 import type { LayerDef } from "../layers/registry";
 import { legendStops } from "../render/colormap";
-import { legendTicks, legendTitle } from "../ui/format";
+import { forestLegend, legendTicks, legendTitle } from "../ui/format";
 import { placeTooltip } from "../ui/tooltip";
 import { captureRun, captureWhen } from "./naming";
 
@@ -32,6 +32,8 @@ export interface CaptureInput {
   /** px d'image par px CSS. */
   dpr: number;
   layer: CaptureLayer | null;
+  /** Couche Forest (tuiles, sans échéance ni run) : ses deux barres et son crédit ; `layer` est alors `null`. */
+  forest?: LayerDef | null;
   tMs: number;
   /** Positions en px CSS, telles que passées au DOM. */
   labels: { views: readonly LabelView[]; dark: boolean };
@@ -103,7 +105,8 @@ function pinOps(pin: NonNullable<CaptureInput["pin"]>, input: CaptureInput, meas
 function bandOps(input: CaptureInput): DrawOp[] {
   const { width, height, dpr, layer, tMs } = input;
   const h = bandHeight(width, height, dpr);
-  const stacked = layer !== null && width / dpr < 600;
+  const forest = input.forest ?? null;
+  const stacked = (layer !== null || forest !== null) && width / dpr < 600;
   const total = stacked ? 2 * h : h;
   const y0 = height - total;
   const pad = 0.18 * h;
@@ -120,6 +123,21 @@ function bandOps(input: CaptureInput): DrawOp[] {
     }
     ops.push({ kind: "text", x: right, y: yR + pad + 0.1 * h, text: STRINGS.capture.forecastFor(captureWhen(tMs)), font: font(0.16 * h), fill: FG, align: "right" });
     ops.push({ kind: "text", x: right, y: yR + pad + 0.34 * h, text: captureRun(layer.model, layer.run), font: font(0.16 * h), fill: MUTED, align: "right" });
+    ops.push({ kind: "text", x: right, y: yR + pad + 0.58 * h, text: STRINGS.capture.site, font: font(0.2 * h, true), fill: ACCENT, align: "right" });
+  } else if (forest) {
+    // Deux barres côte à côte dans la place d'une (couvert, pertes), puis la source et sa licence (CC BY 4.0).
+    const total = stacked ? width - 2 * pad : r2(0.38 * width);
+    const partW = (total - pad) / 2;
+    forestLegend(forest).forEach((part, i) => {
+      const x = pad + i * (partW + pad);
+      ops.push({ kind: "text", x, y: y0 + pad + 0.1 * h, text: part.title, font: font(0.18 * h), fill: FG, align: "left" });
+      ops.push({ kind: "gradient", x, y: y0 + pad + 0.28 * h, w: partW, h: 0.14 * h, stops: part.stops, radius: 0.04 * h });
+      for (const t of part.ticks) {
+        ops.push({ kind: "text", x: x + (t.pct / 100) * partW, y: y0 + pad + 0.54 * h, text: t.label, font: font(0.16 * h), fill: MUTED, align: "center" });
+      }
+    });
+    ops.push({ kind: "text", x: right, y: yR + pad + 0.1 * h, text: STRINGS.forest.captureSource, font: font(0.16 * h), fill: FG, align: "right" });
+    ops.push({ kind: "text", x: right, y: yR + pad + 0.34 * h, text: STRINGS.forest.captureCredit, font: font(0.16 * h), fill: MUTED, align: "right" });
     ops.push({ kind: "text", x: right, y: yR + pad + 0.58 * h, text: STRINGS.capture.site, font: font(0.2 * h, true), fill: ACCENT, align: "right" });
   } else {
     ops.push({ kind: "text", x: right, y: yR + pad + 0.1 * h, text: STRINGS.capture.captured(captureWhen(tMs)), font: font(0.16 * h), fill: FG, align: "right" });
