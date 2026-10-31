@@ -186,6 +186,41 @@ def test_sample_reads_one_block_in_k_and_reports_sizes(tmp_path):
         on_disk = sum(p.stat().st_size for p in (tmp_path / "forest" / str(z)).glob("*/*.png"))
         assert sizes[z] == on_disk > 0
     assert _index_tiles(index, 3) == {(0, y) for y in range(4)}
+    # Un échantillon n'est jamais publiable : pas d'index partiel, seulement sample-sizes.json.
+    assert not list(tmp_path.rglob("index-partial.bin"))
+    report = json.loads((tmp_path / "sample-sizes.json").read_text(encoding="utf-8"))
+    assert report["sample"] == 2 and report["box"] == {"lon_min": -180, "lon_max": -90, "lat_min": 0, "lat_max": 90}
+    assert report["bytes_per_level"] == {str(z): sizes[z] for z in (1, 2, 3)}
+    assert report["tiles_per_level"] == {str(z): index.count(z) for z in (1, 2, 3)}
+    assert report["extrapolated_total_bytes"] == 2 * sum(sizes.values())
+    # La fusion refuse ce fichier (pas un index) et une liste d'index vide.
+    kw = dict(version="v1.12", generated_at="t", max_level=3, max_level_outside=3, level1_dir=tmp_path)
+    with pytest.raises(ValueError):
+        main.merge_forest_indexes([tmp_path / "sample-sizes.json"], tmp_path / "final", **kw)
+    with pytest.raises(ValueError):
+        main.merge_forest_indexes(list(tmp_path.rglob("index-partial.bin")), tmp_path / "final", **kw)
+    assert not (tmp_path / "final" / "index.bin").exists()
+
+
+def test_intermediate_levels_between_outside_and_max_are_reduced_in_tropics_only(tmp_path):
+    # max 3, hors tropiques 1 : la boîte 0 est une seule tuile de niveau 1 (90°).
+    fake = FakeHansen()
+    index = _build(tmp_path / "in", fake, max_level=3, max_level_outside=1, tropics=Bounds(-180, -160, 60, 70), block=2)
+    assert set(_levels_of(fake.calls)) == {3}  # niveau 2 réduit (branche intermédiaire), niveau 1 réduit (bloc tropical)
+    assert _files(tmp_path / "in", 3) == {(x, y) for x in (0, 1) for y in range(4)}
+    assert _files(tmp_path / "in", 2) == {(0, 0), (0, 1)} == _index_tiles(index, 2)
+    assert _files(tmp_path / "in", 1) == {(0, 0)}
+    big = np.zeros((2 * TILE_SIZE, 2 * TILE_SIZE, 3), np.uint8)
+    for dx, dy in [(0, 0), (1, 0), (0, 1), (1, 1)]:
+        big[dy * TILE_SIZE : (dy + 1) * TILE_SIZE, dx * TILE_SIZE : (dx + 1) * TILE_SIZE] = _tile(tmp_path / "in", 3, dx, dy)
+    assert np.array_equal(_tile(tmp_path / "in", 2, 0, 0), forest.encode_tile(*forest.aggregate(big[..., 0], big[..., 1], 2, big[..., 2])))
+    # Bande hors de la boîte : aucun niveau 2 ou 3 ; seul le niveau 1 est lu dans Hansen.
+    fake = FakeHansen()
+    index = _build(tmp_path / "out", fake, max_level=3, max_level_outside=1, tropics=Bounds(0, 10, -10, 10), block=2)
+    assert set(_levels_of(fake.calls)) == {1} and len(fake.calls) == 1
+    assert _files(tmp_path / "out", 3) == _files(tmp_path / "out", 2) == set()
+    assert index.count(2) == index.count(3) == 0
+    assert _files(tmp_path / "out", 1) == {(0, 0)} == _index_tiles(index, 1)
 
 
 # --- CLI ---
@@ -226,6 +261,8 @@ def test_cli_forest_sample_prints_estimate(tmp_path, fake_cli, capsys):
     line = next(l for l in out.splitlines() if l.startswith("échantillon niveau 2"))
     measured = sum(p.stat().st_size for p in (tmp_path / "out" / "forest" / "2").glob("*/*.png"))
     assert f"{measured} octets" in line and f"{measured * 2} octets extrapolés" in line
+    assert not (tmp_path / "out" / "index-partial.bin").exists()
+    assert json.loads((tmp_path / "out" / "sample-sizes.json").read_text(encoding="utf-8"))["sample"] == 2
 
 
 def test_cli_forest_backend_error_fails(tmp_path, monkeypatch):
@@ -274,7 +311,9 @@ def test_merge_forest_index_assembles_level0_and_writes_manifest(tmp_path):
         assert key in m, key
     assert m["version"] == "v1.12" and m["tile_size"] == TILE_SIZE and m["max_level"] == 3
     assert m["max_level_outside"] == 3 and m["threshold"] == forest.FOREST_THRESHOLD == 30
-    assert m["tropics"] == {"lon_min": -180, "lon_max": 180, "lat_min": -30, "lat_max": 30}
+    # Bande alignée sur la grille du niveau 3 (22,5°) : 45 N .. 45 S ; la bande demandée est gardée à part.
+    assert m["tropics"] == {"lon_min": -180, "lon_max": 180, "lat_min": -45, "lat_max": 45}
+    assert m["tropics_requested"] == {"lon_min": -180, "lon_max": 180, "lat_min": -30, "lat_max": 30}
     assert m["channels"] == {"cover": 0, "year": 1, "share": 2}
     assert m["license"] == "CC BY 4.0" and "Hansen" in m["source"] and "v1.12" in m["source"]
     assert m["generated_at"] == "2026-10-31T12:00:00Z" and m["index"] == "index.bin"
@@ -283,9 +322,16 @@ def test_merge_forest_index_assembles_level0_and_writes_manifest(tmp_path):
 def test_cli_merge_forest_index(tmp_path):
     a = encode.TileIndex(8); a.set(8, 3, 4)
     pa = tmp_path / "a.bin"; pa.write_bytes(a.to_bytes())
-    rc = main.main(["merge-forest-index", "--inputs", str(pa), "--out-dir", str(tmp_path / "o"), "--version", "v1.12",
-                    "--max-level", "8", "--max-level-outside", "7", "--tropics=-180,180,-25,25"])
-    assert rc == 0
+    base = ["merge-forest-index", "--inputs", str(pa), "--out-dir", str(tmp_path / "o"), "--version", "v1.12",
+            "--max-level", "8", "--tropics=-180,180,-25,25"]
+    lvl = ["--max-level-outside", "7"]
+    l1 = ["--level1-dir", str(tmp_path)]
+    for missing in (base + l1, base + lvl):  # --max-level-outside et --level1-dir obligatoires
+        with pytest.raises(SystemExit):
+            main.main(missing)
+    assert main.main(base + lvl + l1) == 0
     m = json.loads((tmp_path / "o" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["max_level_outside"] == 7 and m["tropics"]["lat_min"] == -25
+    # -25 aligné sur la grille du niveau 7 (1,40625°) : 82 tuiles depuis 90 N → -25,3125.
+    assert m["max_level_outside"] == 7 and m["tropics"]["lat_min"] == -25.3125 and m["tropics"]["lat_max"] == 25.3125
+    assert m["tropics_requested"]["lat_min"] == -25
     assert encode.TileIndex.from_bytes((tmp_path / "o" / "index.bin").read_bytes()).has(8, 3, 4)

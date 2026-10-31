@@ -110,17 +110,18 @@ def write_forest_manifest(
     generated_at: str,
     max_level: int,
     max_level_outside: int,
-    tropics: tuple[float, float, float, float],
+    tropics: dict[str, float],
+    tropics_requested: dict[str, float],
     channels: dict[str, int],
     threshold: int,
 ) -> None:
     """Manifeste du jeu `forest` (spec forêt §6), publié sous `tiles/forest/<version>/manifest.json`.
 
-    `max_level` n'existe que dans `tropics` (lon_min, lon_max, lat_min, lat_max), alignée sur la grille
-    du niveau `max_level_outside` ; ailleurs la pyramide s'arrête à `max_level_outside`. L'index de
-    présence (`index.bin`) fait foi tuile par tuile.
+    `tropics` = bande où `max_level` existe, déjà alignée sur la grille du niveau `max_level_outside`
+    (union des tuiles coupant la bande demandée) ; `tropics_requested` = bornes passées en CLI.
+    Ailleurs la pyramide s'arrête à `max_level_outside`. L'index de présence (`index.bin`) fait foi
+    tuile par tuile.
     """
-    lon_min, lon_max, lat_min, lat_max = tropics
     manifest = {
         "schema_version": 1,
         "version": version,
@@ -129,7 +130,8 @@ def write_forest_manifest(
         "index": "index.bin",
         "max_level": max_level,
         "max_level_outside": max_level_outside,
-        "tropics": {"lon_min": lon_min, "lon_max": lon_max, "lat_min": lat_min, "lat_max": lat_max},
+        "tropics": dict(tropics),
+        "tropics_requested": dict(tropics_requested),
         "channels": dict(channels),
         "year_base": 2000,
         "threshold": threshold,

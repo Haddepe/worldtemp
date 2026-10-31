@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 import time
@@ -182,6 +183,17 @@ def tropical_tiles(tropics: Bounds, z: int) -> tuple[int, int, int, int]:
     return x0, x1, y0, y1
 
 
+def tropical_bounds(tropics: Bounds, z: int) -> Bounds:
+    """Bande effectivement produite : union des tuiles `tropical_tiles(tropics, z)` (alignée sur la grille z)."""
+    x0, x1, y0, y1 = tropical_tiles(tropics, z)
+    s = tile_span(z)
+    return Bounds(-180.0 + x0 * s, -180.0 + (x1 + 1) * s, 90.0 - (y1 + 1) * s, 90.0 - y0 * s)
+
+
+def _bounds_dict(b: Bounds) -> dict[str, float]:
+    return {"lon_min": b.lon_min, "lon_max": b.lon_max, "lat_min": b.lat_min, "lat_max": b.lat_max}
+
+
 def _decode(path: Path) -> np.ndarray:
     with Image.open(path) as im:
         return np.asarray(im.convert("RGB"), dtype=np.uint8)
@@ -242,7 +254,9 @@ def build_forest_box(
     - Bloc lu entièrement vide (ni couvert ni perte) : rien n'est écrit ; tuile vide : non écrite.
     - `sample` = K > 1 : ne lit qu'un bloc sur K (rang dans l'ordre de `iter_blocks`, parmi les blocs
       à lire de chaque niveau) pour estimer le stockage ; les niveaux réduits n'ont alors qu'une
-      partie de leurs enfants (estimation approchée pour eux).
+      partie de leurs enfants (estimation par excès pour eux, donc prudente). Un échantillon n'est
+      jamais publiable : **pas d'`index-partial.bin`**, mais `sample-sizes.json` (octets et tuiles par
+      niveau, K, boîte, total extrapolé), que `merge_forest_indexes` refuse.
     - `sizes` : rempli avec les octets PNG écrits par niveau.
     - Toute erreur du backend se propage : pas d'`index-partial.bin` pour une boîte incomplète.
     """
@@ -310,7 +324,17 @@ def build_forest_box(
                         reduce_and_write(z, x, y)
             how = "réduit 2x2"
         log(f"forêt niveau {z} {how} : {index.count(z)} tuiles, {sizes[z]} octets, {time.monotonic() - t0:.0f} s")
-    (out_dir / "index-partial.bin").write_bytes(index.to_bytes())
+    if sample > 1:
+        report = {
+            "sample": sample,
+            "box": _bounds_dict(box),
+            "bytes_per_level": {str(z): sizes[z] for z in sorted(sizes)},
+            "tiles_per_level": {str(z): index.count(z) for z in sorted(sizes)},
+            "extrapolated_total_bytes": sample * sum(sizes.values()),
+        }
+        (out_dir / "sample-sizes.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    else:
+        (out_dir / "index-partial.bin").write_bytes(index.to_bytes())
     return index
 
 
@@ -323,26 +347,34 @@ def merge_forest_indexes(
     max_level: int,
     max_level_outside: int,
     tropics: Bounds = TROPICS,
-    level1_dir: Path | None = None,
+    level1_dir: Path,
 ) -> Path:
-    """Fusionne les index des boîtes, assemble le niveau 0 (2x2 depuis `forest/1`) et écrit le manifeste."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    """Fusionne les index des boîtes, assemble le niveau 0 (2x2 depuis `level1_dir/forest/1`), écrit le manifeste.
+
+    Refuse une liste vide et tout fichier qui n'est pas un index (`sample-sizes.json` d'un
+    échantillon, par exemple) : ValueError, rien n'est écrit.
+    """
+    paths = [Path(p) for p in paths]
+    if not paths:
+        raise ValueError("aucun index-partial.bin à fusionner (un échantillon --sample n'en produit pas)")
+    if not 1 <= max_level_outside <= max_level:
+        raise ValueError("il faut 1 ≤ max_level_outside ≤ max_level")
     merged = TileIndex(max_level)
     for p in paths:
-        merged.merge(TileIndex.from_bytes(Path(p).read_bytes()))
-    if level1_dir is not None:
-        for x0 in (0, 1):
-            tile = reduce_forest_tile(level1_dir, 0, x0, 0)
-            if tile is not None:
-                write_png(tile_path(out_dir, "forest", 0, x0, 0, "png"), tile)
-                merged.set(0, x0, 0)
+        merged.merge(TileIndex.from_bytes(p.read_bytes()))
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for x0 in (0, 1):
+        tile = reduce_forest_tile(level1_dir, 0, x0, 0)
+        if tile is not None:
+            write_png(tile_path(out_dir, "forest", 0, x0, 0, "png"), tile)
+            merged.set(0, x0, 0)
     out = out_dir / "index.bin"
     out.write_bytes(merged.to_bytes())
     write_forest_manifest(
         out_dir / "manifest.json", version=version, generated_at=generated_at, max_level=max_level,
-        max_level_outside=max_level_outside, tropics=(tropics.lon_min, tropics.lon_max, tropics.lat_min, tropics.lat_max),
-        channels=forest_mod.CHANNELS, threshold=forest_mod.FOREST_THRESHOLD,
+        max_level_outside=max_level_outside, tropics=_bounds_dict(tropical_bounds(tropics, max_level_outside)),
+        tropics_requested=_bounds_dict(tropics), channels=forest_mod.CHANNELS, threshold=forest_mod.FOREST_THRESHOLD,
     )
     return out
 
@@ -416,7 +448,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-level-outside", type=int, default=8, help="niveau max hors de --tropics (repli stockage : 7)")
     p.add_argument("--tropics", type=parse_bounds, default=TROPICS, help="lon_min,lon_max,lat_min,lat_max (écrire --tropics=-180,180,-30,30)")
     p.add_argument("--block", type=int, default=None, help="côté des blocs lus, en tuiles (défaut : selon le niveau, pic ≤ 3 Go)")
-    p.add_argument("--sample", type=int, default=1, help="K : ne lit qu'un bloc sur K et imprime l'estimation du stockage")
+    p.add_argument("--sample", type=int, default=1,
+                   help="K : ne lit qu'un bloc sur K, imprime l'estimation du stockage et écrit sample-sizes.json "
+                        "(jamais d'index-partial.bin : non publiable). Prendre K premier avec 22 et 16 (blocs par rangée "
+                        "aux niveaux 8 et 7), par exemple 7 ou 13 ; les niveaux réduits sont surestimés (prudent).")
     p.add_argument("--hansen-base", default=None, help="URL ou dossier des dalles Hansen (défaut : dépôt officiel v1.12)")
 
     p = sub.add_parser("merge-forest-index")
@@ -424,9 +459,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out-dir", required=True, type=Path)
     p.add_argument("--version", required=True)
     p.add_argument("--max-level", type=int, default=8)
-    p.add_argument("--max-level-outside", type=int, default=8)
+    p.add_argument("--max-level-outside", type=int, required=True, help="même valeur que pour forest (le manifeste la publie)")
     p.add_argument("--tropics", type=parse_bounds, default=TROPICS, help="mêmes bornes que pour forest")
-    p.add_argument("--level1-dir", type=Path, default=None, help="dossier contenant forest/1/x/y.png (assemblage du niveau 0)")
+    p.add_argument("--level1-dir", type=Path, required=True, help="dossier contenant forest/1/x/y.png (assemblage du niveau 0)")
 
     a = ap.parse_args(argv)
     if a.cmd == "extract-gebco":
