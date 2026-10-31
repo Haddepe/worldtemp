@@ -113,6 +113,13 @@ plafond fictif du modèle — puis fixer la borne haute au-dessus du maximum obs
 que le tooltip donne toujours une vraie valeur. Bornes plausibles brutes larges : saturer est
 toléré, rejeter le run ne l'est pas (et un rejet n'affecte que la neige, voir ci-dessous).
 
+> **Amendement 2026-10-31 (après mesure, Task 7).** Sur le run réel 2026-10-31 06z, GFS plafonne
+> l'épaisseur vers 2–3 m, calottes comprises (max observé 276,7 cm) : le point de départ
+> `Encoding(0, 5000, "sqrt")` est remplacé par **`snow_depth` `Encoding(0, 1000, "sqrt")`** cm
+> (max(276,7 × 1,2, 1000)) — pas ≈ 0,5 cm vers 5 cm, ≈ 2,5 cm à 1 m, ≈ 4 cm à 3 m. `snowfall` reste
+> `Encoding(0, 500, "sqrt")` (max observé 147,6 cm à f060). Les points manquants de `SNOD`
+> (9999 m, océans) valent 0 cm et sont exclus du contrôle de plage.
+
 **Isolement des échecs (§5.1).** Aujourd'hui toute exception dans `_fill_run` devient
 `SourceFailure(EXIT_DATA)` et fait reporter **toute** la source `gfs`. La neige ne doit pas suivre ce
 chemin : un échec de décodage, un champ absent ou un cumul invalide à une échéance laisse
@@ -134,6 +141,9 @@ Les deux couches suivent le contrat v3 existant (`layers/forecast.json`, PNG
   des arrêts de couleur entre 1 cm et ≈ 3 m, puis une bande « neige profonde » de teinte distincte
   jusqu'à la borne haute (§5.1) ; graduations de légende non linéaires (ex. 10 cm, 50 cm, 1 m, 3 m,
   10 m+), la légende étant déjà construite à partir des valeurs physiques des arrêts.
+  **Amendement 2026-10-31 (décision utilisateur, après mesure) :** GFS ne dépassant pas ≈ 2–3 m,
+  le dégradé détaillé couvre **1 cm → 1,5 m** et la bande « neige profonde » **1,5 m → 10 m**
+  (borne de l'encodage) ; graduations livrées 10 cm, 50 cm, 1.5 m, 3 m, 10 m.
 - **Menu** : une seule entrée « Snow » ; la choisir sélectionne `snowfall`.
 - **Sélecteur de mode** « Snowfall | Depth » avec la légende quand une des deux couches est active ;
   il bascule entre les deux couches en gardant l'instant de la frise, la caméra et le vent.
@@ -190,6 +200,10 @@ placement mobile du sélecteur, textes des pages (puis relecture utilisateur), d
    neige absent n'empêche pas la publication des autres couches GFS.
 4. Depth : la neige saisonnière (1 cm–3 m) reste lisible dans le dégradé, les calottes apparaissent
    dans la bande « neige profonde », et le tooltip y donne la valeur réelle (pas de saturation).
+   **Amendement 2026-10-31 :** la neige de 1 cm à 1,5 m reste lisible dans le dégradé détaillé,
+   les épaisseurs de 1,5 m à 10 m (les plus fortes valeurs GFS, plafonnées vers 2–3 m) apparaissent
+   dans la bande « neige profonde », et le tooltip donne la valeur réelle (pas de saturation sous
+   la borne de 10 m).
 5. `?layer=snowfall` et `?layer=snow_depth` ouvrent le bon mode ; les 4 pages répondent, sont au
    sitemap (21 URLs) et au tiroir.
 6. Sur téléphone de 412 px, légende + sélecteur + frise restent utilisables.

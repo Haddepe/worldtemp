@@ -445,6 +445,22 @@ def test_snow_missing_state_recomputes_from_first_hour(tmp_path, state):
     assert final.fh == 6 and final.run == R06
 
 
+def test_snow_state_ahead_of_progress_recomputes_from_first_hour(tmp_path):
+    """Passage 1 : l'état f003 est écrit mais la progression gfs_snow échoue → état en avance."""
+    ref = single_pass_pngs(tmp_path / "ref")
+    store = FakeStore(fail_on=f"layers/{D06}/gfs_snow.json")
+    make_run(tmp_path / "p1", store=store, download=url_download, decode=apcp_decode)
+    assert snow.decode_state(store.objects[snow.state_key(RUN06)]).fh == 3
+    assert f"layers/{D06}/gfs_snow.json" not in store.objects
+    store.fail_on = None
+    code, rec, _ = make_run(tmp_path, store=store, download=url_download, decode=apcp_decode)
+    assert code == EXIT_OK
+    snow_dl = [u for u in rec.downloads if is_snow(u) and "t06z" in u]
+    assert ["f003" in u for u in snow_dl] == [True, False]  # f003 re-téléchargé : l'état ne fait pas foi
+    assert {fh: snow_png(store, fh) for fh in HOURS} == ref
+    final = snow.decode_state(store.objects[snow.state_key(RUN06)])
+    assert final.fh == 6 and final.run == R06
+
 def test_snow_decode_error_keeps_gfs_fresh(tmp_path):
     before = published(gfs_run=R00, chem_run=R00)
 
