@@ -1,0 +1,224 @@
+"""Lecture des dalles Hansen GFC-2024-v1.12 par blocs (spec forêt §5.2 et §6).
+
+Dalles officielles : GeoTIFF 10° × 10°, 40 000 × 40 000 px de 0,00025° (≈ 30 m), uint8, LZW,
+une ligne par bande (strip), sans aperçus ni nodata. Nom = coin haut-gauche (`00N_060W` couvre
+lat 0..-10, lon -60..-50). Couverture 80° N – 60° S ; une dalle absente des listes officielles
+(`treecover2000.txt`, `lossyear.txt`) est de l'océan : zéros. Une dalle listée qui ne se lit pas
+lève toujours (jamais de trou silencieux).
+
+Stratégie de lecture : téléchargement complet des dalles dans le dossier de travail, avec un
+cache LRU borné (`max_cached` fichiers), plutôt que `/vsicurl/`. Les dalles étant en bandes d'une
+ligne (40 000 bandes par fichier, ≈ 3 à 10 Ko chacune), une fenêtre par `/vsicurl/` coûterait des
+milliers de requêtes HTTP par bloc et relirait les mêmes bandes pour chaque bloc voisin ; un
+téléchargement entier (113 Mo + 376 Mo pour `00N_060W`) est un seul GET vérifié en taille.
+
+Rééchantillonnage : `gdalwarp -r near` directement sur la grille exacte du bloc (règle R1) ; les
+dalles sont passées ensemble à gdalwarp (mosaïque implicite) plutôt que par `gdalbuildvrt`, qui
+saute sans échouer une dalle illisible.
+
+Seul autre module (avec gdal_adapter) qui exécute des programmes externes ; testé réellement sur
+Actions (`gdal-bin`), sauté sous Windows.
+"""
+from __future__ import annotations
+
+import math
+import shutil
+import subprocess
+import time
+import urllib.request
+from collections import OrderedDict
+from pathlib import Path
+
+import numpy as np
+
+from .grid import Bounds
+
+HANSEN_BASE = "https://storage.googleapis.com/earthenginepartners-hansen/GFC-2024-v1.12/"
+HANSEN_VERSION = "v1.12"
+_PREFIX = "Hansen_GFC-2024-v1.12_"
+LAYERS = ("treecover2000", "lossyear")  # ordre des sorties de read_block : couvert, année
+
+LAT_TOP_MAX = 80   # rangée la plus au nord : 80N (lat 80..70)
+LAT_TOP_MIN = -50  # rangée la plus au sud : 50S (lat -50..-60)
+GRANULE_DEG = 10
+
+
+class HansenReadError(RuntimeError):
+    """Dalle officielle illisible (téléchargement incomplet, GeoTIFF corrompu, erreur GDAL)."""
+
+
+def granule_name(lat_top: int, lon_left: int) -> str:
+    """Nom Hansen d'une dalle depuis son coin haut-gauche : (0, -60) → `00N_060W`, (10, 0) → `10N_000E`."""
+    if lat_top % GRANULE_DEG or lon_left % GRANULE_DEG or not -180 <= lon_left < 180:
+        raise ValueError(f"coin hors grille Hansen : lat {lat_top}, lon {lon_left}")
+    ns = "N" if lat_top >= 0 else "S"
+    ew = "E" if lon_left >= 0 else "W"
+    return f"{abs(lat_top):02d}{ns}_{abs(lon_left):03d}{ew}"
+
+
+def file_name(layer: str, name: str) -> str:
+    return f"{_PREFIX}{layer}_{name}.tif"
+
+
+def granules_for(bounds: Bounds) -> list[str]:
+    """Dalles 10° intersectées (bords exclus), du nord au sud puis d'ouest en est.
+
+    Bornées à la couverture Hansen (80° N – 60° S). Les longitudes au-delà de ±180°
+    (boîte à cheval sur l'antiméridien) sont ramenées dans [-180, 180).
+    """
+    tops = []
+    t = math.ceil(bounds.lat_max / GRANULE_DEG) * GRANULE_DEG
+    while t > bounds.lat_min:
+        if LAT_TOP_MIN <= t <= LAT_TOP_MAX:
+            tops.append(t)
+        t -= GRANULE_DEG
+    lefts = []
+    lon = math.floor(bounds.lon_min / GRANULE_DEG) * GRANULE_DEG
+    while lon < bounds.lon_max:
+        wrapped = (lon + 180) % 360 - 180
+        if wrapped not in lefts:
+            lefts.append(wrapped)
+        lon += GRANULE_DEG
+    return [granule_name(t, l) for t in tops for l in lefts]
+
+
+def parse_list(text: str, layer: str) -> set[str]:
+    """Noms de dalles d'une liste officielle (une URL complète par ligne)."""
+    head = f"{_PREFIX}{layer}_"
+    names = set()
+    for line in text.split():
+        base = line.rsplit("/", 1)[-1]
+        if base.startswith(head) and base.endswith(".tif"):
+            names.add(base[len(head):-4])
+    return names
+
+
+def _is_url(base: str) -> bool:
+    return base.startswith(("http://", "https://"))
+
+
+def _download(url: str, dest: Path, retries: int = 3) -> None:
+    """GET complet vers `dest`, vérifié contre Content-Length ; lève HansenReadError après `retries` essais."""
+    part = dest.with_name(dest.name + ".part")
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r, open(part, "wb") as f:
+                expected = int(r.headers.get("Content-Length", -1))
+                shutil.copyfileobj(r, f, length=1 << 22)
+            got = part.stat().st_size
+            if expected >= 0 and got != expected:
+                raise OSError(f"{got} octets reçus sur {expected}")
+            part.replace(dest)
+            return
+        except OSError as e:  # URLError, HTTPError, coupure, taille fausse
+            last = e
+            part.unlink(missing_ok=True)
+            time.sleep(2 * (attempt + 1))
+    raise HansenReadError(f"téléchargement impossible : {url} ({last})")
+
+
+class HansenBackend:
+    """Couvert 2000 (%) et année de perte (0–24) pour un bloc, en uint8 (H·factor, W·factor).
+
+    - `base` : URL du dépôt Hansen (téléchargement dans `work_dir`) ou dossier local contenant
+      déjà les dalles (lues en place ; utilisé par les tests).
+    - `available` : {couche: noms de dalles existantes} ; None → listes officielles lues sous `base`.
+    - `max_cached` : nombre maximal de dalles téléchargées gardées sur disque (toutes couches) ;
+      un bloc de 5,6° touche au plus 4 dalles par couche, lues couche par couche. Défaut 8 :
+      ≤ 4 paires, ≈ 2 Go au pire (paire `00N_060W` = 489 Mo).
+    """
+
+    def __init__(self, work_dir: Path, base: str = HANSEN_BASE,
+                 available: dict[str, set[str]] | None = None, max_cached: int = 8) -> None:
+        self.work = Path(work_dir)
+        self.work.mkdir(parents=True, exist_ok=True)
+        self.base = base if not _is_url(base) or base.endswith("/") else base + "/"
+        self.max_cached = max_cached
+        self._cache: OrderedDict[Path, None] = OrderedDict()
+        self.available = available if available is not None else {l: self._load_list(l) for l in LAYERS}
+
+    def _load_list(self, layer: str) -> set[str]:
+        if _is_url(self.base):
+            with urllib.request.urlopen(f"{self.base}{layer}.txt", timeout=60) as r:
+                text = r.read().decode("utf-8")
+        else:
+            text = (Path(self.base) / f"{layer}.txt").read_text(encoding="utf-8")
+        names = parse_list(text, layer)
+        if not names:
+            raise HansenReadError(f"liste officielle vide : {layer}")
+        return names
+
+    def _fetch(self, layer: str, name: str, keep: set[Path]) -> Path:
+        """Chemin local de la dalle ; téléchargée si besoin. Ne supprime jamais une dalle de `keep`."""
+        fname = file_name(layer, name)
+        if not _is_url(self.base):
+            path = Path(self.base) / fname
+            if not path.is_file():
+                raise FileNotFoundError(f"dalle listée mais introuvable : {path}")
+            return path
+        path = self.work / fname
+        if path in self._cache:
+            self._cache.move_to_end(path)
+            return path
+        for old in list(self._cache):
+            if len(self._cache) < self.max_cached:
+                break
+            if old not in keep:
+                old.unlink(missing_ok=True)
+                del self._cache[old]
+        _download(self.base + fname, path)
+        self._cache[path] = None
+        return path
+
+    def _warp(self, sources: list[Path], bounds: Bounds, w: int, h: int, layer: str) -> np.ndarray:
+        stem = self.work / f"{layer}_block"
+        dst = stem.with_suffix(".bin")
+        cmd = [
+            "gdalwarp", "-q", "-overwrite", "-of", "ENVI", "-ot", "Byte", "-t_srs", "EPSG:4326",
+            "-te", repr(bounds.lon_min), repr(bounds.lat_min), repr(bounds.lon_max), repr(bounds.lat_max),
+            "-ts", str(w), str(h), "-r", "near",
+            "-srcnodata", "None", "-dstnodata", "None", "-wo", "INIT_DEST=0",
+            "-wm", "512", "-multi", "-wo", "NUM_THREADS=ALL_CPUS",
+            *map(str, sources), str(dst),
+        ]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            # Toute erreur GDAL lève, même si gdalwarp sort avec 0 (lecture d'une bande corrompue).
+            if res.returncode != 0 or "ERROR" in res.stderr:
+                raise HansenReadError(f"gdalwarp {layer} {[p.name for p in sources]} : {res.stderr.strip()}")
+            if not dst.is_file() or dst.stat().st_size != w * h:
+                raise HansenReadError(f"sortie gdalwarp {layer} de taille inattendue")
+            return np.fromfile(dst, dtype=np.uint8).reshape(h, w)
+        finally:
+            for p in self.work.glob(f"{stem.name}.*"):
+                p.unlink(missing_ok=True)
+
+    def read_block(self, bounds: Bounds, width: int, height: int, factor: int) -> tuple[np.ndarray, np.ndarray]:
+        """(couvert, année) de forme (height·factor, width·factor) sur la grille exacte de `bounds`."""
+        if bounds.lon_min < -180 or bounds.lon_max > 180:
+            raise ValueError("bloc au-delà de l'antiméridien : découper en [-180, 180] avant read_block")
+        w, h = width * factor, height * factor
+        names = granules_for(bounds)
+        out = []
+        for layer in LAYERS:
+            present = [n for n in names if n in self.available[layer]]
+            if not present:
+                out.append(np.zeros((h, w), np.uint8))
+                continue
+            keep = {self.work / file_name(layer, n) for n in present}
+            paths = [self._fetch(layer, n, keep) for n in present]
+            out.append(self._warp(paths, bounds, w, h, layer))
+        return out[0], out[1]
+
+    def close(self) -> None:
+        """Supprime les dalles téléchargées (dossier de travail des runners ≈ 14 Go)."""
+        for p in self._cache:
+            p.unlink(missing_ok=True)
+        self._cache.clear()
+
+    def __enter__(self) -> "HansenBackend":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
