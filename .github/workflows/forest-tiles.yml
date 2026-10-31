@@ -1,0 +1,224 @@
+name: forest-tiles
+
+# Tuiles forêt (Hansen GFC v1.12) : 8 boîtes de 90° en parallèle (box_for_job 0..7), puis fusion
+# des index, niveau 0 et manifeste. Lancement manuel uniquement ; upload=false par défaut.
+# Mode estimation (sample=K, K premier avec 22 et 16 : 7 ou 13) : chaque boîte écrit
+# sample-sizes.json, aucun index, et RIEN n'est jamais envoyé sur R2.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dossier de destination tiles/forest/<version>/ (immutable : changer de version pour régénérer)"
+        type: string
+        default: "v1.12"
+      max_level_outside:
+        description: "Niveau max hors bande tropicale (8 = partout au niveau 8 ; 7 = repli stockage)"
+        type: choice
+        options: ["8", "7"]
+        default: "8"
+      sample:
+        description: "Estimation : lire 1 bloc sur K (7 ou 13) ; vide = génération complète"
+        type: string
+        default: ""
+      boxes:
+        description: "Boîtes à générer (JSON, 0..7)"
+        type: string
+        default: "[0,1,2,3,4,5,6,7]"
+      upload:
+        description: "Envoyer sur R2 (seulement génération complète des 8 boîtes)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forest-tiles
+  cancel-in-progress: false
+
+env:
+  RCLONE_CONFIG_R2_TYPE: s3
+  RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+  RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+  RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+  IMMUTABLE: "Cache-Control: public, max-age=31536000, immutable"
+  TROPICS: "-180,180,-30,30"
+  # Un run partiel (boxes != les 8) ou un échantillon ne publie jamais rien : index.bin est
+  # immutable, une correction imposerait de changer de version.
+  FULL_SET: ${{ inputs.boxes == '[0,1,2,3,4,5,6,7]' && inputs.sample == '' }}
+
+jobs:
+  forest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        box: ${{ fromJSON(inputs.boxes || '[0,1,2,3,4,5,6,7]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Outils
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gdal-bin rclone time
+          pip install -r tiler/requirements.txt
+          gdalwarp --version
+          nproc && free -m && df -h .
+      - name: Tuiles forêt, boîte ${{ matrix.box }}
+        env:
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          if [ -n "$SAMPLE" ]; then
+            [[ "$SAMPLE" =~ ^[0-9]+$ ]] && [ "$SAMPLE" -ge 2 ] || { echo "::error::sample doit être un entier ≥ 2"; exit 1; }
+            SAMPLE_ARG="--sample $SAMPLE"
+          else
+            SAMPLE_ARG=""
+          fi
+          # Pic de disque échantillonné toutes les 20 s (dalles Hansen + tuiles écrites).
+          ( peak=0; while true; do u=$(df --output=used -B1M . | tail -1 | tr -d ' '); [ "$u" -gt "$peak" ] && peak=$u && echo "$peak" > disk-peak-mb; sleep 20; done ) &
+          SAMPLER=$!
+          # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
+          /usr/bin/time -v -o time.txt python -m tiler.main forest --box ${{ matrix.box }} --out out --work work \
+            --min-level 1 --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
+            --tropics=$TROPICS $SAMPLE_ARG || { cat time.txt; kill $SAMPLER; exit 1; }
+          kill $SAMPLER || true
+          cat time.txt
+          echo "Pic de disque utilisé : $(cat disk-peak-mb) Mo (départ inclus)"
+          du -sh out/forest
+          mkdir -p level1/forest && cp -r out/forest/1 level1/forest/1 2>/dev/null || true
+          {
+            echo "### Boîte ${{ matrix.box }}"
+            grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
+            echo "- pic de disque : $(cat disk-peak-mb) Mo"
+            echo "- tuiles : $(du -sh out/forest | cut -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample != '' }}
+        with:
+          name: sample-${{ matrix.box }}
+          path: out/sample-sizes.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          name: index-${{ matrix.box }}
+          path: out/index-partial.bin
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          name: forest1-${{ matrix.box }}
+          path: level1/
+          retention-days: 7
+      # Tuiles d'une boîte : seulement génération complète des 8 boîtes (jamais un échantillon).
+      - name: Envoi sur R2
+        if: ${{ inputs.upload && env.FULL_SET == 'true' }}
+        run: rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/forest" --transfers 32 --checkers 32 --header-upload "$IMMUTABLE" --stats 1m --stats-one-line
+
+  # Lecture seule, indépendant des boîtes : occupation actuelle du bucket (limite gratuite 10 Go).
+  r2-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - run: sudo apt-get update -q && sudo apt-get install -y -q rclone
+      - name: Occupation actuelle du bucket R2
+        run: |
+          mkdir -p r2
+          rclone size "r2:${{ secrets.R2_BUCKET }}" | tee r2/r2-size.txt
+          rclone size "r2:${{ secrets.R2_BUCKET }}" --json > r2/r2-size.json
+          rclone lsf "r2:${{ secrets.R2_BUCKET }}" --dirs-only | tee r2/top-dirs.txt
+          { echo "### Bucket R2"; sed 's/^/- /' r2/r2-size.txt; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r2-size
+          path: r2/
+          retention-days: 30
+
+  index:
+    needs: [forest, r2-size]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -q && sudo apt-get install -y -q rclone && pip install -r tiler/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: r2-size
+          path: estimate
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.sample != '' }}
+        with:
+          pattern: sample-*
+          path: estimate/samples
+      - name: Total extrapolé
+        if: ${{ inputs.sample != '' }}
+        run: |
+          python - <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, pathlib
+          files = sorted(pathlib.Path("estimate/samples").glob("*/sample-sizes.json"))
+          total = 0
+          print("### Estimation forêt")
+          for f in files:
+              d = json.loads(f.read_text())
+              total += d["extrapolated_total_bytes"]
+              print(f"- {f.parent.name} : {d['extrapolated_total_bytes'] / 1e9:.3f} Go extrapolés (1/{d['sample']}), octets/niveau {d['bytes_per_level']}")
+          r2 = json.loads(pathlib.Path("estimate/r2-size.json").read_text())["bytes"]
+          print(f"- **total forêt extrapolé : {total} octets ({total / 1e9:.3f} Go) sur {len(files)} boîtes**")
+          print(f"- bucket actuel : {r2} octets ({r2 / 1e9:.3f} Go) ; somme : {(total + r2) / 1e9:.3f} Go (limite 10 Go)")
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample != '' }}
+        with:
+          name: estimate
+          path: estimate/
+          retention-days: 30
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          pattern: index-*
+          path: partial
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          pattern: forest1-*
+          path: level1
+          merge-multiple: true
+      - name: Niveau 0, fusion des index, manifeste
+        if: ${{ inputs.sample == '' }}
+        env:
+          BOXES: ${{ inputs.boxes }}
+        run: |
+          # Garde : un index partiel par boîte demandée, sinon rien n'est fusionné.
+          want=$(python -c "import json, os; print(len(json.loads(os.environ['BOXES'])))")
+          got=$(ls partial/*/index-partial.bin | wc -l)
+          [ "$want" = "$got" ] || { echo "::error::$got index partiels pour $want boîtes"; exit 1; }
+          python -m tiler.main merge-forest-index --inputs partial/*/index-partial.bin --out-dir out \
+            --version ${{ inputs.version }} --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
+            --tropics=$TROPICS --level1-dir level1
+          ls -la out out/forest/0
+          cat out/manifest.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          name: index-merged
+          path: out/
+          retention-days: 30
+      - name: Avertissement run partiel (rien publié)
+        if: ${{ inputs.upload && env.FULL_SET != 'true' }}
+        run: |
+          echo "::warning::Run partiel ou échantillon (boxes=${{ inputs.boxes }}, sample=${{ inputs.sample }}) : rien n'est envoyé sur R2"
+      - name: Envoi sur R2 (niveau 0, index immutable, manifeste revalidé à 5 min)
+        if: ${{ inputs.upload && env.FULL_SET == 'true' }}
+        run: |
+          rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/forest" --header-upload "$IMMUTABLE"
+          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/index.bin" --header-upload "$IMMUTABLE" --retries 5
+          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/manifest.json" --header-upload "Cache-Control: public, max-age=300" --retries 5
