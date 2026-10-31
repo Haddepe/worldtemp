@@ -52,6 +52,7 @@ le modèle du lot G.
 | Pages | `/snow-map/` + pages régions **Alpes, Rocheuses/USA, Japon** (pas la Scandinavie) |
 | Ordre | Neige d'abord, forêt ensuite (lot séparé) |
 | Échec propre à la neige | **Neige isolée** : un champ neige manquant ou aberrant n'empêche jamais la publication des autres couches GFS ; la neige garde alors son run précédent (comportement de `gefs_chem` aujourd'hui) |
+| Grandes épaisseurs (Depth) | **Dégradé détaillé de 1 cm à ≈ 3 m** (neige saisonnière lisible), puis une **bande « neige profonde »** de teinte distincte qui s'intensifie jusqu'aux dizaines de mètres (calottes, glaciers) ; le tooltip donne toujours la vraie valeur |
 | Ratio et origine du cumul | Validés avec le résumé de brainstorming (ratio 10:1, cumul depuis le début de la série) |
 
 ### 5.2 Mes choix
@@ -62,7 +63,7 @@ le modèle du lot G.
   une première image vide. Le run a ≈ 4–6 h quand il est publié, donc le cumul inclut quelques heures
   passées, ce que la légende dit.
 - **Ratio neige/eau 10:1** (1 mm d'eau = 1 cm de neige), convention courante des sites grand public.
-- **Unité : cm**, une décimale sous 10 cm, entier au-dessus.
+- **Unité : cm**, une décimale sous 10 cm, entier jusqu'à 1 m, puis en mètres (« 7.4 m », « 32 m »).
 - **Transparence** sous un seuil (≈ 0,5 cm de chutes, ≈ 1 cm au sol), comme la pluie.
 - **Deux couches dans le manifeste**, `snowfall` et `snow_depth`, regroupées en une entrée de menu
   côté front. Le mode n'est donc pas un nouveau paramètre d'URL : c'est la couche
@@ -101,11 +102,16 @@ toutes les échéances précédentes, en flottant. Le constructeur choisit comme
   s'accumulerait).
 Un test doit couvrir « run interrompu après f021, repris » → cumul identique à un run d'une traite.
 
-**Encodage 8 bits** (à caler sur des runs réels, comme pm25/dust) : point de départ
-`snowfall` `Encoding(0, 200, "sqrt")` cm, `snow_depth` `Encoding(0, 300, "sqrt")` cm. Bornes
-plausibles brutes assez larges pour les calottes polaires (le `SNOD` GFS sur l'Antarctique et le
-Groenland est à mesurer avant de fixer la borne ; saturer au-delà de la borne d'affichage est
-acceptable, rejeter le run ne l'est pas).
+**Encodage 8 bits.** Les épaisseurs réelles vont de quelques cm à plusieurs mètres en montagne et à
+des dizaines de mètres sur les calottes polaires (remarque de l'utilisateur, 2026-10-31) : une borne
+à 3 m est exclue. Point de départ, en échelle `sqrt` existante (aucun nouveau code d'encodage) :
+`snow_depth` `Encoding(0, 5000, "sqrt")` cm — pas ≈ 0,8 cm vers 5 cm, ≈ 5 cm à 1 m, ≈ 10 cm à 3 m,
+≈ 18 cm à 10 m, ≈ 40 cm à 50 m ; `snowfall` `Encoding(0, 500, "sqrt")` cm (cumul sur 60 h, les
+épisodes extrêmes de neige d'effet de mer au Japon dépassent 2 m). **Première tâche du plan :
+mesurer `SNOD` sur un run réel** (Antarctique, Groenland, Alpes, Himalaya) — valeurs réalistes ou
+plafond fictif du modèle — puis fixer la borne haute au-dessus du maximum observé avec marge, pour
+que le tooltip donne toujours une vraie valeur. Bornes plausibles brutes larges : saturer est
+toléré, rejeter le run ne l'est pas (et un rejet n'affecte que la neige, voir ci-dessous).
 
 **Isolement des échecs (§5.1).** Aujourd'hui toute exception dans `_fill_run` devient
 `SourceFailure(EXIT_DATA)` et fait reporter **toute** la source `gfs`. La neige ne doit pas suivre ce
@@ -124,7 +130,10 @@ Les deux couches suivent le contrat v3 existant (`layers/forecast.json`, PNG
 
 - **Registre** `web/src/layers/registry.ts` : deux `LayerDef`, `snowfall` et `snow_depth`, palette
   propre à la neige (blancs bleutés → bleus → violets pour les gros cumuls ; doit rester lisible sur le
-  fond satellite clair des glaciers et sur la carte claire au zoom).
+  fond satellite clair des glaciers et sur la carte claire au zoom). Pour `snow_depth`, l'essentiel
+  des arrêts de couleur entre 1 cm et ≈ 3 m, puis une bande « neige profonde » de teinte distincte
+  jusqu'à la borne haute (§5.1) ; graduations de légende non linéaires (ex. 10 cm, 50 cm, 1 m, 3 m,
+  10 m+), la légende étant déjà construite à partir des valeurs physiques des arrêts.
 - **Menu** : une seule entrée « Snow » ; la choisir sélectionne `snowfall`.
 - **Sélecteur de mode** « Snowfall | Depth » avec la légende quand une des deux couches est active ;
   il bascule entre les deux couches en gardant l'instant de la frise, la caméra et le vent.
@@ -179,7 +188,8 @@ placement mobile du sélecteur, textes des pages (puis relecture utilisateur), d
    de `WEASD`.
 3. Un run interrompu puis repris donne exactement les mêmes PNG qu'un run d'une traite ; un champ
    neige absent n'empêche pas la publication des autres couches GFS.
-4. Depth montre les calottes polaires sans écraser la lisibilité de la neige saisonnière.
+4. Depth : la neige saisonnière (1 cm–3 m) reste lisible dans le dégradé, les calottes apparaissent
+   dans la bande « neige profonde », et le tooltip y donne la valeur réelle (pas de saturation).
 5. `?layer=snowfall` et `?layer=snow_depth` ouvrent le bon mode ; les 4 pages répondent, sont au
    sitemap (21 URLs) et au tiroir.
 6. Sur téléphone de 412 px, légende + sélecteur + frise restent utilisables.
