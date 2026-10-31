@@ -52,7 +52,7 @@ le modèle du lot G.
 | Pages | `/snow-map/` + pages régions **Alpes, Rocheuses/USA, Japon** (pas la Scandinavie) |
 | Ordre | Neige d'abord, forêt ensuite (lot séparé) |
 | Échec propre à la neige | **Neige isolée** : un champ neige manquant ou aberrant n'empêche jamais la publication des autres couches GFS ; la neige garde alors son run précédent (comportement de `gefs_chem` aujourd'hui) |
-| Grandes épaisseurs (Depth) | **Dégradé détaillé de 1 cm à ≈ 3 m** (neige saisonnière lisible), puis une **bande « neige profonde »** de teinte distincte qui s'intensifie jusqu'aux dizaines de mètres (calottes, glaciers) ; le tooltip donne toujours la vraie valeur |
+| Grandes épaisseurs (Depth) | **Dégradé détaillé de 1 cm à ≈ 3 m** (abaissé à ≈ 1,5 m le 2026-10-31 après mesure : GFS plafonne vers 2–3 m) (neige saisonnière lisible), puis une **bande « neige profonde »** de teinte distincte qui s'intensifie jusqu'aux dizaines de mètres (calottes, glaciers) ; le tooltip donne toujours la vraie valeur |
 | Ratio et origine du cumul | Validés avec le résumé de brainstorming (ratio 10:1, cumul depuis le début de la série) |
 
 ### 5.2 Mes choix

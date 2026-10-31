@@ -128,18 +128,20 @@ export const LAYERS: readonly LayerDef[] = [
     ticks: [1, 5, 20, 50, 100, 300], tooltipMin: 0.5, isoStep: null,
   },
   {
-    // Épaisseur au sol (cm). Arrêts en valeur physique : dégradé froid dense de 1 à 300 cm, puis bande chaude
-    // « neige profonde » (teinte distincte) de 300 cm à la borne de l'encodage (1000 cm : GFS plafonne vers
-    // 2,8 m, Task 7). Transparent sous 1 cm, comme le tooltip (tooltipMin).
+    // Épaisseur au sol (cm). Arrêts en valeur physique : dégradé froid dense de 1 à 150 cm (toute la neige
+    // saisonnière), puis bande chaude « neige profonde » (teinte distincte) de 150 cm à la borne de l'encodage
+    // (1000 cm). Seuil à 1,5 m : GFS plafonne vers 2–3 m même sur les calottes (mesuré sur run réel), donc une
+    // bande à 3 m ne serait jamais vue ; décision utilisateur 2026-10-31. Transparent sous 1 cm, comme le
+    // tooltip (tooltipMin).
     id: "snow_depth", modeOf: "snowfall", label: STRINGS.layers.snow, modeLabel: STRINGS.snowModes.depth, unit: "cm",
     format: formatSnow, tickLabel: depthTick,
     stops: [
       s(0, 170, 205, 248, 0), s(0.99, 170, 205, 248, 0), s(1, 170, 205, 248, 150), s(2, 150, 190, 246, 175),
       s(5, 125, 170, 244, 195), s(10, 105, 150, 240, 210), s(25, 80, 125, 232, 225), s(50, 60, 100, 220, 235),
-      s(100, 50, 70, 190, 240), s(200, 90, 50, 170, 245), s(300, 140, 40, 150, 250),
-      s(330, 220, 50, 100, 252), s(600, 250, 140, 40, 255), s(1000, 255, 225, 120, 255),
+      s(100, 70, 60, 185, 242), s(150, 140, 40, 150, 250),
+      s(155, 220, 50, 100, 252), s(300, 250, 140, 40, 255), s(1000, 255, 225, 120, 255),
     ],
-    ticks: [10, 50, 100, 300, 1000], tooltipMin: 1, isoStep: null,
+    ticks: [10, 50, 150, 300, 1000], tooltipMin: 1, isoStep: null,
   },
 ];
 
