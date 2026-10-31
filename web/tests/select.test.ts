@@ -12,6 +12,15 @@ describe("orderedLayers", () => {
     const partial = { ...M, layers: { dust: M.layers.dust!, rain: M.layers.rain! } };
     expect(orderedLayers(LAYERS, partial).map((d) => d.id)).toEqual(["rain", "dust"]);
   });
+  it("couche tuiles : ajoutée quand son manifeste de tuiles est chargé, sans entrée de forecast.json", () => {
+    expect(orderedLayers(LAYERS, M, ["forest"]).map((d) => d.id)).toEqual(["temp", "clouds", "rain", "pressure", "humidity", "pm25", "dust", "forest"]);
+    expect(orderedLayers(LAYERS, M).map((d) => d.id)).not.toContain("forest");
+    // une entrée « forest » égarée dans forecast.json ne suffit pas : c'est le jeu de tuiles qui fait foi
+    const stray = { ...M, layers: { ...M.layers, forest: M.layers.temp! } };
+    expect(orderedLayers(LAYERS, stray).map((d) => d.id)).not.toContain("forest");
+    // et une couche grille n'est jamais rendue disponible par la liste des tuiles
+    expect(orderedLayers(LAYERS, { layers: {} }, ["temp", "forest"]).map((d) => d.id)).toEqual(["forest"]);
+  });
   it("une couche du manifeste inconnue du registre est ignorée", () => {
     const extra = { ...M, layers: { ...M.layers, wind: M.layers.temp! } };
     expect(orderedLayers(LAYERS, extra)).toHaveLength(7);
@@ -79,6 +88,12 @@ describe("modes de couche (neige)", () => {
     expect(menuEntries(LAYERS, only(["snowfall", "snow_depth"])).map((d) => d.id)).toEqual(["snowfall"]);
     expect(menuEntries(LAYERS, only(["temp"])).map((d) => d.id)).toEqual(["temp"]);
   });
+  it("menuEntries : Forest dès que le manifeste forêt est chargé, sans couche météo correspondante", () => {
+    const only = (ids: string[]) => ({ layers: Object.fromEntries(ids.map((id) => [id, M.layers.temp!])) });
+    expect(menuEntries(LAYERS, only(["temp", "snowfall"]), ["forest"]).map((d) => d.id)).toEqual(["temp", "snowfall", "forest"]);
+    expect(menuEntries(LAYERS, only([]), ["forest"]).map((d) => d.id)).toEqual(["forest"]);
+    expect(menuEntries(LAYERS, only(["temp"]), []).map((d) => d.id)).toEqual(["temp"]);
+  });
   it("failureFallback : le mode voisin disponible d'abord, sinon la couche précédente, sinon aucune", () => {
     expect(failureFallback("snowfall", "temp", ["temp", "snow_depth"], LAYERS)).toBe("snow_depth");
     expect(failureFallback("snow_depth", "snowfall", ["temp", "snowfall"], LAYERS)).toBe("snowfall");
@@ -90,5 +105,7 @@ describe("modes de couche (neige)", () => {
   });
   it("parseLayerParam accepte un mode", () => {
     expect(parseLayerParam("?layer=snow_depth", [...LAYERS.map((d) => d.id)])).toBe("snow_depth");
+    expect(parseLayerParam("?layer=forest", orderedLayers(LAYERS, M, ["forest"]).map((d) => d.id))).toBe("forest");
+    expect(parseLayerParam("?layer=forest", orderedLayers(LAYERS, M).map((d) => d.id))).toBe("temp"); // manifeste forêt absent
   });
 });

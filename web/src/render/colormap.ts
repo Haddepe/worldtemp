@@ -38,6 +38,21 @@ export function buildLut(def: LayerDef, enc: Encoding): Uint8Array {
   return out;
 }
 
+/**
+ * LUT de la forêt, 256 × 2 RGBA (spec forêt §7), indexée par les octets bruts de la tuile :
+ * ligne 0, texel i = couvert de i % (`def.stops`) ; ligne 1, texel i = perte de l'année
+ * `yearBase + i` (`def.lossStops`), transparent pour i = 0 (pas de perte).
+ */
+export function buildForestLut(def: LayerDef, yearBase: number): Uint8Array {
+  const out = new Uint8Array(LUT_SIZE * 2 * 4);
+  const loss = def.lossStops ?? [];
+  for (let i = 0; i < LUT_SIZE; i++) {
+    out.set(colorAt(def.stops, i).map(Math.round), i * 4);
+    if (i > 0 && loss.length > 0) out.set(colorAt(loss, yearBase + i).map(Math.round), (LUT_SIZE + i) * 4);
+  }
+  return out;
+}
+
 function pct(v: number, enc: Encoding): string {
   const p = (encode(v, enc) / 255) * 100;
   return Number.isInteger(p) ? String(p) : p.toFixed(2).replace(/\.?0+$/, "");
@@ -67,8 +82,8 @@ export function legendGradientCss(def: LayerDef, enc: Encoding): string {
  * Texture GPU de la LUT. `SRGBColorSpace` : les octets sont du sRGB, le GPU les
  * décode en linéaire à l'échantillonnage, cohérent avec les tuiles satellite.
  */
-export function createLutTexture(lut: Uint8Array): THREE.DataTexture {
-  const tex = new THREE.DataTexture(lut, LUT_SIZE, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+export function createLutTexture(lut: Uint8Array, rows = 1): THREE.DataTexture {
+  const tex = new THREE.DataTexture(lut, LUT_SIZE, rows, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;

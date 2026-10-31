@@ -6,6 +6,12 @@ uniform float uHasSat;
 uniform sampler2D uMap;          // R ombrage, G terre, B frontière : données (NoColorSpace)
 uniform vec4 uMapRect;
 uniform float uHasMap;           // 0 = océan connu ou tuile pas encore arrivée
+uniform sampler2D uForest;       // tuile forêt (spec forêt §6) : couvert %, année de perte, part perdue (NoColorSpace)
+uniform vec4 uForestRect;
+uniform float uHasForest;        // 0 = pas de forêt connue ici, ou tuile pas encore arrivée
+uniform float uForestOn;         // 1 = couche Forest active : elle remplace la couche météo
+uniform sampler2D uForestLut;    // 256x2 RGBA sRGB : ligne 0 couvert par octet, ligne 1 perte par octet d'année
+uniform mat3 uForestChannels;    // texel.rgb -> (couvert, année, part) selon les canaux du manifeste
 uniform sampler2D uLayerA;       // échéance A de la couche active (R8, NoColorSpace)
 uniform sampler2D uLayerB;       // échéance B (spec lot E §6.1) ; = A quand uMix = 0
 uniform float uMix;              // mélange de A vers B ; 0 = A seule, seconde série de lectures sautée
@@ -78,7 +84,21 @@ void main() {
   vec3 background = mix(satCol, mapCol, uMapStyle);
 
   vec3 color;
-  if (uHasLayer > 0.5) {
+  if (uForestOn > 0.5) {
+    // Forêt (spec forêt §7) : vert selon le couvert (transparent sous 30 %), puis pertes jaune -> rouge
+    // selon l'année, d'opacité égale à la part de forêt perdue dans le pixel (ruling R4 : part nulle,
+    // rien de la perte n'est dessiné). Octets bruts -> centres des texels de la LUT.
+    color = background;
+    if (uHasForest > 0.5) {
+      vec3 f = uForestChannels * texture2D(uForest, uForestRect.xy + vUv * uForestRect.zw).rgb;
+      vec4 cover = texture2D(uForestLut, vec2((f.x * 255.0 + 0.5) / 256.0, 0.25));
+      vec4 loss = texture2D(uForestLut, vec2((f.y * 255.0 + 0.5) / 256.0, 0.75));
+      float light = 0.85 + 0.15 * lambert;
+      color = mix(color, cover.rgb * mix(1.0, tone, land) * light, cover.a);
+      color = mix(color, loss.rgb * light, loss.a * f.z);
+    }
+    color = mix(color, vec3(1.0), border * 0.7);
+  } else if (uHasLayer > 0.5) {
     // Fondu entre échéances (spec lot E §6.1) : octets mélangés avant la LUT, palette et isobares justes.
     // Branche sur uniform (cohérente pour tout le draw) : à l'arrêt sur une échéance, coût inchangé.
     float t = catmullRom(uLayerA, hm, uGridSize).r;

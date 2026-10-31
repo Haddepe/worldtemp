@@ -14,6 +14,7 @@ export const STRINGS = {
     pm25: "PM2.5",
     dust: "Dust",
     snow: "Snow",
+    forest: "Forest",
   },
   snowModes: { snowfall: "Snowfall", depth: "Depth", label: "Snow mode" },
   layersMenuLabel: "Layer",

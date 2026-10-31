@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  HORIZON_MS, HOUR_MS, clampTime, fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, snapToHour, timelineRange,
+  HORIZON_MS, HOUR_MS, clampTime, fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, snapToHour, timelineAfterLayerChange,
+  timelineRange, type TimelineHold,
 } from "../src/time/timeline";
 import { sliderValue } from "../src/ui/timeline";
 
@@ -121,5 +122,34 @@ describe("fallbackFrames — repli à l'activation (revue finale F1)", () => {
   it("bornée à la frise", () => {
     expect(fallbackFrames({ a: 0, b: 0, f: 0, clamped: false }, 3, (i) => i !== 0, 2)).toEqual([1, 2]);
     expect(fallbackFrames({ a: 0, b: 0, f: 0, clamped: false }, 1, (i) => i !== 0, 2)).toEqual([]);
+  });
+});
+
+describe("timelineAfterLayerChange — frise masquée par une couche tuiles (spec forêt §7, Review Focus 2)", () => {
+  const shown = (playing: boolean): TimelineHold => ({ hidden: false, playing, resume: false });
+  it("vers une couche tuiles : frise masquée, lecture arrêtée, état de lecture retenu", () => {
+    expect(timelineAfterLayerChange(shown(true), "tiles")).toEqual({ hidden: true, playing: false, resume: true });
+    expect(timelineAfterLayerChange(shown(false), "tiles")).toEqual({ hidden: true, playing: false, resume: false });
+  });
+  it("retour à une couche grille ou à Aucune : frise rétablie, lecture reprise seulement si elle jouait", () => {
+    expect(timelineAfterLayerChange({ hidden: true, playing: false, resume: true }, "grid")).toEqual(shown(true));
+    expect(timelineAfterLayerChange({ hidden: true, playing: false, resume: false }, "grid")).toEqual(shown(false));
+    expect(timelineAfterLayerChange({ hidden: true, playing: false, resume: true }, null)).toEqual(shown(true));
+  });
+  it("sans changement de genre : rien ne bouge (Forest → Forest garde l'état retenu, grille → grille garde la lecture)", () => {
+    const held: TimelineHold = { hidden: true, playing: false, resume: true };
+    expect(timelineAfterLayerChange(held, "tiles")).toEqual(held);
+    expect(timelineAfterLayerChange(shown(true), "grid")).toEqual(shown(true));
+    expect(timelineAfterLayerChange(shown(false), null)).toEqual(shown(false));
+  });
+  it("aller-retour Forest → météo → Forest → météo : l'état d'origine revient à chaque retour", () => {
+    let s = shown(true);
+    s = timelineAfterLayerChange(s, "tiles");
+    s = timelineAfterLayerChange(s, "grid");
+    expect(s).toEqual(shown(true));
+    s = { ...s, playing: false };                 // l'utilisateur met en pause sur la couche météo
+    s = timelineAfterLayerChange(s, "tiles");
+    s = timelineAfterLayerChange(s, "grid");
+    expect(s).toEqual(shown(false));
   });
 });

@@ -7,20 +7,34 @@ import type { TileLoader } from "../src/tiles/loader";
 
 const satTex = new THREE.Texture();
 const mapTex = new THREE.Texture();
+const forestTex = new THREE.Texture();
 
-function fakeLoader(): TileLoader {
+function fakeLoader(forestEnabled: boolean[] = []): TileLoader {
   return {
     update: () => {},
     isOcean: () => false,
     get: () => undefined,
     usedBytes: 0,
     dispose: () => {},
-    resolve: (t: TileId, set: "sat" | "map") => ({
+    setForestEnabled: (on: boolean) => forestEnabled.push(on),
+    forestTile: (t: TileId) => t,
+    resolve: (t: TileId, set: "sat" | "map" | "forest") => ({
       tile: { z: 0, x: t.x >> t.z, y: 0 },
-      texture: set === "sat" ? satTex : mapTex,
+      texture: set === "sat" ? satTex : set === "map" ? mapTex : forestTex,
     }),
   } as unknown as TileLoader;
 }
+
+function frontView() {
+  const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.01, 10);
+  camera.position.set(0, 0, 3);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  camera.updateProjectionMatrix();
+  return viewStateFrom(camera, 720);
+}
+
+const render = (mesh: THREE.Mesh) => (mesh.onBeforeRender as (...a: unknown[]) => void)({}, {}, {}, {}, {}, {});
 
 describe("createTiledGlobe", () => {
   it("renvoie chaque uniform de tuile au GPU (uniformsNeedUpdate) avec des rects distincts par patch", () => {
@@ -104,5 +118,50 @@ describe("createTiledGlobe", () => {
     expect(material.fragmentShader).not.toContain("uLayer;");
     // `step` est une fonction native GLSL : la masquer en paramètre casse la compilation sur certains pilotes.
     expect(material.fragmentShader).toContain("float isoline(float t, float spacing)");
+  });
+
+  it("setForest : jeu forest activé dans le loader, uniforms de patch posés, couche météo laissée telle quelle", () => {
+    const enabled: boolean[] = [];
+    const globe = createTiledGlobe("high", fakeLoader(enabled), 8);
+    globe.update(frontView());
+    const mesh = globe.group.children[0] as THREE.Mesh;
+    const u = (mesh.material as THREE.ShaderMaterial).uniforms;
+    render(mesh);
+    expect(u.uForestOn!.value).toBe(0);
+    expect(u.uHasForest!.value).toBe(0);           // couche éteinte : le jeu forest n'est pas échantillonné
+    const weather = new THREE.Texture();
+    globe.setLayer(weather, 1440, 721);
+    globe.setForest(true);
+    expect(enabled).toEqual([true]);
+    expect(u.uForestOn!.value).toBe(1);
+    globe.update(frontView());
+    render(mesh);
+    expect(u.uHasForest!.value).toBe(1);
+    expect(u.uForest!.value).toBe(forestTex);
+    expect((u.uForestRect!.value as THREE.Vector4).z).toBeLessThan(1); // sous-rectangle de l'ancêtre
+    globe.setForest(false);
+    expect(enabled).toEqual([true, false]);
+    expect(u.uForestOn!.value).toBe(0);
+    globe.update(frontView());
+    render(mesh);
+    expect(u.uHasForest!.value).toBe(0);
+    expect(u.uLayerA!.value).toBe(weather);       // Review Focus 2 : la couche météo revient intacte
+    expect(u.uHasLayer!.value).toBe(1);
+  });
+
+  it("setForestPalette : LUT et matrice des canaux du manifeste", () => {
+    const globe = createTiledGlobe("high", fakeLoader(), 8);
+    globe.update(frontView());
+    const u = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).uniforms;
+    const lut = new THREE.DataTexture(new Uint8Array(256 * 2 * 4), 256, 2);
+    globe.setForestPalette(lut, { cover: 2, year: 0, share: 1 });
+    expect(u.uForestLut!.value).toBe(lut);
+    // ligne k = grandeur k (couvert, année, part) ; 1 dans la colonne de son canal. Matrix3 : colonnes d'abord.
+    const e = (u.uForestChannels!.value as THREE.Matrix3).elements;
+    const at = (row: number, col: number) => e[col * 3 + row];
+    expect([at(0, 2), at(1, 0), at(2, 1)]).toEqual([1, 1, 1]);
+    expect(e.reduce((a, b) => a + b, 0)).toBe(3);
+    const frag = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).fragmentShader;
+    for (const name of ["uForest", "uForestRect", "uHasForest", "uForestOn", "uForestLut", "uForestChannels"]) expect(frag).toContain(name);
   });
 });

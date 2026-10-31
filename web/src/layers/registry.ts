@@ -14,8 +14,14 @@ export interface Stop {
   rgba: Rgba;
 }
 
+/** « grid » : champ GFS de `layers/forecast.json`, frise temporelle ; « tiles » : jeu de tuiles fixe
+ * (forêt), sans entrée dans forecast.json ni frise. */
+export type LayerKind = "grid" | "tiles";
+
 export interface LayerDef {
   id: string;
+  /** Absent = « grid ». */
+  kind?: LayerKind;
   label: string;
   unit: string;
   format(v: number): string;
@@ -37,6 +43,12 @@ export interface LayerDef {
   modeLabel?: string;
   /** Libellé des graduations de la légende ; absent = `tickLabel` de ui/format. */
   tickLabel?: (v: number) => string;
+  /** Forêt : palette des pertes, valeur = année civile de la perte (la palette `stops` est celle du couvert, en %). */
+  lossStops?: readonly Stop[];
+}
+
+export function layerKind(def: LayerDef): LayerKind {
+  return def.kind ?? "grid";
 }
 
 function fixed(v: number, decimals: number): string {
@@ -142,6 +154,20 @@ export const LAYERS: readonly LayerDef[] = [
       s(155, 220, 50, 100, 252), s(300, 250, 140, 40, 255), s(1000, 255, 225, 120, 255),
     ],
     ticks: [10, 50, 150, 300, 1000], tooltipMin: 1, isoStep: null,
+  },
+  {
+    // Forêt (Hansen GFC v1.12), couche en tuiles (spec forêt §7). `stops` = couvert 2000 en % de canopée :
+    // transparent sous le seuil de 30 % (déjà appliqué par le tiler), puis vert dont l'intensité et
+    // l'opacité suivent la densité (vert tendre à 30 %, vert profond à 100 %). `lossStops` = année de
+    // perte : jaune (2001, ancien) → orange → rouge vif (2024, récent), opaque ; l'opacité réelle d'une
+    // perte vient de la part de forêt perdue dans le pixel (canal share, ruling R4), pas de la palette.
+    id: "forest", kind: "tiles", label: STRINGS.layers.forest, unit: "%", format: percent,
+    stops: [
+      s(0, 190, 225, 140, 0), s(29, 190, 225, 140, 0), s(30, 190, 225, 140, 140), s(50, 120, 190, 90, 175),
+      s(75, 40, 140, 50, 205), s(100, 10, 85, 30, 230),
+    ],
+    lossStops: [s(2001, 255, 225, 40), s(2008, 255, 170, 20), s(2016, 245, 95, 10), s(2024, 230, 0, 0)],
+    ticks: [30, 50, 75, 100], tooltipMin: 30, isoStep: null,
   },
 ];
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Encoding } from "../src/data/encoding";
 import { decode, encode } from "../src/data/encoding";
 import { layerDef, type LayerDef } from "../src/layers/registry";
-import { LUT_SIZE, buildLut, colorAt, createLutTexture, legendGradientCss, legendStops, legendStopsCss } from "../src/render/colormap";
+import { LUT_SIZE, buildForestLut, buildLut, colorAt, createLutTexture, legendGradientCss, legendStops, legendStopsCss } from "../src/render/colormap";
 
 const temp = layerDef("temp")!;
 const rain = layerDef("rain")!;
@@ -79,5 +79,28 @@ describe("legendStopsCss — arrêts seuls, l'orientation est choisie par le CSS
   it("arrêts aux positions encode(v)/255", () => {
     const def = { stops: [{ v: 0, rgba: [0, 0, 0, 255] }, { v: 100, rgba: [255, 0, 0, 128] }] } as unknown as LayerDef;
     expect(legendStopsCss(def, { bits: 8, min: 0, max: 100, scale: "linear" })).toBe("rgba(0, 0, 0, 1) 0%, rgba(255, 0, 0, 0.502) 100%");
+  });
+});
+
+describe("buildForestLut — palette de la couche Forest (spec forêt §7)", () => {
+  const forest = layerDef("forest")!;
+  const px = (lut: Uint8Array, row: number, i: number) => Array.from(lut.slice((row * LUT_SIZE + i) * 4, (row * LUT_SIZE + i) * 4 + 4));
+  it("256 × 2 RGBA : ligne 0 = couvert indexé par l'octet (%), ligne 1 = pertes indexées par l'octet (année − base)", () => {
+    const lut = buildForestLut(forest, 2000);
+    expect(lut.length).toBe(LUT_SIZE * 2 * 4);
+    expect(px(lut, 0, 0)[3]).toBe(0);
+    expect(px(lut, 0, 29)[3]).toBe(0);
+    expect(px(lut, 0, 30)).toEqual(forest.stops.find((s) => s.v === 30)!.rgba);
+    expect(px(lut, 0, 100)).toEqual(forest.stops[forest.stops.length - 1]!.rgba);
+    expect(px(lut, 0, 255)).toEqual(forest.stops[forest.stops.length - 1]!.rgba);
+    expect(px(lut, 1, 0)[3]).toBe(0);                                   // 0 = pas de perte
+    expect(px(lut, 1, 1)).toEqual(forest.lossStops![0]!.rgba);          // 2001
+    expect(px(lut, 1, 24)).toEqual(forest.lossStops![forest.lossStops!.length - 1]!.rgba); // 2024
+  });
+  it("createLutTexture accepte deux lignes", () => {
+    const tex = createLutTexture(buildForestLut(forest, 2000), 2);
+    expect(tex.image.width).toBe(LUT_SIZE);
+    expect(tex.image.height).toBe(2);
+    expect(tex.magFilter).toBe(THREE.LinearFilter);
   });
 });
