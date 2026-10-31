@@ -4,7 +4,7 @@ import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, RETRY_AFTER_MS, lo
 import { ManifestLoader, browserDeps, isRunStale } from "./data/loader";
 import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
 import { captureImage } from "./capture/capture";
-import { captureFileName, captureWhen } from "./capture/naming";
+import { captureRequest } from "./capture/input";
 import { ViewGuard } from "./capture/privacy";
 import { browserShareEnv, captureChoices, saveImage, shareData, shareImage } from "./capture/share";
 import { attachViewUrl } from "./capture/view-url";
@@ -643,21 +643,8 @@ async function boot(): Promise<void> {
     captureButton.disabled = true;
     captureButton.setAttribute("aria-busy", "true");
     try {
-      const m = manifests.manifest;
-      const entry = shownId && m ? m.layers[shownId] : undefined;
-      const def = shownId ? layerDef(shownId) : undefined;
-      const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run, note: legendNote(def, entry.run) } : null;
-      // Forest (tuiles) : ses deux barres et son crédit, sans échéance ni run.
-      const active = activeId ? layerDef(activeId) : undefined;
-      const forest = active && layerKind(active) === "tiles" ? active : null;
-      const tMs = layer ? cursor.state.t : Date.now();
+      const { layer, forest, tMs, text, name } = captureRequest({ activeId, shownId, manifest: manifests.manifest, cursorMs: cursor.state.t, nowMs: Date.now() });
       const blob = await captureImage(sceneHandle, { layer, forest, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
-      const text = layer
-        ? `${layer.def.label} · ${captureWhen(tMs)} — ${STRINGS.capture.site}`
-        : forest
-          ? `${forest.label} — ${STRINGS.capture.site}`
-          : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
-      const name = captureFileName(layer ? layer.def.id : forest ? forest.id : null, tMs);
       const data = shareData(blob, name, text, location.href);
       const env = browserShareEnv();
       // Tactile : choix Share / Save (Android : Save → Download/, visible dans la Galerie) ; ordinateur : téléchargement direct.
@@ -812,6 +799,7 @@ async function boot(): Promise<void> {
     globe.setForest(tiles);
     ui.setForestCredit(tiles);
     tooltip.setForest(tiles ? forestReader : null);
+    if (!tiles) forestReader.reset(); // décodages en vol annulés (AbortSignal)
     // Retour de Forest vers une grille : sa légende ne doit pas rester pendant le chargement.
     if (!tiles && forestLegendShown) ui.setLegendVisible(false);
     forestLegendShown = false;

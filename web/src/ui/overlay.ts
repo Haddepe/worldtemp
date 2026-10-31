@@ -33,6 +33,11 @@ export interface Overlay {
   showFatal(text: string, options?: { reload?: boolean }): void;
 }
 
+/** Texte inséré dans `innerHTML` : jamais de balisage, même si une chaîne en contenait. */
+function escapeHtml(t: string): string {
+  return t.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
 /**
  * Corps de la légende Forest : une `.part` par barre, chacune avec les classes de la légende d'une
  * couche météo (`.title`, `.bar` + `--stops`, `.ticks`) ; titre long (`.name`) sur ordinateur, court
@@ -41,9 +46,9 @@ export interface Overlay {
 export function forestLegendHtml(def: LayerDef): string {
   return forestLegend(def)
     .map((p) => {
-      const ticks = p.ticks.map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${t.label}</span>`).join("");
+      const ticks = p.ticks.map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${escapeHtml(t.label)}</span>`).join("");
       return (
-        `<div class="part"><div class="title"><span class="name">${p.title}</span><span class="short">${p.short}</span></div>` +
+        `<div class="part"><div class="title"><span class="name">${escapeHtml(p.title)}</span><span class="short">${escapeHtml(p.short)}</span></div>` +
         `<div class="bar" style="--stops:${stopsCss(p.stops)}"></div><div class="ticks">${ticks}</div></div>`
       );
     })

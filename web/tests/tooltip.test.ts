@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lonLatToVec3 } from "../src/tiles/patch";
 import type { ForestReading, TileReader } from "../src/tiles/reader";
 import { TapDetector, createTooltip, forestText, mouseInput, placeTooltip, tooltipText, type Reading } from "../src/ui/tooltip";
@@ -202,11 +202,13 @@ describe("forestText — tooltip de la couche Forest (spec forêt §7)", () => {
 });
 
 describe("createTooltip — lecture de la tuile forêt (Review Focus 1)", () => {
+  beforeEach(() => void vi.useFakeTimers());
+  afterEach(() => void vi.useRealTimers());
   /** Lecteur factice : tuile non décodée tant que `ready` est faux ; `read` résout à la main. */
   function fakeReader(value: (lon: number) => ForestReading | null) {
     let ready = false;
     let release: () => void = () => {};
-    const reader: TileReader = {
+    const reader: Pick<TileReader, "peek" | "read"> = {
       peek: (lon) => (ready ? value(lon) : undefined),
       read: vi.fn((lon: number) => new Promise<ForestReading | null>((resolve) => {
         release = () => {
@@ -227,6 +229,7 @@ describe("createTooltip — lecture de la tuile forêt (Review Focus 1)", () => 
     t.update(camera(), 400, 400);
     expect(els.tip.textContent).toBe("…");
     expect(els.tip.hidden).toBe(false);
+    vi.advanceTimersByTime(100);
     await f.release();
     expect(els.tip.textContent).toBe("Tree cover 85%");
   });
@@ -238,8 +241,33 @@ describe("createTooltip — lecture de la tuile forêt (Review Focus 1)", () => 
     t.setForest(f.reader);
     t.setReading({ lon: -1, lat: 0 }, "hover");
     t.setReading({ lon: 1, lat: 0, name: "Here" }, "hover");
+    vi.advanceTimersByTime(100);
     await f.release();
     expect(els.tip.textContent).toBe("Here\nForest lost in 2012");
+  });
+
+  it("survol rapide : une seule lecture, celle du dernier point, 100 ms après l'arrêt", () => {
+    const t = createTooltip(fakeEls());
+    const f = fakeReader(() => ({ cover: 50, lossYear: null, level: 8 }));
+    t.setForest(f.reader);
+    for (let i = 0; i < 30; i++) {
+      t.setReading({ lon: i, lat: 0 }, "hover");
+      vi.advanceTimersByTime(20);
+    }
+    expect(f.reader.read).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(f.reader.read).toHaveBeenCalledTimes(1);
+    expect(f.reader.read).toHaveBeenLastCalledWith(29, 0);
+  });
+
+  it("couche quittée avant la fin du délai : aucune lecture", () => {
+    const t = createTooltip(fakeEls());
+    const f = fakeReader(() => null);
+    t.setForest(f.reader);
+    t.setReading({ lon: 0, lat: 0 }, "hover");
+    t.setForest(null);
+    vi.advanceTimersByTime(500);
+    expect(f.reader.read).not.toHaveBeenCalled();
   });
 
   it("sans forêt à cet endroit : « No forest » ; setForest(null) retire la ligne", () => {

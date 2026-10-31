@@ -145,4 +145,9 @@ describe("légende Forest — deux barres (spec forêt §7)", () => {
     expect(html).toContain('--stops:rgba(255, 225, 40, 1) 0%');
     expect(html).toContain('<span class="tick" style="--pct:100.00">2024</span>');
   });
+  it("HTML : titres et graduations échappés (jamais de balisage injecté)", () => {
+    const html = forestLegendHtml({ ...forest, unit: '<img src=x onerror="1">' });
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img src=x onerror=&quot;1&quot;&gt;");
+  });
 });

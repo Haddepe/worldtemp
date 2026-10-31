@@ -39,9 +39,12 @@ function pixels(texels: Record<string, [number, number, number]>): TilePixels {
 function decoder(tiles: Record<string, TilePixels>) {
   const calls: string[] = [];
   const pending: { url: string; resolve: () => void; reject: (e: Error) => void }[] = [];
-  const decode = vi.fn((url: string) => {
+  const signals: AbortSignal[] = [];
+  const decode = vi.fn((url: string, signal: AbortSignal) => {
     calls.push(url);
+    signals.push(signal);
     return new Promise<TilePixels>((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
       pending.push({
         url,
         resolve: () => (tiles[url] ? resolve(tiles[url]!) : reject(new Error(`no fixture for ${url}`))),
@@ -53,7 +56,7 @@ function decoder(tiles: Record<string, TilePixels>) {
     for (const p of pending.splice(0)) p.resolve();
     await new Promise((r) => setTimeout(r, 0));
   };
-  return { calls, pending, decode, flush };
+  return { calls, pending, signals, decode, flush };
 }
 
 // Tuile 2/0/0 : lon −180…−135, lat 45…90 ; texel (2, 1) ↔ (−153, 76.5).
@@ -124,16 +127,71 @@ describe("createTileReader — lecture d'un texel de tuile forêt (Review Focus 
     expect(d.calls).toEqual([T200]);
   });
 
-  it("échec du décodage : rejet, rien en cache, nouvel essai à la lecture suivante", async () => {
+  it("échec du décodage : rejet, puis aucune nouvelle requête pendant 10 s (cache négatif), réessai ensuite", async () => {
     const d = decoder({});
-    const r = createTileReader({ source: () => source(), decode: d.decode });
+    let now = 1000;
+    const r = createTileReader({ source: () => source(), decode: d.decode, now: () => now });
     const rejected = expect(r.read(-153, 76.5)).rejects.toThrow();
     await d.flush();
     await rejected;
     expect(r.peek(-153, 76.5)).toBeUndefined();
-    void r.read(-153, 76.5).catch(() => {});
+    for (let i = 0; i < 20; i++) await expect(r.read(-153, 76.5)).rejects.toThrow(); // survol : aucun téléchargement
+    now += 9_999;
+    await expect(r.read(-150, 80)).rejects.toThrow();
+    expect(d.calls).toEqual([T200]);
+    now += 1;
+    const again = expect(r.read(-153, 76.5)).rejects.toThrow();
     expect(d.calls).toEqual([T200, T200]);
     await d.flush();
+    await again;
+  });
+
+  it("une demande en attente remplacée par une autre tuile est rejetée ; la dernière part à la fin du décodage", async () => {
+    // Trois tuiles distinctes : 2/0/0, 1/1/0, et 1/1/0 sous une autre racine (autre URL).
+    let src: ForestSource = source();
+    const OTHER = "https://t.test/v2/forest/1/1/0.png";
+    const d = decoder({ [T200]: pixels({}), [T110]: pixels({}), [OTHER]: pixels({ "0,0": [70, 0, 0] }) });
+    const r = createTileReader({ source: () => src, decode: d.decode });
+    const a = r.read(-153, 76.5); // lancé
+    const b = r.read(-89, 89); // en attente
+    const b2 = r.read(-60, 80); // même tuile que b : même attente, aucune requête de plus
+    const bRejected = expect(Promise.all([b, b2])).rejects.toThrow(/superseded/);
+    src = { ...source(), baseUrl: "https://t.test/v2" };
+    const c = r.read(-89, 89); // autre URL : remplace b
+    await bRejected;
+    expect(d.calls).toEqual([T200]);
+    await d.flush(); // a fini → c part
+    expect(await a).toEqual({ cover: 0, lossYear: null, level: 2 });
+    expect(d.calls).toEqual([T200, OTHER]);
+    await d.flush();
+    expect(await c).toEqual({ cover: 70, lossYear: null, level: 1 });
+  });
+
+  it("une entrée en cours de décodage n'est jamais évincée (relue sans nouvelle requête)", async () => {
+    const d = decoder({ [T200]: pixels({}), [T110]: pixels({}) });
+    const r = createTileReader({ source: () => source(), decode: d.decode, cacheSize: 1, maxInflight: 2 });
+    const a = r.read(-153, 76.5);
+    const b = r.read(-89, 89);
+    const a2 = r.read(-150, 80); // même tuile que a, toujours en vol malgré cacheSize 1
+    expect(d.calls).toEqual([T200, T110]);
+    await d.flush();
+    await Promise.all([a, b, a2]);
+    expect([r.peek(-153, 76.5), r.peek(-89, 89)].filter((v) => v !== undefined)).toHaveLength(1); // borne rétablie
+  });
+
+  it("reset : décodage en vol annulé (AbortSignal), sans cache négatif ; attente rejetée", async () => {
+    const d = decoder({ [T200]: pixels({}), [T110]: pixels({}) });
+    const r = createTileReader({ source: () => source(), decode: d.decode });
+    const a = expect(r.read(-153, 76.5)).rejects.toThrow();
+    const b = expect(r.read(-89, 89)).rejects.toThrow();
+    r.reset();
+    expect(d.signals[0]!.aborted).toBe(true);
+    await a;
+    await b;
+    const again = r.read(-153, 76.5); // annulé ≠ échoué : nouvel essai immédiat
+    expect(d.calls).toEqual([T200, T200]);
+    await d.flush();
+    expect(await again).toEqual({ cover: 0, lossYear: null, level: 2 });
   });
 
   it("cache LRU borné : la tuile la moins récemment lue est évincée", async () => {

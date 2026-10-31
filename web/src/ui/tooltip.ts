@@ -142,6 +142,8 @@ export function mouseInput(
 }
 
 const MARKER_HALF = 6;
+/** Délai entre le dernier mouvement et la lecture d'une tuile forêt non décodée. */
+const FOREST_READ_DELAY_MS = 100;
 
 /** `els` : éléments injectables pour les tests (Vitest tourne sans DOM). */
 export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): Tooltip {
@@ -164,6 +166,32 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     markerScreen = null;
   };
 
+  let forestTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelForestRead = (): void => {
+    if (forestTimer !== null) clearTimeout(forestTimer);
+    forestTimer = null;
+  };
+  /**
+   * Lecture différée de 100 ms après le dernier mouvement (revue T6, Important 2) : un survol rapide
+   * ne télécharge pas une tuile par case traversée. Au décodage, relecture du point COURANT.
+   */
+  const scheduleForestRead = (): void => {
+    cancelForestRead();
+    forestTimer = setTimeout(() => {
+      forestTimer = null;
+      const asked = forest;
+      if (!asked || !reading) return;
+      asked.read(reading.lon, reading.lat).then(
+        () => {
+          if (forest !== asked || !reading) return;
+          refreshText();
+          if (lastView) api.update(lastView.camera, lastView.width, lastView.height);
+        },
+        () => {}, // échec (cache négatif du lecteur) ou demande remplacée : « … » reste
+      );
+    }, FOREST_READ_DELAY_MS);
+  };
+
   const refreshText = () => {
     if (!reading) return;
     const values: string[] = [];
@@ -171,18 +199,9 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     if (forest) {
       const r = forest.peek(reading.lon, reading.lat);
       if (r === undefined) {
-        // Tuile pas encore décodée : « … », jamais une valeur devinée (Review Focus 1). Au décodage,
-        // relecture du point COURANT (il a pu changer entre-temps).
+        // Tuile pas encore décodée : « … », jamais une valeur devinée (Review Focus 1).
         values.push(STRINGS.forest.pending);
-        const asked = forest;
-        asked.read(reading.lon, reading.lat).then(
-          () => {
-            if (forest !== asked || !reading) return;
-            refreshText();
-            if (lastView) api.update(lastView.camera, lastView.width, lastView.height);
-          },
-          () => {}, // échec : « … » reste ; nouvel essai au prochain mouvement
-        );
+        scheduleForestRead();
       } else values.push(forestText(r));
     }
     if (wind) {
@@ -214,6 +233,7 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
       refreshText();
     },
     setForest(reader) {
+      cancelForestRead();
       forest = reader;
       refreshText();
     },

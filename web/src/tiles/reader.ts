@@ -26,27 +26,51 @@ export interface TilePixels {
 export interface TileReaderDeps {
   /** Jeu forêt courant ; `null` tant que son manifeste n'est pas chargé. */
   source(): ForestSource | null;
-  decode(url: string): Promise<TilePixels>;
+  decode(url: string, signal: AbortSignal): Promise<TilePixels>;
   /** Tuiles décodées gardées (≈ 1 Mo chacune à 512 px). */
   cacheSize?: number;
+  /** Décodages simultanés au plus (survol rapide : pas une requête par case traversée). */
+  maxInflight?: number;
+  /** Après un échec (404, réseau coupé), aucune nouvelle requête de cette tuile pendant ce délai. */
+  failureCooldownMs?: number;
+  now?(): number;
 }
 
 export interface TileReader {
-  /** Décode la tuile au besoin. `null` : pas de forêt (tuile vide à l'index) ou pas de jeu forêt. */
+  /** Décode la tuile au besoin. `null` : pas de forêt (tuile vide à l'index) ou pas de jeu forêt.
+   * Rejette si la tuile a échoué récemment, ou si la demande est remplacée par une plus récente. */
   read(lon: number, lat: number): Promise<ForestReading | null>;
   /** Synchrone, sans téléchargement : `undefined` si la tuile n'est pas (encore) décodée. */
   peek(lon: number, lat: number): ForestReading | null | undefined;
+  /** Annule les décodages en vol et la demande en attente (couche quittée) ; garde les tuiles décodées. */
+  reset(): void;
 }
 
 interface Entry {
   promise: Promise<TilePixels>;
   pixels: TilePixels | null;
+  controller: AbortController;
+}
+
+/** Demande en attente d'une place de décodage : une seule, la plus récente. */
+interface Waiting {
+  url: string;
+  promise: Promise<TilePixels>;
+  resolve(p: TilePixels): void;
+  reject(e: Error): void;
 }
 
 export function createTileReader(deps: TileReaderDeps): TileReader {
   const max = Math.max(1, deps.cacheSize ?? 6);
+  const maxInflight = Math.max(1, deps.maxInflight ?? 1);
+  const cooldown = deps.failureCooldownMs ?? 10_000;
+  const now = deps.now ?? (() => Date.now());
   /** Ordre d'insertion = ordre d'usage (LRU) ; clé = URL, qui porte la racine versionnée. */
   const cache = new Map<string, Entry>();
+  /** Cache négatif : URL → instant jusqu'auquel elle n'est pas redemandée. */
+  const failedUntil = new Map<string, number>();
+  let inflight = 0;
+  let waiting: Waiting | null = null;
 
   const locate = (lon: number, lat: number): { src: ForestSource; tile: TileId; url: string } | null => {
     const src = deps.source();
@@ -58,6 +82,78 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
   const touch = (url: string, e: Entry): void => {
     cache.delete(url);
     cache.set(url, e);
+  };
+
+  /** Éviction LRU des seules tuiles décodées : une entrée en vol n'est jamais retirée (elle serait relue). */
+  const evict = (): void => {
+    for (const [url, e] of cache) {
+      if (cache.size <= max) return;
+      if (e.pixels) cache.delete(url);
+    }
+  };
+
+  const coolingDown = (url: string): boolean => {
+    const until = failedUntil.get(url);
+    if (until === undefined) return false;
+    if (now() < until) return true;
+    failedUntil.delete(url);
+    return false;
+  };
+
+  const start = (url: string): Entry => {
+    const controller = new AbortController();
+    inflight++;
+    const entry: Entry = { promise: deps.decode(url, controller.signal), pixels: null, controller };
+    cache.set(url, entry);
+    const done = (): void => {
+      inflight--;
+      drain();
+    };
+    entry.promise.then(
+      (p) => {
+        entry.pixels = p;
+        evict();
+        done();
+      },
+      () => {
+        if (cache.get(url) === entry) cache.delete(url);
+        // Annulé (couche quittée) n'est pas un échec : pas de cache négatif.
+        if (!controller.signal.aborted) failedUntil.set(url, now() + cooldown);
+        done();
+      },
+    );
+    evict();
+    return entry;
+  };
+
+  const drain = (): void => {
+    if (!waiting || inflight >= maxInflight) return;
+    const w = waiting;
+    waiting = null;
+    const e = cache.get(w.url);
+    if (e) e.promise.then(w.resolve, w.reject);
+    else if (coolingDown(w.url)) w.reject(new Error(`tile failed recently: ${w.url}`));
+    else start(w.url).promise.then(w.resolve, w.reject);
+  };
+
+  const pixelsFor = (url: string): Promise<TilePixels> => {
+    const e = cache.get(url);
+    if (e) {
+      touch(url, e);
+      return e.promise;
+    }
+    if (coolingDown(url)) return Promise.reject(new Error(`tile failed recently: ${url}`));
+    if (inflight < maxInflight) return start(url).promise;
+    if (waiting?.url === url) return waiting.promise;
+    waiting?.reject(new Error("superseded by a newer tile request"));
+    let resolve!: (p: TilePixels) => void;
+    let reject!: (e: Error) => void;
+    const promise = new Promise<TilePixels>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    waiting = { url, promise, resolve, reject };
+    return promise;
   };
 
   const texel = (src: ForestSource, tile: TileId, px: TilePixels, lon: number, lat: number): ForestReading => {
@@ -83,29 +179,20 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
     async read(lon, lat) {
       const at = locate(lon, lat);
       if (!at) return null;
-      let e = cache.get(at.url);
-      if (e) touch(at.url, e);
-      else {
-        const entry: Entry = { promise: deps.decode(at.url), pixels: null };
-        e = entry;
-        cache.set(at.url, entry);
-        while (cache.size > max) cache.delete(cache.keys().next().value as string);
-        entry.promise.then(
-          (p) => (entry.pixels = p),
-          () => {
-            if (cache.get(at.url) === entry) cache.delete(at.url); // nouvel essai à la lecture suivante
-          },
-        );
-      }
-      const px = await e.promise;
+      const px = await pixelsFor(at.url);
       return texel(at.src, at.tile, px, lon, lat);
+    },
+    reset() {
+      waiting?.reject(new Error("tile reader reset"));
+      waiting = null;
+      for (const e of cache.values()) if (!e.pixels) e.controller.abort();
     },
   };
 }
 
 /** Décodage navigateur : `createImageBitmap` sans retournement ni conversion, puis `getImageData`. */
-export async function browserDecodeTile(url: string): Promise<TilePixels> {
-  const r = await fetch(url);
+export async function browserDecodeTile(url: string, signal: AbortSignal): Promise<TilePixels> {
+  const r = await fetch(url, { signal });
   if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
   const bmp = await createImageBitmap(await r.blob(), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
   try {
