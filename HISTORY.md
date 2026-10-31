@@ -798,6 +798,13 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71.
 
 ## 9. État actuel & prochaine action
 
+### 2026-10-31 (3) — Lot R5b forêt : conception, plan, workflow de génération sur `master`
+
+- **Conception** `docs/superpowers/specs/2026-10-31-forest-design.md` et **plan** `docs/superpowers/plans/2026-10-31-forest.md` (9 tâches), validés par l'utilisateur : couvert 2000 au-dessus de 30 % + pertes 2001–2024 colorées par année, tuiles jusqu'au niveau 8, repli tropical si R2 > 10 Go.
+- **Exécution en cours** sur `feat/forest` (subagent-driven) : `tiler/forest.py`, `tiler/hansen.py`, commande `forest` faites et revues.
+- **Workflow** `.github/workflows/forest-tiles.yml` reporté seul sur `master` (accord utilisateur) : GitHub ne lance un `workflow_dispatch` que s'il existe sur la branche par défaut. Manuel, envoi R2 désactivé par défaut ; rien d'autre ne change en production.
+- **Prochaine action :** estimation du stockage puis génération complète des tuiles sur Actions (sans envoi), suite du plan.
+
 ### 2026-10-31 (2) — Lot R5a neige livré : chutes prévues et épaisseur au sol, 4 pages (merge `72ad975`)
 
 - **Exécution** du plan `2026-10-31-snow.md` (8 tâches, subagent-driven, ledger `.superpowers/sdd/2026-10-31-snow/`, rulings R1–R9) : champs GFS `APCP`/`CPOFP`/`SNOD` + fixtures réelles (T1), cumul 10:1 et état sérialisable `pipeline/snow.py` (T2), source dérivée `gfs_snow` isolée avec reprise exacte (T3), couches front et modes (T4), entrée Snow + sélecteur « Snowfall | Depth » + légende « since » (T5), 4 pages (T6), calibrage sur run réel + images OG (T7), seuil « neige profonde » à 1,5 m (T8a).
@@ -1935,7 +1942,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-31 (**lot R5a neige mergé `72ad975`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip)
+**Dernière mise à jour :** 2026-10-31 (**lot R5b forêt : spec, plan, workflow de génération sur `master`** — exécution en cours sur `feat/forest`)
+**Entrée précédente :** 2026-10-31 (**lot R5a neige mergé `72ad975`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip)
 **Entrée précédente :** 2026-10-31 (**lot R5a neige prêt à merger sur `feat/snow`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip ; merge en attente de l'accord utilisateur)
 **Entrée précédente :** 2026-10-31 (**suivi du lot G** — Google : 17/17 pages indexées, 8–33 impressions/jour depuis le 25 octobre ; Bing : 2 URLs indexées, pages du lot G pas encore explorées ; réécriture Rust auditée puis écartée, §5)
 **Entrée précédente :** 2026-10-24 (**arrêt de session** — lot G déployé (`64b971c`) ; sitemap soumis à Google et Bing, 17 URLs à Bing ; indexation Google demandée pour `/temperature-map/` seule, les autres à redemander)
