@@ -56,7 +56,7 @@ describe("rendu des pages (lot G, spec §4)", () => {
     for (const slug of page.related) expect(more).toContain(`href="/${slug}/"`);
     const nav = inner(out, "nav", "drawer-nav");
     for (const p of PAGES.slice(1)) expect(nav).toContain(`href="/${p.slug}/"`);
-    expect(nav.match(/href="/g)).toHaveLength(16);
+    expect(nav.match(/href="/g)).toHaveLength(20);
     const current = [...nav.matchAll(/<a href="([^"]*)" aria-current="page">/g)].map((m) => m[1]);
     expect(current).toEqual(page.slug === "" ? [] : [pagePath(page)]);
     expect(nav.match(/aria-current/g)?.length ?? 0).toBe(page.slug === "" ? 0 : 1);
@@ -97,9 +97,9 @@ describe("rendu des pages (lot G, spec §4)", () => {
 describe("sitemap (lot G)", () => {
   const xml = renderSitemap(PAGES);
 
-  it("17 URL, l'accueil en premier, toutes avec barre finale", () => {
+  it("21 URL, l'accueil en premier, toutes avec barre finale", () => {
     const locs = [...xml.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]!);
-    expect(locs).toHaveLength(17);
+    expect(locs).toHaveLength(21);
     expect(locs[0]).toBe(`${SITE}/`);
     expect(locs).toEqual(PAGES.map((p) => SITE + pagePath(p)));
     for (const loc of locs) expect(loc.endsWith("/"), loc).toBe(true);

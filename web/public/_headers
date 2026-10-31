@@ -64,6 +64,18 @@
 /amazon-rainfall-map/
   Cache-Control: public, max-age=0, must-revalidate
 
+/snow-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/alps-snow-forecast/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/rocky-mountains-snow-forecast/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/japan-snow-forecast/
+  Cache-Control: public, max-age=0, must-revalidate
+
 /og.jpg
   Cache-Control: public, max-age=86400
 

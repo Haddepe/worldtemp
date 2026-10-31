@@ -31,8 +31,15 @@ def validate_grid(field: Field, label: str = "") -> None:
         raise InvalidData(f"{tag}lon[0] = {field.lon[0]}, attendu 0")
 
 
-def validate_range(values: np.ndarray, plausible: tuple[float, float], label: str = "") -> None:
+def validate_range(values: np.ndarray, plausible: tuple[float, float], label: str = "",
+                   missing: float | None = None) -> None:
+    """Plage brute plausible. `missing` : les valeurs >= missing (valeur manquante GRIB) sont
+    exclues du contrôle ; un champ entièrement manquant est rejeté."""
     tag = f"{label} : " if label else ""
+    if missing is not None:
+        values = values[values < missing]
+        if values.size == 0:
+            raise InvalidData(f"{tag}aucune valeur présente (toutes >= {missing:g})")
     lo, hi = float(values.min()), float(values.max())
     if lo < plausible[0] or hi > plausible[1]:
         raise InvalidData(f"{tag}plage invraisemblable [{lo:.4g}, {hi:.4g}], attendu {plausible}")
@@ -65,8 +72,22 @@ def layer_pixels(field: Field, spec: LayerSpec) -> tuple[np.ndarray, np.ndarray]
     """Valide, convertit, réoriente, quantifie. Renvoie (valeurs converties
     réorientées en float64 — pour `stats` —, pixels uint8)."""
     validate_grid(field, spec.id)
-    validate_range(field.values, spec.plausible, spec.id)
+    validate_range(field.values, spec.plausible, spec.id, spec.missing)
     converted = reorient(np.asarray(spec.convert(field.values.astype(np.float64)), dtype=np.float64))
+    return converted, quantize(converted, spec.encoding)
+
+
+def values_pixels(values: np.ndarray, spec: LayerSpec) -> tuple[np.ndarray, np.ndarray]:
+    """Comme `layer_pixels`, pour une couche dérivée dont les valeurs sont déjà dans l'unité publiée
+    (grille brute, nord en haut, lon 0→360) : forme et NaN vérifiés, puis réorientation et
+    quantification. Pas de `convert` ni de `plausible` : ils portent sur le champ GRIB brut,
+    validé par le dériveur avant le calcul."""
+    expected = (config.HEIGHT, config.WIDTH)
+    if values.shape != expected:
+        raise InvalidData(f"{spec.id} : forme {values.shape}, attendu {expected}")
+    if np.isnan(values).any():
+        raise InvalidData(f"{spec.id} : NaN présent dans les valeurs dérivées")
+    converted = reorient(np.asarray(values, dtype=np.float64))
     return converted, quantize(converted, spec.encoding)
 
 

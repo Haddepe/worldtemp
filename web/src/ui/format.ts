@@ -90,7 +90,23 @@ function tickLabel(v: number): string {
 
 /** Graduations de la légende : valeurs du registre, positions encode(v)/255 (spec couches §11). */
 export function legendTicks(def: LayerDef, enc: Encoding): { v: number; label: string; pct: number }[] {
-  return def.ticks.map((v) => ({ v, label: tickLabel(v), pct: (encode(v, enc) / 255) * 100 }));
+  return def.ticks.map((v) => ({ v, label: (def.tickLabel ?? tickLabel)(v), pct: (encode(v, enc) / 255) * 100 }));
+}
+
+/** Nom affiché par la légende : le mode s'il existe (« Snowfall », « Depth »), sinon la couche. */
+export function legendName(def: LayerDef): string {
+  return def.modeLabel ?? def.label;
+}
+
+/** Titre de la légende, sans isolignes : « Snowfall · cm · since Sat 3 09:00 » (DOM et capture). */
+export function legendTitle(def: LayerDef, note?: string): string {
+  return `${legendName(def)} · ${def.unit}${note ? ` · ${note}` : ""}`;
+}
+
+/** Note de légende : origine du cumul de neige, l'heure du run en heure locale (spec neige §5.2) ;
+ * `undefined` pour les autres couches. */
+export function legendNote(def: LayerDef, run: string, timeZone?: string): string | undefined {
+  return def.id === "snowfall" ? STRINGS.legend.since(formatWhen(Date.parse(run), timeZone)) : undefined;
 }
 
 /** Texte du tooltip : « — » sous le seuil de la couche, sinon son format. */

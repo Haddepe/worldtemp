@@ -8,7 +8,7 @@ import { STRINGS } from "../i18n";
 import type { LabelView } from "../labels/layer";
 import type { LayerDef } from "../layers/registry";
 import { legendStops } from "../render/colormap";
-import { legendTicks } from "../ui/format";
+import { legendTicks, legendTitle } from "../ui/format";
 import { placeTooltip } from "../ui/tooltip";
 import { captureRun, captureWhen } from "./naming";
 
@@ -22,7 +22,8 @@ export type DrawOp =
   | { kind: "text"; x: number; y: number; text: string; font: string; fill: string; align: "left" | "center" | "right"; halo?: string; haloWidth?: number; letterSpacing?: number }
   | { kind: "dot"; x: number; y: number; r: number; fill: string; stroke: string; strokeWidth: number };
 
-export interface CaptureLayer { def: LayerDef; enc: Encoding; model: string; run: string }
+/** `note` : mention de la légende (origine du cumul de neige), comme à l'écran. */
+export interface CaptureLayer { def: LayerDef; enc: Encoding; model: string; run: string; note?: string }
 
 export interface CaptureInput {
   /** Taille de l'image (= tampon WebGL), px d'image. */
@@ -112,7 +113,7 @@ function bandOps(input: CaptureInput): DrawOp[] {
   if (layer) {
     const { def, enc } = layer;
     const barW = stacked ? width - 2 * pad : r2(0.38 * width);
-    ops.push({ kind: "text", x: pad, y: y0 + pad + 0.1 * h, text: `${def.label} · ${def.unit}`, font: font(0.2 * h), fill: FG, align: "left" });
+    ops.push({ kind: "text", x: pad, y: y0 + pad + 0.1 * h, text: legendTitle(def, layer.note), font: font(0.2 * h), fill: FG, align: "left" });
     ops.push({ kind: "gradient", x: pad, y: y0 + pad + 0.28 * h, w: barW, h: 0.14 * h, stops: legendStops(def, enc), radius: 0.04 * h });
     for (const t of legendTicks(def, enc)) {
       ops.push({ kind: "text", x: pad + (t.pct / 100) * barW, y: y0 + pad + 0.54 * h, text: t.label, font: font(0.16 * h), fill: MUTED, align: "center" });

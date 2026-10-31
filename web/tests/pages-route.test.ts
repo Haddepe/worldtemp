@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { PAGES, pagePath } from "../src/pages/registry";
-import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, searchForPageChange, searchForPageState, searchWithShownView } from "../src/pages/route";
+import { PAGES, pagePath, type PageDef } from "../src/pages/registry";
+import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, pageAfterModeChange, searchForPageChange, searchForPageState, searchWithShownView } from "../src/pages/route";
 
 const page = (slug: string) => PAGES.find((p) => p.slug === slug)!;
 
@@ -117,5 +117,21 @@ describe("searchWithShownView", () => {
   it("page sans vue et adresse sans vue : caméra sur la vue par défaut, rien n'est écrit", () => {
     expect(searchWithShownView("", page(""), page("rain-map"), never)).toBe("");
     expect(searchWithShownView("?layer=none", page("wind-map"), page(""), never)).toBe("?layer=none");
+  });
+});
+
+describe("pageAfterModeChange — changer de mode ne change jamais de page (neige, Review Focus 5)", () => {
+  it("page régionale existante : même objet, là où pageAfterLayerChange partirait vers la page couche", () => {
+    const p = page("europe-heatwave-map");
+    expect(pageAfterLayerChange(p, "temp", false).slug).toBe("temperature-map");
+    expect(pageAfterModeChange(p)).toBe(p);
+  });
+  it("page régionale neige synthétique (les vraies pages arrivent en Task 6) : inchangée", () => {
+    const alps: PageDef = { ...page("europe-heatwave-map"), slug: "alps-snow-forecast", layer: "snowfall" };
+    expect(pageAfterModeChange(alps)).toBe(alps);
+  });
+  it("page couche : inchangée", () => {
+    const p = page("rain-map");
+    expect(pageAfterModeChange(p)).toBe(p);
   });
 });

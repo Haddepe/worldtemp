@@ -14,9 +14,9 @@ import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
-import { orderedLayers, parseLayerParam } from "./layers/select";
+import { availableModes, failureFallback, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam } from "./layers/select";
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
-import { pageAfterLayerChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
+import { pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
@@ -37,9 +37,10 @@ import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timeli
 import { createDialog } from "./ui/about";
 import { createCaptureMenu } from "./ui/capture-menu";
 import { createDrawer } from "./ui/drawer";
-import { formatBanner, formatWhen } from "./ui/format";
+import { formatBanner, formatWhen, legendNote } from "./ui/format";
 import { createLayersMenu } from "./ui/layers-menu";
 import { locate } from "./ui/locate";
+import { createModeSwitch } from "./ui/modes";
 import { byId, createOverlay } from "./ui/overlay";
 import { createSummary } from "./ui/summary";
 import { createTimeline } from "./ui/timeline";
@@ -294,7 +295,24 @@ async function boot(): Promise<void> {
     }
     return textures;
   };
-  const menu = createLayersMenu(ui.layersMenu, (id) => void activate(id, true));
+  /** Couches affichables : présentes dans le manifeste et pas en échec. */
+  const availableIds = (): string[] => {
+    const m = manifests.manifest;
+    return m ? orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)) : [];
+  };
+  // Le menu donne une entrée (neige : « Snow », la base) : l'entrée déjà affichée garde son mode,
+  // une autre ouvre sa base, ou son premier mode disponible (spec neige §7).
+  const menu = createLayersMenu(ui.layersMenu, (key) =>
+    void activate(key === null ? null : key === menuKey(activeId, LAYERS) ? activeId : menuTarget(key, availableIds(), LAYERS), true));
+  // Changer de mode garde la page, l'instant de la frise, la caméra et le vent (Review Focus 5).
+  const modes = createModeSwitch(ui.layerModes, (id) => void activate(id, true, true, true));
+  /** Une entrée du menu n'est grisée que si aucune de ses couches (base ou mode) n'est disponible. */
+  const syncMenuDisabled = (): void => {
+    const m = manifests.manifest;
+    if (!m) return;
+    const available = availableIds();
+    for (const d of menuEntries(LAYERS, m)) menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+  };
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
   let hadManifest = false;
@@ -586,7 +604,7 @@ async function boot(): Promise<void> {
       const m = manifests.manifest;
       const entry = shownId && m ? m.layers[shownId] : undefined;
       const def = shownId ? layerDef(shownId) : undefined;
-      const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run } : null;
+      const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run, note: legendNote(def, entry.run) } : null;
       const tMs = layer ? cursor.state.t : Date.now();
       const blob = await captureImage(sceneHandle, { layer, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
       const text = layer
@@ -691,7 +709,7 @@ async function boot(): Promise<void> {
         }
         const n = nearestFrame(p);
         if (n !== legendIndex) {
-          ui.setLegend(def, entry.encoding, entry.frames[n]!.stats);
+          ui.setLegend(def, entry.encoding, entry.frames[n]!.stats, legendNote(def, entry.run));
           legendIndex = n;
         }
       } // rien de prêt : l'affichage précédent reste (nouveau run en cours de chargement)
@@ -706,16 +724,18 @@ async function boot(): Promise<void> {
 
   /** Applique la couche `id` (null = Aucune) : charge la paire autour de t, pose LUT, isolignes, légende ; `applyTime` fait le reste. */
   /** `push` : faux pour le repli après un échec — l'adresse est remplacée, pas empilée (le retour
-   * arrière ne ramène pas vers la couche en échec). */
-  const activate = async (id: string | null, fromUser: boolean, push = true): Promise<void> => {
+   * arrière ne ramène pas vers la couche en échec). `keepPage` : changement de mode (neige), la page
+   * reste la page courante, seule la query string est réécrite. */
+  const activate = async (id: string | null, fromUser: boolean, push = true, keepPage = false): Promise<void> => {
     const manifest = manifests.manifest;
     const previous = activeId;
     activeId = id;
-    menu.setActive(id);
+    menu.setActive(menuKey(id, LAYERS));
+    modes.set(availableModes(id, availableIds(), LAYERS), id ?? "");
     if (fromUser) {
       // L'adresse suit la couche (lot G, spec §5) — seulement si elle change : une page région qui
       // re-sélectionne sa propre couche reste sur la page région.
-      const next = id !== previous ? pageAfterLayerChange(page, id, windOn) : page;
+      const next = keepPage ? pageAfterModeChange(page) : id !== previous ? pageAfterLayerChange(page, id, windOn) : page;
       if (next !== page) switchPage(next, id, push);
       else history.replaceState(null, "", pagePath(page) + searchForPageState(location.search, page, id, windOn, windDefault(page)));
     }
@@ -761,9 +781,11 @@ async function boot(): Promise<void> {
       if (superseded()) return;
       console.warn(`[worldtemp] layer ${id} unavailable:`, lastError);
       failed.set(id!, { generatedAt: entry.generated_at, at: Date.now() });
-      menu.setDisabled(id!, true);
-      const fallback = previous !== id && previous !== null && !failed.has(previous) ? previous : null;
-      await activate(fallback, fromUser, false);
+      syncMenuDisabled();
+      // Mode voisin d'abord (Snowfall en échec → Depth) : c'est un changement de mode, la page reste.
+      const fallback = failureFallback(id!, previous, availableIds(), LAYERS);
+      const sibling = fallback !== null && menuKey(fallback, LAYERS) === menuKey(id, LAYERS);
+      await activate(fallback, fromUser, false, keepPage || sibling);
       layerNotice = STRINGS.status.layerUnavailable;
       refreshBanner();
       return;
@@ -833,8 +855,8 @@ async function boot(): Promise<void> {
       const entry = m?.layers[id];
       if (now - f.at < RETRY_AFTER_MS && (!entry || entry.generated_at === f.generatedAt)) continue;
       failed.delete(id);
-      menu.setDisabled(id, false);
     }
+    syncMenuDisabled();
   };
 
   const applyData = async () => {
@@ -862,8 +884,8 @@ async function boot(): Promise<void> {
           windSet.setFrames(framesKey(fresh.layers["wind_u"]!), fresh.layers["wind_u"]!.frames);
         }
         const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
-        menu.setLayers(defs);
-        for (const id of failed.keys()) menu.setDisabled(id, true);
+        menu.setLayers(menuEntries(LAYERS, fresh)); // une entrée par couche de base : les modes passent par le sélecteur
+        syncMenuDisabled();
         const available = defs.map((d) => d.id).filter((id) => !failed.has(id));
         const firstLoad = !hadManifest;
         hadManifest = true;

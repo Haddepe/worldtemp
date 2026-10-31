@@ -7,12 +7,13 @@ const mots = (p: PageDef) => p.body.join(" ").split(/\s+/).filter(Boolean).lengt
 const textes = (p: PageDef) => [p.title, p.description, p.h1, p.summary, p.menuLabel, p.ogAlt, ...p.body];
 
 describe("registre des pages — lot G", () => {
-  it("17 pages, slugs uniques, accueil en tête", () => {
-    expect(PAGES).toHaveLength(17);
+  it("21 pages, slugs uniques, accueil en tête", () => {
+    expect(PAGES).toHaveLength(21);
     expect(PAGES[0]!.kind).toBe("home");
-    expect(new Set(PAGES.map((p) => p.slug)).size).toBe(17);
-    expect(PAGES.filter((p) => p.kind === "layer")).toHaveLength(8);
-    expect(PAGES.filter((p) => p.kind === "region")).toHaveLength(8);
+    expect(new Set(PAGES.map((p) => p.slug)).size).toBe(21);
+    expect(PAGES.filter((p) => p.kind === "layer")).toHaveLength(9);
+    expect(PAGES.filter((p) => p.kind === "region")).toHaveLength(11);
+    for (const s of ["snow-map", "alps-snow-forecast", "rocky-mountains-snow-forecast", "japan-snow-forecast"]) expect(PAGES.some((p) => p.slug === s), s).toBe(true);
     expect(SITE).toBe("https://globelayers.com");
   });
 
@@ -25,7 +26,7 @@ describe("registre des pages — lot G", () => {
       expect(p.description.length, p.slug).toBeGreaterThanOrEqual(80);
       expect(p.description.length, p.slug).toBeLessThanOrEqual(160);
     }
-    expect(new Set(PAGES.map((p) => p.title)).size).toBe(17);
+    expect(new Set(PAGES.map((p) => p.title)).size).toBe(21);
   });
 
   it("Read more : 150 à 300 mots, textes distincts", () => {

@@ -104,6 +104,17 @@ html, body {
 #labels-toggle[aria-checked="true"]::before, #rivers-toggle[aria-checked="true"]::before { content: "● " / ""; }
 #legend .title { font-size: 0.8rem; margin-bottom: 0.3rem; }
 #legend[hidden] { display: none; }
+/* Sélecteur de mode (neige : Snowfall | Depth, spec neige §7), en tête de la légende. Le corps
+   (#legend-body) est transparent à la mise en page : ses enfants restent ceux de la grille mobile. */
+#legend-body { display: contents; }
+#layer-modes { display: flex; gap: 0.3rem; margin-bottom: 0.4rem; }
+#layer-modes[hidden] { display: none; }
+#layer-modes [role="radio"] {
+  font: inherit; font-size: 0.8rem; color: var(--panel-fg); background: transparent;
+  border: 1px solid var(--panel-muted); border-radius: 999px; padding: 0.2rem 0.75rem; cursor: pointer; white-space: nowrap;
+}
+#layer-modes [role="radio"][aria-checked="true"] { background: #ffd166; color: #1a1400; border-color: #ffd166; }
+#layer-modes [role="radio"]:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 #attribution {
   grid-row: 4; grid-column: 1 / -1; justify-self: center; align-self: end;
   margin: 0; font-size: 0.7rem; color: var(--panel-muted); pointer-events: none;
@@ -248,7 +259,21 @@ html, body {
     border-radius: 0 0.5rem 0.5rem 0;
   }
   #legend .title { grid-column: 1 / -1; grid-row: 2; margin: 0.3rem 0 0; font-size: 0.7rem; text-align: center; }
-  #legend .title .name, #legend .title .iso, #legend .extremes { display: none; }
+  #legend .title .name, #legend .title .note-sep, #legend .title .iso, #legend .extremes { display: none; }
+  /* Sélecteur de mode : horizontal, sous la légende verticale et collé au même bord gauche — la
+     frise est sur le bord droit, il ne la recouvre jamais (à valider à 412 px, Task 7). */
+  #legend { position: relative; }
+  #layer-modes {
+    position: absolute; left: 0; top: calc(100% + 0.4rem); margin: 0; padding: 0.3rem;
+    background: var(--panel-bg); border-radius: 0 0.5rem 0.5rem 0;
+  }
+  #layer-modes [role="radio"] { min-height: 44px; padding: 0 0.7rem; font-size: 0.75rem; }
+  /* Origine du cumul (« since Sat 3 09:00 ») : une ligne au-dessus de la légende, même bord gauche,
+     symétrique du sélecteur dessous ; la frise reste seule sur le bord droit. */
+  #legend .title .note {
+    position: absolute; left: 0; bottom: calc(100% + 0.4rem); padding: 0.25rem 0.5rem;
+    background: var(--panel-bg); border-radius: 0 0.5rem 0.5rem 0; font-size: 0.7rem; white-space: nowrap;
+  }
   #legend .bar { grid-column: 1; grid-row: 1; width: 0.6rem; height: auto; background: linear-gradient(to top, var(--stops)); }
   #legend .ticks { grid-column: 2; grid-row: 1; height: auto; min-width: 1.6rem; font-size: 0.65rem; }
   #legend .tick { left: 0; bottom: calc(var(--pct) * 1%); transform: translateY(50%); }

@@ -111,3 +111,15 @@ describe("composeCapture — point épinglé", () => {
     expect(ops.some((o) => o.kind === "rect" && o.fill === "rgba(10, 12, 18, 0.72)")).toBe(false);
   });
 });
+
+describe("composeCapture — neige : mode et origine du cumul", () => {
+  it("la légende capturée porte le mode et la note « since »", () => {
+    const snow = { def: layerDef("snowfall")!, enc: { bits: 8, min: 0, max: 500, scale: "sqrt" as const }, model: "gfs_0p25", run: "2026-10-03T06:00:00Z", note: "since Sat 3 08:00" };
+    const ops = composeCapture({ ...base, layer: snow }, measure);
+    expect(textOf(ops, "Snowfall · cm · since Sat 3 08:00")).toMatchObject({ align: "left" });
+  });
+  it("sans note : mode seul", () => {
+    const depth = { def: layerDef("snow_depth")!, enc: { bits: 8, min: 0, max: 1000, scale: "sqrt" as const }, model: "gfs_0p25", run: "2026-10-03T06:00:00Z" };
+    expect(textOf(composeCapture({ ...base, layer: depth }, measure), "Depth · cm")).toBeDefined();
+  });
+});

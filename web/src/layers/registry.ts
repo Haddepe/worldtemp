@@ -30,6 +30,13 @@ export interface LayerDef {
    * que le bicubique restitue en marches d'escalier ; absent = texture brute. Le tooltip lit
    * toujours la donnée brute. */
   soften?: number;
+  /** Id de la couche de base dont celle-ci est un mode (neige : cumul → épaisseur) ; absent = couche de base.
+   * Un mode n'a pas d'entrée de menu, il se choisit dans le sélecteur de mode de sa base. */
+  modeOf?: string;
+  /** Libellé du mode dans le sélecteur de mode. */
+  modeLabel?: string;
+  /** Libellé des graduations de la légende ; absent = `tickLabel` de ui/format. */
+  tickLabel?: (v: number) => string;
 }
 
 function fixed(v: number, decimals: number): string {
@@ -45,6 +52,19 @@ export function formatTemperature(celsius: number): string {
 
 const percent = (v: number) => `${fixed(v, 0)}%`;
 const ugm3 = (v: number) => `${fixed(v, 0)} µg/m³`;
+
+/** Neige en cm : une décimale sous 10 cm, entier jusqu'à 99 cm, puis mètres (« 1.0 m », « 7.4 m », « 32 m »). */
+export function formatSnow(cm: number): string {
+  if (cm < 9.95) return `${cm.toFixed(1)} cm`;
+  if (Math.round(cm) < 100) return `${Math.round(cm)} cm`;
+  const m = cm / 100;
+  return m < 9.95 ? `${m.toFixed(1)} m` : `${Math.round(m)} m`;
+}
+
+/** Graduation de l'épaisseur : centimètres sous 1 m, mètres au-delà (« 10 cm », « 1 m », « 10 m »). */
+function depthTick(cm: number): string {
+  return cm < 100 ? `${cm} cm` : `${cm / 100} m`;
+}
 
 const s = (v: number, r: number, g: number, b: number, a = 255): Stop => ({ v, rgba: [r, g, b, a] });
 
@@ -95,6 +115,33 @@ export const LAYERS: readonly LayerDef[] = [
       s(800, 100, 60, 30, 245), s(2000, 20, 10, 5, 255),
     ],
     ticks: [60, 200, 800, 2000], tooltipMin: 20, isoStep: null,
+  },
+  {
+    // Cumul de neige (cm) depuis l'heure du run : bleus clairs → bleus → violets. Bas de gamme assez saturé
+    // pour rester visible sur la calotte blanche du Groenland et la carte claire (validé Task 7).
+    id: "snowfall", label: STRINGS.layers.snow, modeLabel: STRINGS.snowModes.snowfall, unit: "cm", format: formatSnow,
+    stops: [
+      s(0, 150, 195, 245, 0), s(0.5, 150, 195, 245, 0), s(1, 150, 195, 245, 190), s(5, 95, 160, 240, 215),
+      s(20, 60, 115, 225, 232), s(50, 50, 75, 205, 240), s(100, 110, 60, 200, 245), s(300, 150, 40, 170, 250),
+      s(500, 90, 10, 110, 255),
+    ],
+    ticks: [1, 5, 20, 50, 100, 300], tooltipMin: 0.5, isoStep: null,
+  },
+  {
+    // Épaisseur au sol (cm). Arrêts en valeur physique : dégradé froid dense de 1 à 150 cm (toute la neige
+    // saisonnière), puis bande chaude « neige profonde » (teinte distincte) de 150 cm à la borne de l'encodage
+    // (1000 cm). Seuil à 1,5 m : GFS plafonne vers 2–3 m même sur les calottes (mesuré sur run réel), donc une
+    // bande à 3 m ne serait jamais vue ; décision utilisateur 2026-10-31. Transparent sous 1 cm, comme le
+    // tooltip (tooltipMin).
+    id: "snow_depth", modeOf: "snowfall", label: STRINGS.layers.snow, modeLabel: STRINGS.snowModes.depth, unit: "cm",
+    format: formatSnow, tickLabel: depthTick,
+    stops: [
+      s(0, 170, 205, 248, 0), s(0.99, 170, 205, 248, 0), s(1, 170, 205, 248, 150), s(2, 150, 190, 246, 175),
+      s(5, 125, 170, 244, 195), s(10, 105, 150, 240, 210), s(25, 80, 125, 232, 225), s(50, 60, 100, 220, 235),
+      s(100, 70, 60, 185, 242), s(150, 140, 40, 150, 250),
+      s(155, 220, 50, 100, 252), s(300, 250, 140, 40, 255), s(1000, 255, 225, 120, 255),
+    ],
+    ticks: [10, 50, 150, 300, 1000], tooltipMin: 1, isoStep: null,
   },
 ];
 

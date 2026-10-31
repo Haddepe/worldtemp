@@ -2,7 +2,7 @@ import type { Encoding } from "../data/encoding";
 import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
 import { legendStopsCss } from "../render/colormap";
-import { legendTicks } from "./format";
+import { legendName, legendTicks } from "./format";
 
 export interface Overlay {
   /** Conteneur du menu radio des couches (ui/layers-menu.ts). */
@@ -21,7 +21,10 @@ export interface Overlay {
   setBanner(text: string): void;
   /** `null` masque le statut. */
   setStatus(text: string | null): void;
-  setLegend(def: LayerDef, enc: Encoding, stats: { min: number; max: number }): void;
+  /** Conteneur du sélecteur de mode (ui/modes.ts), dans le panneau de la légende. */
+  layerModes: HTMLElement;
+  /** `note` : mention après l'unité (« since Sat 3 09:00 » pour les chutes de neige). */
+  setLegend(def: LayerDef, enc: Encoding, stats: { min: number; max: number }, note?: string): void;
   setLegendVisible(on: boolean): void;
   showFatal(text: string, options?: { reload?: boolean }): void;
 }
@@ -36,6 +39,8 @@ export function createOverlay(): Overlay {
   const bannerText = byId<HTMLElement>("banner-text");
   const status = byId<HTMLElement>("status");
   const legend = byId<HTMLElement>("legend");
+  const legendBody = byId<HTMLElement>("legend-body");
+  const layerModes = byId<HTMLElement>("layer-modes");
   const layersMenu = byId<HTMLElement>("layers-menu");
   const windToggle = byId<HTMLButtonElement>("wind-toggle");
   const labelsToggle = byId<HTMLButtonElement>("labels-toggle");
@@ -54,13 +59,15 @@ export function createOverlay(): Overlay {
 
   return {
     layersMenu,
+    layerModes,
     windToggle,
     labelsToggle,
     riversToggle,
     labels,
     panelRects() {
       const rects: { x0: number; y0: number; x1: number; y1: number }[] = [];
-      for (const el of overlay.querySelectorAll<HTMLElement>(".panel, #attribution")) {
+      // #layer-modes, #legend .note : hors du cadre de la légende sur mobile (sous et au-dessus d'elle).
+      for (const el of overlay.querySelectorAll<HTMLElement>(".panel, #attribution, #layer-modes, #legend .note")) {
         const r = el.getBoundingClientRect(); // masqué (`hidden`, replié) = rectangle vide
         if (r.width > 0 && r.height > 0) rects.push({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom });
       }
@@ -80,14 +87,17 @@ export function createOverlay(): Overlay {
       if (status.hidden !== hidden) status.hidden = hidden;
       if (status.textContent !== (text ?? "")) status.textContent = text ?? "";
     },
-    setLegend(def, enc, stats) {
+    setLegend(def, enc, stats, note) {
       const ticks = legendTicks(def, enc)
         .map((t) => `<span class="tick" style="--pct:${t.pct.toFixed(2)}">${t.label}</span>`)
         .join("");
       const iso = def.isoStep !== null ? ` · ${STRINGS.legend.isolines} ${def.isoStep} ${def.unit}` : "";
-      legend.innerHTML =
+      // Séparateur à part : sur mobile la note quitte le titre (au-dessus de la légende verticale).
+      const extra = note ? `<span class="note-sep"> · </span><span class="note">${note}</span>` : "";
+      // Le corps seul est réécrit : le sélecteur de mode (#layer-modes), frère du corps, garde ses boutons et le focus.
+      legendBody.innerHTML =
         // Orientation choisie par le CSS (`--stops`, `--pct`) : horizontale, ou verticale sur mobile.
-        `<div class="title"><span class="name">${def.label} · </span><span class="unit">${def.unit}</span><span class="iso">${iso}</span></div>` +
+        `<div class="title"><span class="name">${legendName(def)} · </span><span class="unit">${def.unit}</span>${extra}<span class="iso">${iso}</span></div>` +
         `<div class="bar" style="--stops:${legendStopsCss(def, enc)}"></div>` +
         `<div class="ticks">${ticks}</div>` +
         `<div class="extremes"><span>${STRINGS.legend.min} ${def.format(stats.min)}</span><span>${STRINGS.legend.max} ${def.format(stats.max)}</span></div>`;

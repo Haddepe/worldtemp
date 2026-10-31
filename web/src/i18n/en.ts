@@ -13,7 +13,9 @@ export const STRINGS = {
     humidity: "Humidity",
     pm25: "PM2.5",
     dust: "Dust",
+    snow: "Snow",
   },
+  snowModes: { snowfall: "Snowfall", depth: "Depth", label: "Snow mode" },
   layersMenuLabel: "Layer",
   unavailable: "Unavailable",
   toggles: {
@@ -58,7 +60,7 @@ export const STRINGS = {
     calm: "Calm",
     compass: ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
   },
-  legend: { isolines: "isolines", min: "min", max: "max" },
+  legend: { isolines: "isolines", min: "min", max: "max", since: (time: string) => `since ${time}` },
   search: {
     noMatches: "No matches",
     unavailable: "Search unavailable",

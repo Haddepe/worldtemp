@@ -5,7 +5,10 @@ dans les fonctions : sur le poste Windows (sans eccodes) le module s'importe, se
 Sélection par clés (spec couches §5) : un message est retenu pour une couche quand
 toutes ses `grib_keys` sont égales aux clés du message. Un fichier NOMADS filtré
 contient le produit var × niveau et parfois deux pas de temps (TCDC instantané et
-moyenné) ou plusieurs aérosols (PMTF) : les clés lèvent l'ambiguïté."""
+moyenné) ou plusieurs aérosols (PMTF) : les clés lèvent l'ambiguïté. Cas `APCP` : à f003 et f006
+le fichier contient deux messages identiques `0-N` (bucket et cumul continu) ; à partir de f009
+le bucket `6-9` diffère du continu `0-9`, que `startStep=0` sélectionne. Deux messages
+strictement égaux pour une même couche sont donc tolérés, des messages différents non."""
 
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from pipeline.layers import LayerSpec
 # Clés lues sur chaque message, quand elles sont définies.
 MATCH_KEYS = (
     "shortName", "typeOfLevel", "level", "stepType", "aerosolType",
-    "discipline", "parameterCategory", "parameterNumber",
+    "discipline", "parameterCategory", "parameterNumber", "startStep",
 )
 
 
@@ -104,9 +107,12 @@ def decode_fields(data: bytes, specs: Sequence[LayerSpec]) -> dict[str, Field]:
         keys = _message_keys(gid)
         for spec in specs:
             if _matches(keys, spec.grib_keys):
+                field = _field(gid)
                 if spec.id in found:
+                    if np.array_equal(found[spec.id].values, field.values):
+                        continue  # doublon strict (APCP bucket = continu à f003/f006)
                     raise DecodeError(f"{spec.id} : plusieurs messages correspondent à {dict(spec.grib_keys)} ({keys})")
-                found[spec.id] = _field(gid)
+                found[spec.id] = field
 
     _with_temp_file(data, visit)
     missing = [s.id for s in specs if s.id not in found]

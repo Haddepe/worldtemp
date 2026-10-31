@@ -229,3 +229,36 @@ def test_local_store_delete_validates_all_names_before_deleting(tmp_path: Path):
 def test_local_store_broken_json_is_none(tmp_path: Path):
     (tmp_path / "k.json").write_text("{", "utf-8")
     assert LocalStore(tmp_path).get_json("k.json") is None
+
+
+# --- get_bytes (état neige, spec R5a §6) ---------------------------------------
+
+def test_local_store_get_bytes(tmp_path: Path):
+    s = LocalStore(tmp_path)
+    s.put([Object("layers/20260912T06Z/gfs_snow_state.npz", b"\x00\x01npz", "application/octet-stream")])
+    assert s.get_bytes("layers/20260912T06Z/gfs_snow_state.npz") == b"\x00\x01npz"
+    assert s.get_bytes("layers/20260912T06Z/absent.npz") is None
+
+
+def test_r2_get_bytes_reads_raw_bytes():
+    s3 = FakeS3()
+    s3.objects["k.npz"] = b"\x00\xffraw"
+    assert r2(s3).get_bytes("k.npz") == b"\x00\xffraw"
+
+
+def test_r2_get_bytes_absent_is_none_without_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert r2(FakeS3()).get_bytes("layers/20260912T06Z/gfs_snow_state.npz") is None
+    assert caplog.records == []
+
+
+def test_r2_get_bytes_other_error_is_none_with_warning(caplog):
+    s3 = FakeS3()
+
+    def boom(Bucket, Key):
+        raise RuntimeError("réseau")
+
+    s3.get_object = boom
+    with caplog.at_level(logging.WARNING):
+        assert r2(s3).get_bytes("k.npz") is None
+    assert any("k.npz" in r.getMessage() for r in caplog.records)
