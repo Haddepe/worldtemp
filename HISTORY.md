@@ -675,7 +675,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-03 | fix/mobile-polish — légende et frise collées aux bords, globe recentré entre bandeau et couches (mobile), densité de vent de l'ancien rendu téléphone + plafond 8 500 mesuré ; chemin borné | ✅ mergée, déployée par CI | `14bbdd1` | 674 vitest locaux + timeout connu `geo-loader` ; bundle 173,97 Ko gzip |
 | 2026-10-03 | fix/brave-tier — nombre de cœurs ignoré sous Brave (profil GPU juste), centre du globe aux 42 % de l'espace libre sur mobile ; chemin borné (diagnostic avec l'utilisateur, TDD) | ✅ mergée, déployée par CI | `d6aed4a` | 677 vitest locaux + timeout connu `geo-loader` |
 | 2026-10-24 | feat/landing-pages — lot G (chantier audience ③) : 16 pages couche/région générées au build + sitemap, résumé sous le bandeau, « Read more », tiroir ☰, adresse qui suit la couche, 16 images OG (spec `2026-10-24-landing-pages-design.md`, plan `2026-10-24-landing-pages.md` 6 tâches, subagent-driven ; revue finale opus « with fixes » : 1 Critical + 1 Important + 5 Minor corrigés, re-revue propre) | ✅ mergée | `964b001` | 779 vitest locaux, 283 pytest (10 skipped) ; bundle 185,96 Ko gzip |
-| 2026-10-31 | feat/snow — lot R5a : couche neige à deux modes (Snowfall cumulé 10:1 depuis le run, Depth SNOD), source dérivée `gfs_snow` isolée, reprise exacte, 4 pages + images OG (spec `2026-10-31-snow-design.md`, plan `2026-10-31-snow.md` 8 tâches, subagent-driven ; revue finale « prêt à merger avec retouches légères » + vague de correction) | 🟡 mergeable, merge en attente de l'accord utilisateur | merge à suivre | 811 vitest (68 fichiers) ; 318 passed / 12 skipped pytest local |
+| 2026-10-31 | feat/snow — lot R5a : couche neige à deux modes (Snowfall cumulé 10:1 depuis le run, Depth SNOD), source dérivée `gfs_snow` isolée, reprise exacte, 4 pages + images OG (spec `2026-10-31-snow-design.md`, plan `2026-10-31-snow.md` 8 tâches, subagent-driven ; revue finale « prêt à merger avec retouches légères » + vague de correction) | ✅ mergé `72ad975` | merge à suivre | 811 vitest (68 fichiers) ; 318 passed / 12 skipped pytest local |
 
 ## 8. Dette technique connue
 
@@ -776,7 +776,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | R2 | ~~**Mesure d'audience**~~ ✅ lot D : beacon Cloudflare Web Analytics au build de production (actif dès que `CF_BEACON_TOKEN` est renseigné, voir §9) | ~~Aucun script d'analytics dans le code~~ | D |
 | R3 | ~~**Dimension temporelle**~~ ✅ lot E : curseur temporel sur 48 h, pas de 3 h, lecture automatique | ~~Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances~~ | E |
 | R4 | ~~**Recherche et localisation**~~ ✅ lot F | ~~Ni recherche de ville ni « ma position »~~ | F |
-| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS). **Demandé par l'utilisateur le 2026-10-24 : une couche neige et une couche forêt / déforestation (si possible : source hors GFS, ex. Global Forest Watch, statique ou annuelle)** ; **neige livrée** (lot R5a, `feat/snow`, 2026-10-31, merge à suivre), forêt / déforestation = **lot R5b**, prochain | R5a ✅ (merge à suivre) ; R5b ensuite |
+| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS). **Demandé par l'utilisateur le 2026-10-24 : une couche neige et une couche forêt / déforestation (si possible : source hors GFS, ex. Global Forest Watch, statique ou annuelle)** ; **neige livrée** (lot R5a, merge `72ad975`, 2026-10-31), forêt / déforestation = **lot R5b**, prochain | R5a ✅ (merge `72ad975`) ; R5b ensuite |
 | R6 | **PWA et hors-ligne** | Rien | — |
 | R7 | **Autres langues, unités impériales** | Après le lot D le site est en anglais seul, unités métriques ; `web/src/i18n/` est prévu pour accueillir d'autres langues (pas de sélecteur aujourd'hui) | — |
 | R8 | **Pages de contenu par couche, événements d'usage (PostHog), image Open Graph par couche** | Écartés du lot D (spec §10) | — |
@@ -798,7 +798,7 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71.
 
 ## 9. État actuel & prochaine action
 
-### 2026-10-31 (2) — Lot R5a neige : prêt à merger sur `feat/snow`
+### 2026-10-31 (2) — Lot R5a neige livré : chutes prévues et épaisseur au sol, 4 pages (merge `72ad975`)
 
 - **Exécution** du plan `2026-10-31-snow.md` (8 tâches, subagent-driven, ledger `.superpowers/sdd/2026-10-31-snow/`, rulings R1–R9) : champs GFS `APCP`/`CPOFP`/`SNOD` + fixtures réelles (T1), cumul 10:1 et état sérialisable `pipeline/snow.py` (T2), source dérivée `gfs_snow` isolée avec reprise exacte (T3), couches front et modes (T4), entrée Snow + sélecteur « Snowfall | Depth » + légende « since » (T5), 4 pages (T6), calibrage sur run réel + images OG (T7), seuil « neige profonde » à 1,5 m (T8a).
 - **Validation navigateur 8/8 dans Brave** (`vite preview`, accord utilisateur) : menu, bascule de mode en gardant instant et caméra, page Alpes conservée, tooltip réel en cm puis m, lecture qui fait grossir les taches, `?layer=snow_depth`, capture 📷 avec « since », 412 px sans chevauchement.
@@ -806,7 +806,8 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71.
 - **Décisions utilisateur** (§5) : textes des 4 pages validés ; bande « neige profonde » abaissée à 1,5 m. Spec amendée en conséquence (encodage, palette, critère 4).
 - **Revue finale opus** « prêt à merger avec retouches légères » : 0 critique, 1 important (Snow absente d'About et de « More »), mineurs ; corrigés en `f9eb209` (About/More, spec, commentaires, test « état en avance sur la progression ») ; restants en dettes n° 70–71.
 - **Tests :** 811 vitest (68 fichiers), 318 passed / 12 skipped pytest local, `tsc` OK ; bundle **189,03 Ko gzip** (plafond relevé, §5). `history_check` ✓.
-- **Prochaine action :** merge avec l'accord de l'utilisateur, puis soumettre les 4 URLs (IndexNow au déploiement, Bing `submit_url_batch`, inspection Google) ; vérifier `encoding.max` = 1000 pour `snow_depth` au premier run neuf ; ensuite lot R5b (forêt / déforestation).
+- **Merge** `72ad975` (accord utilisateur), tests sur le résultat : 318 pytest / 12 skipped, 811 vitest, `tsc` OK.
+- **Prochaine action :** soumettre les 4 URLs (IndexNow au déploiement, Bing `submit_url_batch`, inspection Google) ; vérifier `encoding.max` = 1000 pour `snow_depth` au premier run neuf ; ensuite lot R5b (forêt / déforestation).
 
 ### 2026-10-31 — Lot G : 17 pages indexées par Google, Bing en retard ; réécriture Rust écartée
 
@@ -1934,7 +1935,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-31 (**lot R5a neige prêt à merger sur `feat/snow`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip ; merge en attente de l'accord utilisateur)
+**Dernière mise à jour :** 2026-10-31 (**lot R5a neige mergé `72ad975`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip)
+**Entrée précédente :** 2026-10-31 (**lot R5a neige prêt à merger sur `feat/snow`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip ; merge en attente de l'accord utilisateur)
 **Entrée précédente :** 2026-10-31 (**suivi du lot G** — Google : 17/17 pages indexées, 8–33 impressions/jour depuis le 25 octobre ; Bing : 2 URLs indexées, pages du lot G pas encore explorées ; réécriture Rust auditée puis écartée, §5)
 **Entrée précédente :** 2026-10-24 (**arrêt de session** — lot G déployé (`64b971c`) ; sitemap soumis à Google et Bing, 17 URLs à Bing ; indexation Google demandée pour `/temperature-map/` seule, les autres à redemander)
 **Entrée précédente :** 2026-10-24 (**lot G livré** — merge `964b001` : 16 pages couche/région + sitemap généré, résumé, tiroir ☰, 16 images OG ; vent éteint par défaut sauf vent/pression/cyclones ; 779 vitest, 283 pytest)
