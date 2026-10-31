@@ -88,6 +88,8 @@ jobs:
             SAMPLE_ARG=""
           fi
           # Pic de disque échantillonné toutes les 20 s (dalles Hansen + tuiles écrites).
+          # Départ mesuré à part : le disque du runner est déjà occupé (≈ 42 Go) avant le tiler.
+          base=$(df --output=used -B1M . | tail -1 | tr -d ' ')
           ( peak=0; while true; do u=$(df --output=used -B1M . | tail -1 | tr -d ' '); [ "$u" -gt "$peak" ] && peak=$u && echo "$peak" > disk-peak-mb; sleep 20; done ) &
           SAMPLER=$!
           # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
@@ -99,13 +101,16 @@ jobs:
           [ "$rc" = 0 ] || { cat time.txt; kill $SAMPLER; exit 1; }
           kill $SAMPLER || true
           cat time.txt
-          echo "Pic de disque utilisé : $(cat disk-peak-mb) Mo (départ inclus)"
+          peak=$(cat disk-peak-mb)
+          echo "Disque : départ $base Mo, pic $peak Mo, soit $((peak - base)) Mo pour le cache Hansen et les tuiles"
+          # Boîte sans aucune forêt (Pacifique sud) : valide, aucune tuile, index vide écrit par le tiler.
+          mkdir -p out/forest level1/forest
+          if [ -d out/forest/1 ]; then cp -r out/forest/1 level1/forest/1; fi
           du -sh out/forest
-          mkdir -p level1/forest && cp -r out/forest/1 level1/forest/1 2>/dev/null || true
           {
             echo "### Boîte ${{ matrix.box }}"
             grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
-            echo "- pic de disque : $(cat disk-peak-mb) Mo"
+            echo "- disque : départ $base Mo, pic $peak Mo, cache + tuiles $((peak - base)) Mo"
             echo "- tuiles : $(du -sh out/forest | cut -f1)"
             grep -h "dalles Hansen\|dalles absentes\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -126,6 +131,7 @@ jobs:
         with:
           name: forest1-${{ matrix.box }}
           path: level1/
+          if-no-files-found: ignore  # boîte sans tuile de niveau 1
           retention-days: 7
       # Tuiles d'une boîte : seulement génération complète des 8 boîtes (jamais un échantillon).
       - name: Envoi sur R2

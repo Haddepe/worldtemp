@@ -387,3 +387,29 @@ def test_small_cache_redownloads_granules(tmp_path, monkeypatch):
 
 def test_forest_cache_files_for_a_90_degree_box():
     assert main.forest_cache_files(box_for_job(0)) == 40  # 2 couches × 2 rangées × (9 + 1) colonnes
+
+
+class EmptyHansen(FakeHansen):
+    """Boîte sans forêt ni perte (Pacifique sud, boîte 4 sur Actions)."""
+
+    def read_block(self, bounds, width, height, factor):
+        self.calls.append((bounds, width, height, factor))
+        w, h = width * factor, height * factor
+        return np.zeros((h, w), np.uint8), np.zeros((h, w), np.uint8)
+
+
+def test_box_without_forest_writes_empty_index_accepted_by_merge(tmp_path):
+    empty_box, full_box = tmp_path / "box4", tmp_path / "box0"
+    index = _build(empty_box, EmptyHansen())
+    assert sum(index.count(z) for z in range(1, 4)) == 0
+    assert (empty_box / "index-partial.bin").is_file() and not (empty_box / "forest").exists()
+    _build(full_box, FakeHansen())
+    level1 = tmp_path / "level1"  # seul le niveau 1 des boîtes non vides est rassemblé
+    (level1 / "forest").mkdir(parents=True)
+    import shutil
+    shutil.copytree(full_box / "forest" / "1", level1 / "forest" / "1")
+    res = main.merge_forest_indexes([empty_box / "index-partial.bin", full_box / "index-partial.bin"], tmp_path / "final",
+                                    version="v1.12", generated_at="2026-10-31T12:00:00Z", max_level=3,
+                                    max_level_outside=3, tropics=main.TROPICS, level1_dir=level1)
+    merged = encode.TileIndex.from_bytes(res.read_bytes())
+    assert merged.has(0, 0, 0) and merged.has(1, 0, 0)
