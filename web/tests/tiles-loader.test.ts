@@ -282,7 +282,7 @@ describe("TileLoader — jeu forest", () => {
     expect(deep.signal.aborted).toBe(true);
   });
 
-  it("textures forêt : données brutes (NoColorSpace), sans mipmaps, plus proche voisin au grossissement", async () => {
+  it("textures forêt : données brutes (NoColorSpace), mipmaps et filtrage linéaire (l'année est lue au centre du texel par le shader)", async () => {
     const h = harness();
     const l = loader(h, { forest: forestSource() });
     l.setForestEnabled(true);
@@ -291,11 +291,11 @@ describe("TileLoader — jeu forest", () => {
     await flush();
     const f = l.get({ z: 0, x: 0, y: 0 })!.forest!;
     expect(f.colorSpace).toBe(THREE.NoColorSpace);
-    expect(f.generateMipmaps).toBe(false);
-    expect(f.magFilter).toBe(THREE.NearestFilter);
-    expect(f.minFilter).toBe(THREE.LinearFilter);
+    expect(f.generateMipmaps).toBe(true);
+    expect(f.magFilter).toBe(THREE.LinearFilter);
+    expect(f.minFilter).toBe(THREE.LinearMipmapLinearFilter);
     expect(f.flipY).toBe(false);
-    expect(l.usedBytes).toBe(2 * textureBytes(512, 512) + 512 * 512 * 4);
+    expect(l.usedBytes).toBe(3 * textureBytes(512, 512));
   });
 
   it("désactivée : requêtes forêt annulées, textures forêt rendues, sat/map gardés", async () => {
@@ -314,11 +314,24 @@ describe("TileLoader — jeu forest", () => {
     expect(dispose).toHaveBeenCalled();
     expect(l.get({ z: 0, x: 0, y: 0 })!.forest).toBeUndefined();
     expect(l.get({ z: 0, x: 0, y: 0 })!.sat).toBeDefined();
-    expect(l.usedBytes).toBe(before - 512 * 512 * 4);
+    expect(l.usedBytes).toBe(before - textureBytes(512, 512));
     const n = forestUrls(h).length;
     l.update([{ z: 1, x: 0, y: 0 }], cam);
     expect(forestUrls(h).length).toBe(n); // plus rien de neuf
     expect(l.resolve({ z: 0, x: 0, y: 0 }, "forest")).toBeNull();
+  });
+
+  it("désactivée : un slot qui ne portait que la forêt est retiré", async () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    h.calls.find((c) => c.url === `${FOREST_BASE}/forest/2/0/0.png`)!.resolve(bitmap()); // sat s'arrête au niveau 1, map pas chargé
+    await flush();
+    expect(l.get({ z: 2, x: 0, y: 0 })!.forest).toBeDefined();
+    l.setForestEnabled(false);
+    expect(l.get({ z: 2, x: 0, y: 0 })).toBeUndefined();
+    expect(l.usedBytes).toBe(0);
   });
 
   it("configureForest pose la source après coup (manifeste forêt arrivé plus tard)", () => {

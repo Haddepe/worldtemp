@@ -88,10 +88,6 @@ export function textureBytes(width: number, height: number): number {
   return Math.round(width * height * 4 * (4 / 3));
 }
 
-/** Octets GPU d'une texture du jeu `set` : `forest` n'a pas de mipmaps. */
-function setBytes(set: TileSet, width: number, height: number): number {
-  return set === "forest" ? width * height * 4 : textureBytes(width, height);
-}
 
 type JobState = "queued" | "loading" | "waiting" | "failed";
 
@@ -171,11 +167,12 @@ export class TileLoader {
     for (const [key, job] of this.jobs) {
       if (job.set === "forest") this.drop(key, job);
     }
-    for (const slot of this.slots.values()) {
+    for (const [key, slot] of this.slots) {
       const texture = slot.forest;
       if (!texture) continue;
-      slot.bytes -= this.freeTexture(texture, "forest");
+      slot.bytes -= this.freeTexture(texture);
       slot.forest = undefined;
+      if (!slot.sat && !slot.map) this.slots.delete(key); // slot vide : rien à garder
     }
   }
 
@@ -309,13 +306,6 @@ export class TileLoader {
     } else {
       texture.colorSpace = THREE.NoColorSpace;
     }
-    if (job.set === "forest") {
-      // Canaux de données (année de perte surtout) : ni mipmaps ni interpolation au grossissement,
-      // qui mélangeraient une année avec « pas de perte » (0) et fausseraient la couleur.
-      texture.generateMipmaps = false;
-      texture.minFilter = THREE.LinearFilter;
-      texture.magFilter = THREE.NearestFilter;
-    }
     texture.needsUpdate = true;
     const key = tileKey(job.tile);
     let slot = this.slots.get(key);
@@ -324,7 +314,7 @@ export class TileLoader {
       this.slots.set(key, slot);
     }
     slot[job.set] = texture;
-    const bytes = setBytes(job.set, bitmap.width, bitmap.height);
+    const bytes = textureBytes(bitmap.width, bitmap.height);
     slot.bytes += bytes;
     this.usedBytes += bytes;
     this.evict();
@@ -342,9 +332,9 @@ export class TileLoader {
   }
 
   /** Libère une texture et renvoie les octets qu'elle comptait (déduits de `usedBytes`). */
-  private freeTexture(texture: THREE.Texture, set: TileSet): number {
+  private freeTexture(texture: THREE.Texture): number {
     const img = texture.image as ImageBitmap | undefined;
-    const bytes = img ? setBytes(set, img.width, img.height) : 0;
+    const bytes = img ? textureBytes(img.width, img.height) : 0;
     texture.dispose();
     if (img && typeof img.close === "function") img.close();
     this.usedBytes -= bytes;
@@ -354,7 +344,7 @@ export class TileLoader {
   private release(slot: Slot): void {
     for (const set of SETS) {
       const texture = slot[set];
-      if (texture) slot.bytes -= this.freeTexture(texture, set);
+      if (texture) slot.bytes -= this.freeTexture(texture);
     }
     this.usedBytes -= slot.bytes; // reste éventuel (aucun en pratique)
     slot.bytes = 0;

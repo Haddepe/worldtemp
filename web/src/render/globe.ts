@@ -32,8 +32,8 @@ export interface TiledGlobe {
    * à la place de la couche météo (laissée telle quelle, elle revient à l'extinction).
    */
   setForest(on: boolean): void;
-  /** LUT 256 × 2 de la forêt (render/colormap `buildForestLut`) et canaux des tuiles (manifeste forêt). */
-  setForestPalette(lut: THREE.DataTexture, channels: ForestChannels): void;
+  /** LUT 256 × 2 de la forêt (render/colormap `buildForestLut`), canaux et côté des tuiles (manifeste forêt). */
+  setForestPalette(lut: THREE.DataTexture, channels: ForestChannels, tileSize?: number): void;
   /** Sélection, chargement et mise à jour des meshes pour cette vue. Renvoie le nombre de patches affichés. */
   update(view: ViewState): number;
   dispose(): void;
@@ -50,7 +50,6 @@ interface PatchUniforms {
 
 const ZERO_RECT = new THREE.Vector4(0, 0, 1, 1);
 
-/** Sous-rectangle d'une tuile dans une texture équirectangulaire du monde entier (v = 0 au sud). */
 /** Ligne k = grandeur k (couvert, année, part), 1 dans la colonne de son canal RGB : `M · texel.rgb`. */
 function channelMatrix(c: ForestChannels): THREE.Matrix3 {
   const m = new THREE.Matrix3().set(0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -59,6 +58,7 @@ function channelMatrix(c: ForestChannels): THREE.Matrix3 {
   return m;
 }
 
+/** Sous-rectangle d'une tuile dans une texture équirectangulaire du monde entier (v = 0 au sud). */
 function equirectRect(t: TileId): THREE.Vector4 {
   const b = tileBounds(t);
   const s = tileSpan(t.z);
@@ -84,6 +84,7 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uForestOn: { value: 0 },
     uForestLut: { value: null as THREE.DataTexture | null },
     uForestChannels: { value: channelMatrix({ cover: 0, year: 1, share: 2 }) },
+    uForestSize: { value: 512 },
     uLayerA: { value: null as THREE.Texture | null },
     uLayerB: { value: null as THREE.Texture | null },
     uMix: { value: 0 },
@@ -191,9 +192,10 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
       if (!on) for (const mesh of meshes.values()) (mesh.userData as PatchUniforms).forest = null;
       loader.setForestEnabled(on);
     },
-    setForestPalette(lut, channels) {
+    setForestPalette(lut, channels, tileSize = 512) {
       uniforms.uForestLut.value = lut;
       uniforms.uForestChannels.value = channelMatrix(channels);
+      uniforms.uForestSize.value = tileSize;
     },
     update(view) {
       const leaves = selectTiles(view, { maxLevel: levelCap, k: profile.k });

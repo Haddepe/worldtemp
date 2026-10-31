@@ -13,6 +13,19 @@ export function orderedLayers(defs: readonly LayerDef[], manifest: Pick<Forecast
   return defs.filter((d) => (layerKind(d) === "tiles" ? tiles.includes(d.id) : d.id in manifest.layers));
 }
 
+/** Ids affichables (`availableIds` de main) : grilles du manifeste météo s'il est chargé, couches
+ * tuiles dont le jeu est chargé même sans lui (la forêt ne dépend pas des données météo), moins les
+ * couches en échec. */
+export function availableLayerIds(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers"> | null, tiles: readonly string[], failed: ReadonlySet<string> | ReadonlyMap<string, unknown>): string[] {
+  return orderedLayers(defs, manifest ?? { layers: {} }, tiles).map((d) => d.id).filter((id) => !failed.has(id));
+}
+
+/** Ids que `?layer=` peut retenir avant le manifeste météo : toutes les grilles (le manifeste
+ * tranchera), mais une couche tuiles seulement si son jeu est chargé — sinon globe nu. */
+export function layerIdsBeforeManifest(defs: readonly LayerDef[], tiles: readonly string[]): string[] {
+  return defs.filter((d) => layerKind(d) === "grid" || tiles.includes(d.id)).map((d) => d.id);
+}
+
 /** `?layer=` → id de couche, `null` pour « Aucune ». Inconnu ou absent : `temp`, sinon la première disponible. */
 export function parseLayerParam(search: string, available: readonly string[]): string | null {
   const raw = new URLSearchParams(search).get(PARAM);

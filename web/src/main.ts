@@ -14,7 +14,9 @@ import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
 import { LAYERS, layerDef, layerKind, type LayerDef } from "./layers/registry";
-import { availableModes, failureFallback, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam } from "./layers/select";
+import {
+  availableLayerIds, availableModes, failureFallback, layerIdsBeforeManifest, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam,
+} from "./layers/select";
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
 import { pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
@@ -257,7 +259,7 @@ async function boot(): Promise<void> {
     try {
       const src = await fetchForest();
       loader.configureForest(src);
-      globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels);
+      globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
       forestReady = true;
       console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere`);
       return true;
@@ -323,11 +325,8 @@ async function boot(): Promise<void> {
     }
     return textures;
   };
-  /** Couches affichables : présentes dans le manifeste et pas en échec. */
-  const availableIds = (): string[] => {
-    const m = manifests.manifest;
-    return m ? orderedLayers(LAYERS, m, tileLayers()).map((d) => d.id).filter((id) => !failed.has(id)) : [];
-  };
+  /** Couches affichables et pas en échec : grilles du manifeste météo, Forest dès son jeu chargé (même sans manifeste météo). */
+  const availableIds = (): string[] => availableLayerIds(LAYERS, manifests.manifest, tileLayers(), failed);
   // Le menu donne une entrée (neige : « Snow », la base) : l'entrée déjà affichée garde son mode,
   // une autre ouvre sa base, ou son premier mode disponible (spec neige §7).
   const menu = createLayersMenu(ui.layersMenu, (key) =>
@@ -336,10 +335,16 @@ async function boot(): Promise<void> {
   const modes = createModeSwitch(ui.layerModes, (id) => void activate(id, true, true, true));
   /** Une entrée du menu n'est grisée que si aucune de ses couches (base ou mode) n'est disponible. */
   const syncMenuDisabled = (): void => {
-    const m = manifests.manifest;
-    if (!m) return;
     const available = availableIds();
-    for (const d of menuEntries(LAYERS, m, tileLayers())) menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+    for (const d of menuEntries(LAYERS, manifests.manifest ?? { layers: {} }, tileLayers())) {
+      menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+    }
+  };
+  /** Menu refait sans changer de couche : Forest arrivée hors d'un manifeste météo neuf, ou sans lui. */
+  const rebuildMenu = (): void => {
+    menu.setLayers(menuEntries(LAYERS, manifests.manifest ?? { layers: {} }, tileLayers()));
+    menu.setActive(menuKey(activeId, LAYERS));
+    syncMenuDisabled();
   };
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
@@ -955,14 +960,20 @@ async function boot(): Promise<void> {
             : activeId;
         updateRange();
         await activate(target, false);
-      } else if (forestNew && manifests.manifest) {
-        menu.setLayers(menuEntries(LAYERS, manifests.manifest, tileLayers())); // Forest arrivée après le manifeste météo
-        syncMenuDisabled();
+      } else if (forestNew) {
+        rebuildMenu(); // Forest arrivée après le manifeste météo
       }
       await applyWind();
       refreshBanner();
     } catch (e) {
       console.warn("[worldtemp] manifest unavailable:", e);
+      // Forest ne dépend pas des données météo : joignable par le menu, et par `?layer=forest` au démarrage.
+      if (await forestArrival) {
+        rebuildMenu();
+        if (!hadManifest && activeId === null && new URLSearchParams(pageDefaultsSearch(location.search, page, reduced)).get("layer") === "forest") {
+          await activate("forest", false);
+        }
+      }
       updateFailed = manifests.manifest !== null;
       expireFailed();
       await applyWind(); // manifeste absent → switch désactivé
@@ -981,8 +992,8 @@ async function boot(): Promise<void> {
     const m = manifests.manifest;
     // Sans manifeste, `activate` ne fait que retenir l'id : le premier manifeste repartira de l'URL.
     const layer = m
-      ? parseLayerParam(s, orderedLayers(LAYERS, m, tileLayers()).map((d) => d.id).filter((id) => !failed.has(id)))
-      : parseLayerParam(s, LAYERS.map((d) => d.id));
+      ? parseLayerParam(s, availableLayerIds(LAYERS, m, tileLayers(), failed))
+      : parseLayerParam(s, layerIdsBeforeManifest(LAYERS, tileLayers()));
     // Vent : historique → relu de l'entrée (défaut de la page si absent). Navigation : `?wind=` posé
     // par chaque page d'entrée (wind=1 si vent forcé, wind=0 sinon), ou page à vent forcé en
     // reduced-motion (éteint) ; l'accueil, sans `?wind=`, garde le vent inchangé.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseForecast } from "../src/data/manifest";
 import { LAYERS } from "../src/layers/registry";
-import { DEFAULT_LAYER, availableModes, failureFallback, layerModes, menuEntries, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
+import { DEFAULT_LAYER, availableLayerIds, availableModes, layerIdsBeforeManifest, failureFallback, layerModes, menuEntries, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
 import { FORECAST } from "./fixtures";
 
 const M = parseForecast(FORECAST);
@@ -20,6 +20,17 @@ describe("orderedLayers", () => {
     expect(orderedLayers(LAYERS, stray).map((d) => d.id)).not.toContain("forest");
     // et une couche grille n'est jamais rendue disponible par la liste des tuiles
     expect(orderedLayers(LAYERS, { layers: {} }, ["temp", "forest"]).map((d) => d.id)).toEqual(["forest"]);
+  });
+  it("availableLayerIds : Forest joignable sans manifeste météo ; couches en échec retirées", () => {
+    expect(availableLayerIds(LAYERS, null, ["forest"], new Set())).toEqual(["forest"]);
+    expect(availableLayerIds(LAYERS, null, [], new Set())).toEqual([]);
+    expect(availableLayerIds(LAYERS, M, ["forest"], new Map([["rain", 1]]))).toEqual(["temp", "clouds", "pressure", "humidity", "pm25", "dust", "forest"]);
+  });
+  it("layerIdsBeforeManifest : toutes les grilles, une couche tuiles seulement si son jeu est chargé", () => {
+    expect(layerIdsBeforeManifest(LAYERS, [])).not.toContain("forest");
+    expect(layerIdsBeforeManifest(LAYERS, [])).toContain("snow_depth");
+    expect(layerIdsBeforeManifest(LAYERS, ["forest"])).toContain("forest");
+    expect(parseLayerParam("?layer=forest", layerIdsBeforeManifest(LAYERS, []))).toBe("temp"); // pas de globe nu
   });
   it("une couche du manifeste inconnue du registre est ignorée", () => {
     const extra = { ...M, layers: { ...M.layers, wind: M.layers.temp! } };

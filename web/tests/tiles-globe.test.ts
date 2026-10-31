@@ -162,6 +162,20 @@ describe("createTiledGlobe", () => {
     expect([at(0, 2), at(1, 0), at(2, 1)]).toEqual([1, 1, 1]);
     expect(e.reduce((a, b) => a + b, 0)).toBe(3);
     const frag = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).fragmentShader;
-    for (const name of ["uForest", "uForestRect", "uHasForest", "uForestOn", "uForestLut", "uForestChannels"]) expect(frag).toContain(name);
+    for (const name of ["uForest", "uForestRect", "uHasForest", "uForestOn", "uForestLut", "uForestChannels", "uForestSize"]) expect(frag).toContain(name);
+    expect(u.uForestSize!.value).toBe(512);
+    globe.setForestPalette(lut, { cover: 0, year: 1, share: 2 }, 256);
+    expect(u.uForestSize!.value).toBe(256);
+  });
+
+  it("shader forêt : l'année (code) est lue au centre exact du texel le plus proche, niveau 0, jamais interpolée", () => {
+    const globe = createTiledGlobe("high", fakeLoader(), 8);
+    globe.update(frontView());
+    const frag = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).fragmentShader.replace(/\s+/g, " ");
+    expect(frag).toContain("vec2 uvF = uForestRect.xy + vUv * uForestRect.zw;");
+    expect(frag).toContain("vec2 centre = (floor(uvF * uForestSize) + 0.5) / uForestSize;");
+    expect(frag).toContain("float year = (uForestChannels * textureLod(uForest, centre, 0.0).rgb).y;");
+    expect(frag).toContain("vec2((year * 255.0 + 0.5) / 256.0, 0.75)"); // pertes indexées par l'année exacte
+    expect(frag).not.toContain("f.y * 255.0");                           // jamais l'année filtrée
   });
 });
