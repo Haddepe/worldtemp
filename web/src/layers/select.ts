@@ -52,3 +52,11 @@ export function menuTarget(baseId: string, available: readonly string[], defs: r
   if (available.includes(baseId)) return baseId;
   return defs.find((d) => d.modeOf === baseId && available.includes(d.id))?.id ?? null;
 }
+
+/** Modes proposés par le sélecteur pour la couche affichée : ceux de `layerModes` qui sont
+ * disponibles ; moins de deux → `[]` (rien à choisir, sélecteur masqué). */
+export function availableModes(id: string | null, available: readonly string[], defs: readonly LayerDef[]): LayerDef[] {
+  if (id === null) return [];
+  const modes = layerModes(id, defs).filter((d) => available.includes(d.id));
+  return modes.length >= 2 ? modes : [];
+}

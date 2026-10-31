@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseForecast } from "../src/data/manifest";
 import { layerDef } from "../src/layers/registry";
 import {
-  formatAgo, formatBanner, formatOffset, formatReading, formatWhen, legendTicks, sourceLabel, formatWind, timelineLabel,
+  formatAgo, formatBanner, legendNote, legendTitle, formatOffset, formatReading, formatWhen, legendTicks, sourceLabel, formatWind, timelineLabel,
   windDirection, compassPoint,
 } from "../src/ui/format";
 import { FORECAST } from "./fixtures";
@@ -104,5 +104,20 @@ describe("formatWind — spec vent §10", () => {
     expect(compassPoint(348.75)).toBe("N");
     expect(compassPoint(348.74)).toBe("NNW");
     expect(compassPoint(225)).toBe("SW");
+  });
+});
+
+describe("legendTitle / legendNote — légende neige (spec neige §5.2)", () => {
+  it("nom du mode s'il existe, unité, note facultative", () => {
+    expect(legendTitle(layerDef("temp")!)).toBe("Temperature · °C");
+    expect(legendTitle(layerDef("snow_depth")!)).toBe("Depth · cm");
+    expect(legendTitle(layerDef("snowfall")!, "since Sat 3 09:00")).toBe("Snowfall · cm · since Sat 3 09:00");
+  });
+  it("note « since » = heure du run, en heure locale ; seulement pour snowfall", () => {
+    const run = "2026-10-03T06:00:00Z";
+    expect(legendNote(layerDef("snowfall")!, run, "UTC")).toBe("since Sat 3 06:00");
+    expect(legendNote(layerDef("snowfall")!, run, "Europe/Paris")).toBe("since Sat 3 08:00");
+    expect(legendNote(layerDef("snow_depth")!, run, "UTC")).toBeUndefined();
+    expect(legendNote(layerDef("temp")!, run, "UTC")).toBeUndefined();
   });
 });

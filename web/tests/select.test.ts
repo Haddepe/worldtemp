@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseForecast } from "../src/data/manifest";
 import { LAYERS } from "../src/layers/registry";
-import { DEFAULT_LAYER, layerModes, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
+import { DEFAULT_LAYER, availableModes, layerModes, menuKey, menuLayers, menuTarget, orderedLayers, parseLayerParam, withLayerParam } from "../src/layers/select";
 import { FORECAST } from "./fixtures";
 
 const M = parseForecast(FORECAST);
@@ -66,6 +66,12 @@ describe("modes de couche (neige)", () => {
     expect(menuTarget("snowfall", [], LAYERS)).toBeNull();
     expect(menuTarget("rain", ["rain"], LAYERS)).toBe("rain");
     expect(menuTarget("rain", [], LAYERS)).toBeNull();
+  });
+  it("availableModes : modes disponibles de la couche ; moins de deux → aucun sélecteur", () => {
+    expect(availableModes("snow_depth", ["snowfall", "snow_depth"], LAYERS).map((d) => d.id)).toEqual(["snowfall", "snow_depth"]);
+    expect(availableModes("snowfall", ["snowfall"], LAYERS)).toEqual([]);
+    expect(availableModes("temp", ["temp"], LAYERS)).toEqual([]);
+    expect(availableModes(null, ["snowfall", "snow_depth"], LAYERS)).toEqual([]);
   });
   it("parseLayerParam accepte un mode", () => {
     expect(parseLayerParam("?layer=snow_depth", [...LAYERS.map((d) => d.id)])).toBe("snow_depth");

@@ -39,6 +39,13 @@ export function pageAfterLayerChange(current: PageDef, layer: string | null, win
   return PAGES.find((p) => p.kind === "layer" && p.layer === layer) ?? current;
 }
 
+/** Page après un changement de mode (Snowfall ↔ Depth, spec neige §7) : toujours la page courante —
+ * seule la query string est réécrite. `pageAfterLayerChange` enverrait une page régionale vers la
+ * page de la couche quand on revient à sa couche de base. */
+export function pageAfterModeChange(current: PageDef): PageDef {
+  return current;
+}
+
 /** Query string à garder en changeant de page : retire layer et wind ; la vue est l'affaire de
  * `searchWithShownView`. "" si vide. */
 export function searchForPageChange(search: string): string {
