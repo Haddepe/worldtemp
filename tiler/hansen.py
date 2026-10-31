@@ -193,6 +193,8 @@ class HansenBackend:
         self.base = base if not _is_url(base) or base.endswith("/") else base + "/"
         self.max_cached = max_cached
         self._cache: OrderedDict[Path, None] = OrderedDict()
+        self.downloads = 0  # nombre de GET de dalles et octets reçus (mesure sur Actions)
+        self.downloaded_bytes = 0
         self._sleep = sleep  # injectable : attentes entre essais réseau (tests rapides)
         self.available = (available if available is not None
                           else {layer: self._load_list(layer) for layer in LAYERS})
@@ -226,6 +228,8 @@ class HansenBackend:
                 old.unlink(missing_ok=True)
                 del self._cache[old]
         _download(self.base + fname, path, sleep=self._sleep)
+        self.downloads += 1
+        self.downloaded_bytes += path.stat().st_size
         self._cache[path] = None
         return path
 

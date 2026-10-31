@@ -157,6 +157,19 @@ def forest_factor(z: int) -> int:
     return math.ceil(180.0 / (TILE_SIZE * 2**z) / HANSEN_PIXEL_DEG)
 
 
+def forest_cache_files(box: Bounds, granule_deg: int = 10) -> int:
+    """Taille du cache LRU Hansen (fichiers) pour que chaque dalle ne soit téléchargée qu'une fois par boîte.
+
+    `iter_blocks` parcourt la boîte ligne par ligne ; un bloc (< 10° aux niveaux lus) touche au plus
+    2 rangées et 2 colonnes de dalles. Le cache garde donc 2 rangées complètes de la boîte, plus une
+    colonne de marge, pour les 2 couches : la ligne de blocs suivante y retrouve tout ce qu'elle relit
+    (pire cas ≈ 20 paires × 489 Mo ≈ 10 Go, en pratique bien moins : l'océan et le désert
+    se compressent très bien).
+    """
+    cols = math.ceil((box.lon_max - box.lon_min) / granule_deg)
+    return 2 * 2 * (cols + 1)
+
+
 def forest_peak_bytes(block: int, factor: int) -> float:
     """Pic mémoire estimé d'un bloc de block x block tuiles lu au facteur `factor`."""
     return PEAK_REF_BYTES * (block * TILE_SIZE * factor) ** 2 / PEAK_REF_PIXELS
@@ -486,12 +499,16 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "forest":
         from . import hansen
 
-        backend = hansen.HansenBackend(a.work, base=a.hansen_base or hansen.HANSEN_BASE)
+        box = box_for_job(a.box)
+        backend = hansen.HansenBackend(a.work, base=a.hansen_base or hansen.HANSEN_BASE,
+                                       max_cached=forest_cache_files(box))
         sizes: dict[int, int] = {}
         try:
-            index = build_forest_box(backend, box_for_job(a.box), a.out, a.min_level, a.max_level, a.max_level_outside,
+            index = build_forest_box(backend, box, a.out, a.min_level, a.max_level, a.max_level_outside,
                                      a.tropics, a.block, sample=a.sample, sizes=sizes)
         finally:
+            print(f"dalles Hansen : {backend.downloads} téléchargements, {backend.downloaded_bytes} octets "
+                  f"(cache {backend.max_cached} fichiers)")
             backend.close()  # dalles téléchargées supprimées, même en cas d'échec
         _print_forest_sizes(a.box, index, sizes, a.sample)
         return 0

@@ -21,6 +21,7 @@ class FakeHansen:
         self.calls = []
         self.fail_at = fail_at
         self.closed = False
+        self.downloads = self.downloaded_bytes = self.max_cached = 0
 
     def read_block(self, bounds, width, height, factor):
         self.calls.append((bounds, width, height, factor))
@@ -335,3 +336,53 @@ def test_cli_merge_forest_index(tmp_path):
     assert m["max_level_outside"] == 7 and m["tropics"]["lat_min"] == -25.3125 and m["tropics"]["lat_max"] == 25.3125
     assert m["tropics_requested"]["lat_min"] == -25
     assert encode.TileIndex.from_bytes((tmp_path / "o" / "index.bin").read_bytes()).has(8, 3, 4)
+
+
+# --- Parcours des blocs et cache des dalles Hansen (décision R5 du contrôleur) ------------------
+
+def _counting_backend(tmp_path, monkeypatch, box, max_cached):
+    """HansenBackend réel (cache LRU réel), téléchargement et gdalwarp simulés : compte les GET."""
+    from tiler import hansen
+
+    got = []
+
+    def fake_download(url, dest, **retry):
+        got.append(url.rsplit("/", 1)[-1])
+        dest.write_bytes(b"x")
+
+    monkeypatch.setattr(hansen, "_download", fake_download)
+    names = set(hansen.granules_for(box))
+    be = hansen.HansenBackend(tmp_path / "work", base="https://example.invalid/",
+                              available={layer: names for layer in hansen.LAYERS}, max_cached=max_cached)
+    be._warp = lambda sources, bounds, w, h, layer: np.zeros((h, w), np.uint8)  # bloc vide : rien d'écrit
+    return be, got, names
+
+
+@pytest.mark.parametrize("job", [0, 5])
+@pytest.mark.parametrize("level, block", [(8, 6), (7, 4)])
+def test_box_cache_downloads_each_granule_once(tmp_path, monkeypatch, job, level, block):
+    # Parcours ligne par ligne : une ligne de blocs (< 10°) touche au plus 2 rangées de dalles ;
+    # un cache dimensionné sur 2 rangées complètes (+ 1 colonne de marge) garde tout ce que la
+    # ligne suivante relira : chaque dalle n'est téléchargée qu'une fois par boîte.
+    box = box_for_job(job)
+    cache = main.forest_cache_files(box)
+    be, got, names = _counting_backend(tmp_path, monkeypatch, box, cache)
+    main.build_forest_box(be, box, tmp_path / "out", min_level=level, max_level=level, max_level_outside=level,
+                          block=block, log=QUIET, factor_for=lambda z: 1)
+    assert len(got) == 2 * len(names)  # 2 couches
+    assert len(set(got)) == len(got)
+    assert be.downloads == len(got) and be.downloaded_bytes == len(got)  # 1 octet par fausse dalle
+    be.close()
+
+
+def test_small_cache_redownloads_granules(tmp_path, monkeypatch):
+    # Témoin : l'ancien cache de 8 fichiers retélécharge les dalles à chaque ligne de blocs.
+    box = box_for_job(5)
+    be, got, names = _counting_backend(tmp_path, monkeypatch, box, 8)
+    main.build_forest_box(be, box, tmp_path / "out", min_level=8, max_level=8, max_level_outside=8,
+                          block=6, log=QUIET, factor_for=lambda z: 1)
+    assert len(got) > 2.5 * 2 * len(names)
+
+
+def test_forest_cache_files_for_a_90_degree_box():
+    assert main.forest_cache_files(box_for_job(0)) == 40  # 2 couches × 2 rangées × (9 + 1) colonnes

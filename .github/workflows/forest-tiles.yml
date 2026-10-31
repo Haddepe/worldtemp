@@ -63,6 +63,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Le cache Hansen garde 2 rangées de dalles de la boîte (jusqu'à ≈ 10 Go au pire) : on libère
+      # les SDK inutiles du runner (≈ 25 Go) pour ne pas dépendre des ≈ 14 Go libres par défaut.
+      - name: Place disque
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Outils
         run: |
           sudo apt-get update -q
@@ -84,9 +91,12 @@ jobs:
           ( peak=0; while true; do u=$(df --output=used -B1M . | tail -1 | tr -d ' '); [ "$u" -gt "$peak" ] && peak=$u && echo "$peak" > disk-peak-mb; sleep 20; done ) &
           SAMPLER=$!
           # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
-          /usr/bin/time -v -o time.txt python -m tiler.main forest --box ${{ matrix.box }} --out out --work work \
+          set +e  # pipefail du shell par défaut : on relève le code de sortie nous-mêmes
+          /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box ${{ matrix.box }} --out out --work work \
             --min-level 1 --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
-            --tropics=$TROPICS $SAMPLE_ARG || { cat time.txt; kill $SAMPLER; exit 1; }
+            --tropics=$TROPICS $SAMPLE_ARG 2>&1 | tee log.txt; rc=${PIPESTATUS[0]}
+          set -e
+          [ "$rc" = 0 ] || { cat time.txt; kill $SAMPLER; exit 1; }
           kill $SAMPLER || true
           cat time.txt
           echo "Pic de disque utilisé : $(cat disk-peak-mb) Mo (départ inclus)"
@@ -97,6 +107,7 @@ jobs:
             grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
             echo "- pic de disque : $(cat disk-peak-mb) Mo"
             echo "- tuiles : $(du -sh out/forest | cut -f1)"
+            grep -h "dalles Hansen\|total extrapolé\|^boîte" log.txt | sed 's/^/- /'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sample != '' }}
