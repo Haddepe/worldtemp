@@ -3,17 +3,18 @@ import pytest
 
 from pipeline import layers
 from pipeline.layers import LAYERS, Encoding, LayerSpec, by_source, get
-from pipeline.sources import SOURCES
+from pipeline.sources import GFS_SNOW, SOURCES
 
 
-def test_nine_layers_in_manifest_order():
-    assert [s.id for s in LAYERS] == ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v", "pm25", "dust"]
+def test_layers_in_manifest_order():
+    assert [s.id for s in LAYERS] == ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v", "pm25", "dust", "snowfall", "snow_depth"]
 
 
 def test_ids_unique_and_sources_exist():
     ids = [s.id for s in LAYERS]
     assert len(set(ids)) == len(ids)
-    assert all(s.source in SOURCES for s in LAYERS)
+    # gfs_snow n'est pas encore dans SOURCES (enregistrement en Task 3 de R5a)
+    assert all(s.source in SOURCES or s.source == GFS_SNOW.id for s in LAYERS)
 
 
 def test_encodings_and_plausible_ranges_are_ordered():
@@ -26,6 +27,7 @@ def test_encodings_and_plausible_ranges_are_ordered():
 def test_by_source_partitions_registry():
     assert [s.id for s in by_source("gfs")] == ["temp", "clouds", "rain", "pressure", "humidity", "wind_u", "wind_v"]
     assert [s.id for s in by_source("gefs_chem")] == ["pm25", "dust"]
+    assert [s.id for s in by_source("gfs_snow")] == ["snowfall", "snow_depth"]
     assert by_source("nope") == []
 
 
@@ -101,3 +103,15 @@ def test_registry_specs_are_frozen():
         LAYERS[0].id = "x"  # type: ignore[misc]
     assert isinstance(LAYERS[0], LayerSpec)
     assert layers.AEROSOL_TOTAL == 62000 and layers.AEROSOL_DUST == 62001
+
+
+def test_snow_depth_converts_metres_to_centimetres():
+    from pipeline.layers import get
+
+    assert get("snow_depth").convert(np.array([1.5])).tolist() == [150.0]
+
+
+def test_cpofp_is_decoded_but_never_published():
+    from pipeline import snow
+
+    assert snow.CPOFP.id == "cpofp" and snow.CPOFP.id not in {s.id for s in LAYERS}

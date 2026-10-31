@@ -3,7 +3,7 @@ run ; une source secondaire en échec voit ses couches reportées (main.py)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 NOMADS = "https://nomads.ncep.noaa.gov/cgi-bin/"
@@ -41,6 +41,10 @@ GEFS_CHEM = SourceSpec(
     step_hours=3, availability_delay=timedelta(hours=5),
     max_forecast_hour=84, max_candidates=4, primary=False,
 )
+
+# Neige : source séparée du GFS principal pour l'isolement (spec R5a §5.1) ; mêmes fichiers
+# NOMADS, mais un échec ne reporte que les couches neige. Enregistrée dans SOURCES plus tard.
+GFS_SNOW = replace(GFS, id="gfs_snow", label="NOAA GFS 0,25° (neige)", primary=False)
 
 # Primaire d'abord : main.py itère dans cet ordre.
 SOURCES: dict[str, SourceSpec] = {s.id: s for s in (GFS, GEFS_CHEM)}

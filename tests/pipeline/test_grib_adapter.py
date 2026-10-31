@@ -117,9 +117,82 @@ def test_wind_fixture_is_a_small_real_grib():
     assert data[:4] == b"GRIB" and 300_000 < len(data) < 3_000_000
 
 
+SNOW_F006 = FIXTURES / "gfs_snow_f006.grib2"
+SNOW_F009 = FIXTURES / "gfs_snow_f009.grib2"
+
+
+def test_snow_fixtures_are_small_real_gribs():
+    for f in (SNOW_F006, SNOW_F009):
+        data = f.read_bytes()
+        assert data[:4] == b"GRIB" and 300_000 < len(data) < 4_000_000, f.name
+
+
+@needs_eccodes
+def test_decode_snow_layers_from_real_file():
+    import warnings
+
+    from pipeline import snow
+    from pipeline.grib_adapter import decode_fields, list_messages
+    from pipeline.layers import get
+
+    specs = [get("snowfall"), get("snow_depth"), snow.CPOFP]
+    try:
+        fields = decode_fields(SNOW_F006.read_bytes(), specs)  # tolère les deux APCP 0-6 identiques
+    except Exception as exc:
+        pytest.fail(f"{exc}\nMessages du fichier :\n" + "\n".join(map(str, list_messages(SNOW_F006.read_bytes()))))
+    assert set(fields) == {"snowfall", "snow_depth", "cpofp"}
+    for s in specs:
+        _assert_gfs_grid(fields[s.id])
+        lo, hi = float(fields[s.id].values.min()), float(fields[s.id].values.max())
+        assert s.plausible[0] <= lo <= hi <= s.plausible[1], (s.id, lo, hi)
+    cp = fields["cpofp"].values
+    assert -50 <= float(cp.min()) and float(cp.max()) <= 100
+    # Mesure demandée par la spec §6 (borne de snow_depth), lue dans le log Actions.
+    f = fields["snow_depth"]
+    lat, lon, v = f.lat[:, None], f.lon[None, :], f.values
+    antarctique = float(v[np.broadcast_to(lat < -60, v.shape)].max())
+    groenland = float(v[np.broadcast_to((lat > 60) & (lat < 84) & (lon > 285) & (lon < 350), v.shape)].max())
+    alpes = float(v[np.broadcast_to((lat > 44) & (lat < 48) & (lon > 5) & (lon < 16), v.shape)].max())
+    warnings.warn(f"SNOD max global {float(v.max()):.1f} m ; Antarctique (lat<-60) {antarctique:.1f} m ; "
+                  f"Groenland (60<lat<84, 285<lon<350) {groenland:.1f} m ; Alpes (44<lat<48, 5<lon<16) {alpes:.2f} m")
+
+
+@needs_eccodes
+def test_snowfall_selects_continuous_apcp():
+    from pipeline.grib_adapter import decode_fields, list_messages
+    from pipeline.layers import get
+
+    data = SNOW_F009.read_bytes()
+    msgs = list_messages(data)
+    tps = [m for m in msgs if m.get("shortName") == "tp"]
+    assert len(tps) == 2, msgs
+    assert sorted(m["startStep"] for m in tps) == [0, 6], tps
+    chosen = decode_fields(data, [get("snowfall")])["snowfall"]
+    # Somme du message bucket 6-9, relue en isolant startStep == 6.
+    import eccodes
+    import tempfile, os
+    sums = {}
+    fd, path = tempfile.mkstemp(suffix=".grib2")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        with open(path, "rb") as fh:
+            while (gid := eccodes.codes_grib_new_from_file(fh)) is not None:
+                try:
+                    if eccodes.codes_get(gid, "shortName") == "tp":
+                        sums[int(eccodes.codes_get(gid, "startStep"))] = float(
+                            np.asarray(eccodes.codes_get_values(gid), dtype=np.float64).sum())
+                finally:
+                    eccodes.codes_release(gid)
+    finally:
+        os.unlink(path)
+    assert float(chosen.values.astype(np.float64).sum()) == pytest.approx(sums[0], rel=1e-5)
+    assert sums[0] >= sums[6]
+
+
 def test_module_importable_without_eccodes():
     from pipeline.grib_adapter import DecodeError, Field, decode_fields, list_messages
 
     assert callable(decode_fields) and callable(list_messages) and issubclass(DecodeError, ValueError)
     assert Field(np.zeros((1, 1), np.float32), np.zeros(1), np.zeros(1)).values.shape == (1, 1)
-    assert len(LAYERS) == 9
+    assert len(LAYERS) == 11

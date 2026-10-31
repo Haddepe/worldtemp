@@ -10,6 +10,7 @@ from PIL import Image
 from pipeline import config, nomads, texture
 from pipeline.grib_adapter import DecodeError, Field
 from pipeline.layers import LAYERS, get
+from pipeline.sources import SOURCES
 from pipeline.main import EXIT_DATA, EXIT_OK, EXIT_PUBLISH, EXIT_SOURCE, main, run
 from pipeline.publish import RUN_DIR, PublishError
 
@@ -138,7 +139,7 @@ def test_happy_path_publishes_every_frame_then_manifest_last(tmp_path):
     assert all(store.cache[k] == config.CACHE_IMMUTABLE for k in store.objects if k.endswith(".png"))
     assert store.cache[config.FORECAST_KEY] == config.CACHE_CONTROL
     m = manifest_of(store)
-    assert m["schema_version"] == 3 and list(m["layers"]) == [s.id for s in LAYERS]
+    assert m["schema_version"] == 3 and list(m["layers"]) == [s.id for s in LAYERS if s.source in SOURCES]  # neige : Task 3 de R5a
     temp = m["layers"]["temp"]
     assert temp["run"] == R06 and temp["model"] == "gfs_0p25" and temp["generated_at"] == "2026-09-12T14:40:00Z"
     assert temp["encoding"] == {"bits": 8, "min": -90, "max": 60, "scale": "linear"}

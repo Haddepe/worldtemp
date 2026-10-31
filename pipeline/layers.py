@@ -60,6 +60,10 @@ def _rate_to_mm_per_hour(v: np.ndarray) -> np.ndarray:
     return v * 3600.0
 
 
+def _m_to_cm(v: np.ndarray) -> np.ndarray:
+    return v * 100.0
+
+
 def _clip_percent(v: np.ndarray) -> np.ndarray:
     return np.clip(v, 0.0, 100.0)
 
@@ -109,6 +113,16 @@ LAYERS: tuple[LayerSpec, ...] = (
     LayerSpec("dust", "gefs_chem", "PMTC_surface_dust", "µg/m³", "PMTC", "surface",
               _keys(shortName="pmtc", typeOfLevel="surface", aerosolType=AEROSOL_DUST),
               _identity, (0.0, 500_000.0), Encoding(0, 2000, "sqrt")),
+    # Neige (spec R5a) : le champ décodé de `snowfall` est l'APCP continu (cumul depuis le début
+    # du run, en mm) ; la valeur publiée est dérivée par pipeline/snow.py. `plausible` borne
+    # donc l'APCP brut. `snow_depth` : SNOD en m, plage volontairement large (spec §6 : saturer
+    # est toléré, rejeter non).
+    LayerSpec("snowfall", "gfs_snow", "SNOWFALL_10to1", "cm", "APCP", "surface",
+              _keys(shortName="tp", typeOfLevel="surface", stepType="accum", startStep=0),
+              _identity, (0.0, 5000.0), Encoding(0, 500, "sqrt")),
+    LayerSpec("snow_depth", "gfs_snow", "SNOD_surface", "cm", "SNOD", "surface",
+              _keys(shortName="sde", typeOfLevel="surface"),
+              _m_to_cm, (0.0, 10_000.0), Encoding(0, 5000, "sqrt")),
 )
 
 _BY_ID = {s.id: s for s in LAYERS}
