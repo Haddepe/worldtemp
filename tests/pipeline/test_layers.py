@@ -115,3 +115,10 @@ def test_cpofp_is_decoded_but_never_published():
     from pipeline import snow
 
     assert snow.CPOFP.id == "cpofp" and snow.CPOFP.id not in {s.id for s in LAYERS}
+
+
+def test_snow_depth_missing_value_becomes_zero_not_999900_cm():
+    from pipeline.layers import get
+
+    out = get("snow_depth").convert(np.array([9999.0, 1.5, 0.0], dtype=np.float32))
+    assert out.tolist() == [0.0, 150.0, 0.0] and out.dtype == np.float32

@@ -147,14 +147,42 @@ def test_decode_snow_layers_from_real_file():
         assert s.plausible[0] <= lo <= hi <= s.plausible[1], (s.id, lo, hi)
     cp = fields["cpofp"].values
     assert -50.001 <= float(cp.min()) and float(cp.max()) <= 100.001  # -50 : sentinelle « pas de précip. »
-    # Mesure demandée par la spec §6 (borne de snow_depth), lue dans le log Actions.
+    # Mesure demandée par la spec §6 (borne de snow_depth), lue dans le log Actions. Les points
+    # manquants (9999 m) sont exclus du maximum et comptés par région.
+    import eccodes
+    import os
+    import tempfile
+
+    bitmap = missing = None
+    fd, path = tempfile.mkstemp(suffix=".grib2")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(SNOW_F006.read_bytes())
+        with open(path, "rb") as fh:
+            while (gid := eccodes.codes_grib_new_from_file(fh)) is not None:
+                try:
+                    if eccodes.codes_get(gid, "shortName") == "sde":
+                        bitmap = eccodes.codes_get(gid, "bitmapPresent")
+                        missing = eccodes.codes_get(gid, "missingValue")
+                finally:
+                    eccodes.codes_release(gid)
+    finally:
+        os.unlink(path)
     f = fields["snow_depth"]
     lat, lon, v = f.lat[:, None], f.lon[None, :], f.values
-    antarctique = float(v[np.broadcast_to(lat < -60, v.shape)].max())
-    groenland = float(v[np.broadcast_to((lat > 60) & (lat < 84) & (lon > 285) & (lon < 350), v.shape)].max())
-    alpes = float(v[np.broadcast_to((lat > 44) & (lat < 48) & (lon > 5) & (lon < 16), v.shape)].max())
-    warnings.warn(f"SNOD max global {float(v.max()):.1f} m ; Antarctique (lat<-60) {antarctique:.1f} m ; "
-                  f"Groenland (60<lat<84, 285<lon<350) {groenland:.1f} m ; Alpes (44<lat<48, 5<lon<16) {alpes:.2f} m")
+    regions = {
+        "global": np.ones(v.shape, bool),
+        "Antarctique (lat<-60)": np.broadcast_to(lat < -60, v.shape),
+        "Groenland (60<lat<84, 285<lon<350)": np.broadcast_to((lat > 60) & (lat < 84) & (lon > 285) & (lon < 350), v.shape),
+        "Alpes (44<lat<48, 5<lon<16)": np.broadcast_to((lat > 44) & (lat < 48) & (lon > 5) & (lon < 16), v.shape),
+    }
+    parts = []
+    for name, m in regions.items():
+        miss = m & (v >= 9000)
+        valid = m & ~miss
+        mx = float(v[valid].max()) if valid.any() else float("nan")
+        parts.append(f"{name} max valide {mx:.2f} m, manquants {int(miss.sum())}/{int(m.sum())} ({miss.sum() / m.sum():.1%})")
+    warnings.warn(f"SNOD bitmapPresent={bitmap} missingValue={missing} ; " + " ; ".join(parts))
 
 
 @needs_eccodes

@@ -60,8 +60,12 @@ def _rate_to_mm_per_hour(v: np.ndarray) -> np.ndarray:
     return v * 3600.0
 
 
+SNOD_MISSING_M = 9000.0  # SNOD : valeur manquante GRIB (9999 m) non masquée par le décodage
+
+
 def _m_to_cm(v: np.ndarray) -> np.ndarray:
-    return v * 100.0
+    # Points sans donnée (9999 m) -> 0 cm : pas de donnée = pas de neige dessinée.
+    return np.where(v >= SNOD_MISSING_M, 0.0, v * 100.0).astype(v.dtype, copy=False)
 
 
 def _clip_percent(v: np.ndarray) -> np.ndarray:
