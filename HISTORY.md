@@ -538,6 +538,7 @@ L'arbre des phases et leurs critères d'acceptation : `docs/PLAN.md`.
 | **Lot G, exécution : vent éteint par défaut sur les pages d'entrée, allumé seulement sur vent, pression, ouragans et typhons ; ouragans et typhons en couche pluie** *(2026-10-24, décisions utilisateur en validation navigateur)* | Le vent, allumé par défaut sur un poste `high`, couvrait la couche sur toutes les pages et surtout sur les images de partage. Il reste là où il fait partie du sujet. La pluie montre mieux la structure d'un cyclone (bandes spiralées) que la pression ; le texte renvoie à la couche Pressure pour le centre. L'accueil garde le défaut du site |
 | **Lot G, exécution : l'adresse suit la couche et garde la vue affichée** *(2026-10-24, revue finale I1)* | Choisir une couche bascule vers sa page (une combinaison couche/vent = une adresse). Vers une page sans vue la caméra ne bouge pas : sans la vue dans l'adresse, un lien copié ou le lien de partage d'une capture rouvrait la vue par défaut au lieu de l'image (anti-objectif de la spec). Écrite sous la garde « ma position » |
 | **Lot G, exécution : textes des pages embarqués dans le bundle, plafond relevé à +12 Ko** *(2026-10-24, ruling)* | La navigation interne affiche le résumé et « Read more » sans recharger : il faut les 17 textes côté client (~10 Ko). Un `import()` dynamique ajouterait un aller-retour au premier « Read more ». 185,96 Ko gzip au merge |
+| **Pas de réécriture en Rust / WebAssembly** *(2026-10-31, audit demandé puis chantier abandonné par l'utilisateur)* | Gain quasi nul pour le visiteur : le pipeline attend surtout le réseau NOMADS et tourne sur GitHub Actions ; le rendu est déjà en GLSL sur le GPU ; un bundle `wgpu`/Bevy pèserait plus que les ≈ 186 Ko gzip actuels (Three.js compris) ; il faudrait réécrire ~11 000 lignes et ~1 060 tests ; compiler Rust dépasse la RAM de la machine (1–2 Go). Seule piste ciblée gardée, à mesurer d'abord : `web/src/wind/sim.ts` en Wasm ou la simulation du vent sur GPU. |
 
 ## 6. Problèmes rencontrés & solutions
 
@@ -775,6 +776,14 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 (2026-10-03) ; la n° 63 a une échéance : renouveler le token de `worldtemp-cron` vers le **2027-09-02**.
 
 ## 9. État actuel & prochaine action
+
+### 2026-10-31 — Lot G : 17 pages indexées par Google, Bing en retard ; réécriture Rust écartée
+
+- **Google Search Console** (connecteur, inspection des 17 URLs) : **17/17 « Submitted and indexed »**, explorées du 24 au 27 octobre, y compris celles dont la demande d'indexation manuelle avait échoué ; sitemap valide, 17 URLs, 0 erreur. Sur 28 jours : 144 impressions, 7 clics ; **8 à 33 impressions par jour depuis le 25 octobre** (0 à 6 avant le lot G), position moyenne ≈ 45–70.
+- **Bing Webmaster** : toujours **2 URLs dans l'index** (inchangé depuis septembre), seul l'accueil reçoit du trafic (182 impressions, 9 clics sur la dernière semaine mesurée) ; `/wind-map/` et `/temperature-map/` jamais explorées malgré l'envoi du 2026-10-24 ; exploration de 34 puis 50 URLs les 28 et 29 octobre (probablement données et `geo/`), aucune erreur d'exploration. Rien à corriger côté site.
+- **Audit « tout réécrire en Rust »** demandé par l'utilisateur puis abandonné (§5).
+- **Aucun code modifié** ; tests non relancés (rien à tester).
+- **Prochaine action :** vers le 2026-11-07, si Bing n'a toujours pas exploré les pages, renvoyer les 16 URLs (`submit_url_batch`) ; continuer le suivi des impressions Google (critère du lot G, 4–6 semaines) ; ensuite couches neige / forêt (R5) ou P2.
 
 ### 2026-10-24 (3) — Arrêt de session : lot G en ligne, sitemap envoyé aux moteurs
 
@@ -1894,7 +1903,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-10-24 (**arrêt de session** — lot G déployé (`64b971c`) ; sitemap soumis à Google et Bing, 17 URLs à Bing ; indexation Google demandée pour `/temperature-map/` seule, les autres à redemander)
+**Dernière mise à jour :** 2026-10-31 (**suivi du lot G** — Google : 17/17 pages indexées, 8–33 impressions/jour depuis le 25 octobre ; Bing : 2 URLs indexées, pages du lot G pas encore explorées ; réécriture Rust auditée puis écartée, §5)
+**Entrée précédente :** 2026-10-24 (**arrêt de session** — lot G déployé (`64b971c`) ; sitemap soumis à Google et Bing, 17 URLs à Bing ; indexation Google demandée pour `/temperature-map/` seule, les autres à redemander)
 **Entrée précédente :** 2026-10-24 (**lot G livré** — merge `964b001` : 16 pages couche/région + sitemap généré, résumé, tiroir ☰, 16 images OG ; vent éteint par défaut sauf vent/pression/cyclones ; 779 vitest, 283 pytest)
 **Entrée précédente :** 2026-10-24 (**lot G conçu** — spec `2026-10-24-landing-pages-design.md` validée : 8 pages couche + 8 région, résumé, tiroir ☰ ; couches neige et forêt notées en R5 ; aucun code)
 **Entrée précédente :** 2026-10-03 (**arrêt de session** — tout mergé et déployé ; critère 4 de `worldtemp-cron` atteint (22/22) ; lot G reporté à la prochaine session)
