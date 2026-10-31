@@ -70,6 +70,20 @@ def layer_pixels(field: Field, spec: LayerSpec) -> tuple[np.ndarray, np.ndarray]
     return converted, quantize(converted, spec.encoding)
 
 
+def values_pixels(values: np.ndarray, spec: LayerSpec) -> tuple[np.ndarray, np.ndarray]:
+    """Comme `layer_pixels`, pour une couche dérivée dont les valeurs sont déjà dans l'unité publiée
+    (grille brute, nord en haut, lon 0→360) : forme et NaN vérifiés, puis réorientation et
+    quantification. Pas de `convert` ni de `plausible` : ils portent sur le champ GRIB brut,
+    validé par le dériveur avant le calcul."""
+    expected = (config.HEIGHT, config.WIDTH)
+    if values.shape != expected:
+        raise InvalidData(f"{spec.id} : forme {values.shape}, attendu {expected}")
+    if np.isnan(values).any():
+        raise InvalidData(f"{spec.id} : NaN présent dans les valeurs dérivées")
+    converted = reorient(np.asarray(values, dtype=np.float64))
+    return converted, quantize(converted, spec.encoding)
+
+
 def encode_png(pixels: np.ndarray) -> bytes:
     if pixels.dtype != np.uint8 or pixels.ndim != 2:
         raise ValueError("encode_png attend un tableau 2D uint8")

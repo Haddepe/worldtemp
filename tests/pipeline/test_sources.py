@@ -5,7 +5,7 @@ from pipeline.sources import GEFS_CHEM, GFS, SOURCES
 
 def test_primary_is_gfs_and_unique():
     assert [s.id for s in SOURCES.values() if s.primary] == ["gfs"]
-    assert list(SOURCES) == ["gfs", "gefs_chem"]  # primaire d'abord
+    assert list(SOURCES) == ["gfs", "gefs_chem", "gfs_snow"]  # primaire d'abord
 
 
 def test_gfs_matches_spec_1():

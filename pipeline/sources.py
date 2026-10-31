@@ -43,8 +43,8 @@ GEFS_CHEM = SourceSpec(
 )
 
 # Neige : source séparée du GFS principal pour l'isolement (spec R5a §5.1) ; mêmes fichiers
-# NOMADS, mais un échec ne reporte que les couches neige. Enregistrée dans SOURCES plus tard.
+# NOMADS, mais un échec ne reporte que les couches neige.
 GFS_SNOW = replace(GFS, id="gfs_snow", label="NOAA GFS 0,25° (neige)", primary=False)
 
 # Primaire d'abord : main.py itère dans cet ordre.
-SOURCES: dict[str, SourceSpec] = {s.id: s for s in (GFS, GEFS_CHEM)}
+SOURCES: dict[str, SourceSpec] = {s.id: s for s in (GFS, GEFS_CHEM, GFS_SNOW)}

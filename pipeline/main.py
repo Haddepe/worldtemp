@@ -1,7 +1,11 @@
-"""Orchestration (spec lot E §3). Les effets sont injectés : `run` se teste sans réseau ni
-eccodes. Règles : la source primaire publie une frise complète ou garde la précédente ; la
-source secondaire en échec reporte ses couches précédentes ; chaque échéance est envoyée dès
-qu'elle est prête, si bien qu'un passage interrompu reprend au suivant."""
+"""Orchestration (spec lot E §3, R5a §6). Les effets sont injectés : `run` se teste sans réseau ni
+eccodes. Trois sources : `gfs` (primaire), puis `gefs_chem` et `gfs_snow` (secondaires). Règles :
+la source primaire publie une frise complète ou garde la précédente ; une source secondaire en
+échec reporte ses couches précédentes — la neige, lue dans les mêmes fichiers que `gfs`, est une
+source à part pour que son échec ne touche jamais les autres couches GFS ; chaque échéance est
+envoyée dès qu'elle est prête, si bien qu'un passage interrompu reprend au suivant. Une source
+peut avoir un dériveur (`DERIVERS`) : couches calculées à partir de plusieurs champs, avec un
+état flottant entre échéances, persisté pour que la reprise donne les mêmes PNG qu'une traite."""
 
 from __future__ import annotations
 
@@ -11,10 +15,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
-from pipeline import config, nomads, publish, texture
+import numpy as np
+
+from pipeline import config, nomads, publish, snow, texture
 from pipeline.grib_adapter import Field
-from pipeline.layers import LayerSpec, by_source
+from pipeline.layers import LayerSpec, by_source, get
 from pipeline.metadata import build_forecast, cited_runs, forecast_entry, frame_entry, frame_key, iso_utc, progress_key, stats_of, to_json
 from pipeline.publish import Object, Store
 from pipeline.run_selection import Candidate, frame_hours, runs_for
@@ -41,6 +48,70 @@ class SourceFailure(Exception):
 class SourceOutput:
     entries: dict[str, dict] = field(default_factory=dict)  # id → entrée v3
     fresh: bool = False                                     # vrai : un run neuf à citer
+
+
+class Deriver(Protocol):
+    """Couches dérivées d'une source (une instance par run tenté) :
+    - `extra_inputs` : champs téléchargés et décodés pour le calcul, jamais publiés ;
+    - `resume` : charge l'état ; renvoie le seuil de reprise, toute échéance >= étant (re)calculée ;
+    - `values` : valeurs publiées (unité finale, grille brute non réorientée) des couches dérivées ;
+    - `state_object` : l'état courant, écrit après les PNG et avant la progression."""
+
+    extra_inputs: Sequence[LayerSpec]
+
+    def resume(self, store: Store, run: datetime, done_hours: Sequence[int]) -> int: ...
+    def values(self, fields: Mapping[str, Field], fh: int) -> dict[str, np.ndarray]: ...
+    def state_object(self, run: datetime) -> Object: ...
+
+
+def _checked(fields: Mapping[str, Field], spec: LayerSpec) -> np.ndarray:
+    """Champ brut validé (forme, NaN, orientation, plage) avant d'entrer dans un état persisté :
+    un NaN y empoisonnerait toutes les échéances suivantes. Lève comme un décodage en échec."""
+    f = fields[spec.id]
+    texture.validate_grid(f, spec.id)
+    texture.validate_range(f.values, spec.plausible, spec.id)
+    return f.values
+
+
+class SnowDeriver:
+    """`snowfall` = chutes cumulées depuis f000 (pipeline/snow.py), tirées de l'APCP continu (champ
+    décodé de `snowfall`) et de CPOFP. `snow_depth` n'est pas dérivée : chemin normal."""
+
+    extra_inputs: Sequence[LayerSpec] = (snow.CPOFP,)
+
+    def __init__(self) -> None:
+        self.state = snow.start()
+
+    def resume(self, store: Store, run: datetime, done_hours: Sequence[int]) -> int:
+        """Reprend après `state.fh` si l'état est lisible, du même run et à la dernière échéance
+        faite ; sinon recalcul du run depuis la première échéance (PNG réécrits à l'identique).
+        Jamais de cumul relu dans un PNG 8 bits : l'erreur de quantification s'accumulerait."""
+        raw = store.get_bytes(snow.state_key(run))
+        try:
+            state = snow.decode_state(raw) if raw is not None else None
+        except ValueError as exc:
+            log.warning("gfs_snow : %s", exc)
+            state = None
+        if state is not None and state.run == iso_utc(run) and done_hours and state.fh == max(done_hours):
+            self.state = state
+            return state.fh + 1
+        if done_hours:
+            log.info("gfs_snow : état absent ou incohérent, run %s recalculé depuis le début", iso_utc(run))
+        self.state = snow.start(iso_utc(run))
+        return 0
+
+    def values(self, fields: Mapping[str, Field], fh: int) -> dict[str, np.ndarray]:
+        apcp = _checked(fields, get("snowfall"))
+        cpofp = _checked(fields, snow.CPOFP)
+        self.state = snow.advance(self.state, fh, apcp, cpofp)
+        return {"snowfall": self.state.cum_cm}
+
+    def state_object(self, run: datetime) -> Object:
+        # Réécrit à chaque échéance : cache par défaut, jamais immuable.
+        return Object(snow.state_key(run), snow.encode_state(self.state), "application/octet-stream")
+
+
+DERIVERS: dict[str, Callable[[], Deriver]] = {"gfs_snow": SnowDeriver}
 
 
 def _current_entries(current: Mapping | None, ids: Sequence[str]) -> dict[str, dict]:
@@ -91,28 +162,39 @@ def _fill_run(
     download: Download, decode: Decode, sleep: Callable[[float], None],
 ) -> dict[str, list[dict]] | None:
     """Complète la frise de `run` (spec lot E §3.2). Renvoie les frames par couche quand toutes les
-    `hours` sont publiées, None si une échéance manque encore (reprise au passage suivant)."""
+    `hours` sont publiées, None si une échéance manque encore (reprise au passage suivant).
+    Avec un dériveur, une échéance faite n'est sautée que sous son seuil de reprise : sans état
+    fiable, le cumul est recalculé depuis la première échéance."""
     ids = [s.id for s in specs]
     stats = _progress(store, run, source)
+    done = [fh for fh in hours if isinstance(stats.get(str(fh)), dict) and all(i in stats[str(fh)] for i in ids)]
+    deriver = DERIVERS[source.id]() if source.id in DERIVERS else None
+    inputs = [*specs, *deriver.extra_inputs] if deriver else list(specs)
+    redo_from = deriver.resume(store, run, done) if deriver else None
     for fh in hours:
-        done = stats.get(str(fh))
-        if isinstance(done, dict) and all(i in done for i in ids):
+        if fh in done and (redo_from is None or fh < redo_from):
             continue
-        data = _download(source, specs, Candidate(run, fh), download, sleep)
+        data = _download(source, inputs, Candidate(run, fh), download, sleep)
         if data is None:
             return None
         objects: list[Object] = []
         frame_stats: dict[str, dict] = {}
         try:
-            fields = decode(data, specs)
+            fields = decode(data, inputs)
+            derived = deriver.values(fields, fh) if deriver else {}
             for spec in specs:
-                converted, pixels = texture.layer_pixels(fields[spec.id], spec)
+                if spec.id in derived:
+                    converted, pixels = texture.values_pixels(derived[spec.id], spec)
+                else:
+                    converted, pixels = texture.layer_pixels(fields[spec.id], spec)
                 objects.append(Object(frame_key(run, spec.id, fh), texture.encode_png(pixels), "image/png", config.CACHE_IMMUTABLE))
                 frame_stats[spec.id] = stats_of(converted)
+            if deriver:
+                objects.append(deriver.state_object(run))
         except Exception as exc:
             raise SourceFailure(EXIT_DATA, f"{source.id} : données invalides (run {iso_utc(run)} f{fh:03d}) : {exc}") from exc
         stats[str(fh)] = frame_stats
-        # PNG d'abord, progression ensuite : la progression ne cite jamais un PNG absent.
+        # PNG, état, puis progression : la progression ne cite jamais un PNG ou un état absent.
         progress = to_json({"run": iso_utc(run), "source": source.id, "stats": stats})
         objects.append(Object(progress_key(run, source.id), progress, "application/json"))
         store.put(objects)
@@ -217,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from pipeline.grib_adapter import decode_fields
 
-    parser = argparse.ArgumentParser(prog="pipeline", description="GFS + GEFS-Aerosols → layers/<run>/*.png + layers/forecast.json")
+    parser = argparse.ArgumentParser(prog="pipeline", description="GFS (+ neige) + GEFS-Aerosols → layers/<run>/*.png + layers/forecast.json")
     parser.add_argument("--dry-run", action="store_true", help="générer out/ sans publier sur R2")
     parser.add_argument("--out", type=Path, default=Path("out"), help="dossier de sortie (défaut : out)")
     parser.add_argument("--max-frames", type=int, default=None, metavar="N",

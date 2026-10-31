@@ -7,7 +7,7 @@ from PIL import Image
 from pipeline.grib_adapter import Field
 from pipeline.layers import Encoding, get
 from pipeline.texture import (
-    InvalidData, dequantize, encode_png, layer_pixels, quantize, reorient, validate_grid, validate_range,
+    InvalidData, dequantize, encode_png, layer_pixels, quantize, reorient, validate_grid, validate_range, values_pixels,
 )
 
 LIN = Encoding(-90, 60, "linear")
@@ -134,6 +134,31 @@ def test_layer_pixels_rain_uses_sqrt():
 def test_layer_pixels_rejects_implausible_raw_before_convert():
     with pytest.raises(InvalidData, match="pressure"):
         layer_pixels(make_field(fill=50_000.0), get("pressure"))
+
+
+# --- values_pixels ------------------------------------------------------------
+
+def test_values_pixels_reorients_and_quantizes_without_convert():
+    v = np.zeros((721, 1440), np.float32)
+    v[:, 0] = 2.0  # colonne GFS 0 (lon 0) : 2 cm, déjà convertis
+    spec = get("snowfall")
+    converted, px = values_pixels(v, spec)
+    assert converted.dtype == np.float64 and converted.shape == (721, 1440)
+    assert converted[0, 720] == 2.0 and converted[0, 0] == 0.0
+    assert px[0, 720] == quantize(np.array([2.0]), spec.encoding)[0] and px[0, 0] == 0
+    assert np.array_equal(px, quantize(reorient(v.astype(np.float64)), spec.encoding))
+
+
+def test_values_pixels_rejects_nan():
+    v = np.zeros((721, 1440), np.float32)
+    v[5, 5] = np.nan
+    with pytest.raises(InvalidData, match="snowfall"):
+        values_pixels(v, get("snowfall"))
+
+
+def test_values_pixels_rejects_wrong_shape():
+    with pytest.raises(InvalidData, match="forme"):
+        values_pixels(np.zeros((10, 10), np.float32), get("snowfall"))
 
 
 # --- encode_png ---------------------------------------------------------------

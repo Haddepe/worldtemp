@@ -59,6 +59,13 @@ def test_state_roundtrip_is_exact():
     assert np.array_equal(r.cum_cm, s.cum_cm)
 
 
+def test_state_carries_its_run_through_advance_and_roundtrip():
+    s = snow.advance(snow.start("2026-10-31T06:00:00Z"), 3, g(1), g(100))
+    assert s.run == "2026-10-31T06:00:00Z"
+    assert snow.decode_state(snow.encode_state(s)).run == "2026-10-31T06:00:00Z"
+    assert snow.start().run == ""
+
+
 def test_decode_state_rejects_garbage():
     with pytest.raises(ValueError):
         snow.decode_state(b"x")

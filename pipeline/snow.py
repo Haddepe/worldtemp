@@ -32,15 +32,17 @@ def frozen_fraction(cpofp_pct: np.ndarray) -> np.ndarray:
 
 @dataclass(frozen=True)
 class SnowState:
-    """État flottant d'un run entre deux frames : grilles brutes 721 × 1440, non réorientées."""
+    """État flottant d'un run entre deux frames : grilles brutes 721 × 1440, non réorientées.
+    `run` (ISO UTC) : la reprise refuse un état calculé pour un autre run."""
     fh: int
     apcp_mm: np.ndarray   # APCP continu (mm) à `fh`, pour en tirer l'incrément suivant
     cum_cm: np.ndarray    # chutes de neige cumulées (cm) depuis le début du run
+    run: str = ""
 
 
-def start() -> SnowState:
+def start(run: str = "") -> SnowState:
     shape = (config.HEIGHT, config.WIDTH)
-    return SnowState(0, np.zeros(shape, np.float32), np.zeros(shape, np.float32))
+    return SnowState(0, np.zeros(shape, np.float32), np.zeros(shape, np.float32), run)
 
 
 def advance(state: SnowState, fh: int, apcp_mm: np.ndarray, cpofp_pct: np.ndarray) -> SnowState:
@@ -49,12 +51,12 @@ def advance(state: SnowState, fh: int, apcp_mm: np.ndarray, cpofp_pct: np.ndarra
         raise ValueError(f"fh {fh} <= {state.fh} : les frames doivent se suivre dans l'ordre")
     dp = np.maximum(apcp_mm - state.apcp_mm, 0)
     cum = state.cum_cm + dp * frozen_fraction(cpofp_pct) * SNOW_RATIO / 10
-    return SnowState(fh, apcp_mm.astype(np.float32), cum.astype(np.float32))
+    return SnowState(fh, apcp_mm.astype(np.float32), cum.astype(np.float32), state.run)
 
 
 def encode_state(s: SnowState) -> bytes:
     buf = io.BytesIO()
-    np.savez_compressed(buf, fh=np.int64(s.fh), apcp_mm=s.apcp_mm, cum_cm=s.cum_cm)
+    np.savez_compressed(buf, fh=np.int64(s.fh), apcp_mm=s.apcp_mm, cum_cm=s.cum_cm, run=np.str_(s.run))
     return buf.getvalue()
 
 
@@ -64,11 +66,12 @@ def decode_state(b: bytes) -> SnowState:
     try:
         with np.load(io.BytesIO(b), allow_pickle=False) as z:
             fh, apcp, cum = int(z["fh"]), z["apcp_mm"], z["cum_cm"]
+            run = str(z["run"]) if "run" in z.files else ""
     except Exception as e:
         raise ValueError(f"état neige illisible : {e}") from e
     if apcp.shape != expected or cum.shape != expected:
         raise ValueError(f"état neige de forme {apcp.shape}/{cum.shape}, attendu {expected}")
-    return SnowState(fh, apcp.astype(np.float32), cum.astype(np.float32))
+    return SnowState(fh, apcp.astype(np.float32), cum.astype(np.float32), run)
 
 
 def state_key(run: datetime) -> str:

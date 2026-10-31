@@ -92,6 +92,7 @@ class Store(Protocol):
     """Stockage du pipeline (spec lot E §3.2, §4) : R2 en production, dossier local en dry-run."""
 
     def get_json(self, key: str) -> dict | None: ...
+    def get_bytes(self, key: str) -> bytes | None: ...
     def put(self, objects: Sequence[Object]) -> None: ...
     def list_run_dirs(self) -> list[str]: ...
     def delete_run_dirs(self, names: Sequence[str]) -> int: ...
@@ -119,6 +120,15 @@ class R2Store:
                 log.warning("%s non lu sur R2 (%s) : on continue", key, exc)
             return None
         return data if isinstance(data, dict) else None
+
+    def get_bytes(self, key: str) -> bytes | None:
+        """Comme `get_json`, sans décodage : l'état neige (npz) ; illisible → recalcul complet du run."""
+        try:
+            return self.client.get_object(Bucket=self.cfg.bucket, Key=key)["Body"].read()
+        except Exception as exc:
+            if not _missing(exc):
+                log.warning("%s non lu sur R2 (%s) : on continue", key, exc)
+            return None
 
     def put(self, objects: Sequence[Object]) -> None:
         """Dans l'ordre reçu ; s'arrête au premier échec."""
@@ -201,6 +211,12 @@ class LocalStore:
         except (OSError, ValueError):
             return None
         return data if isinstance(data, dict) else None
+
+    def get_bytes(self, key: str) -> bytes | None:
+        try:
+            return (self.root / key).read_bytes()
+        except OSError:
+            return None
 
     def put(self, objects: Sequence[Object]) -> None:
         for o in objects:

@@ -3,7 +3,7 @@ import pytest
 
 from pipeline import layers
 from pipeline.layers import LAYERS, Encoding, LayerSpec, by_source, get
-from pipeline.sources import GFS_SNOW, SOURCES
+from pipeline.sources import SOURCES
 
 
 def test_layers_in_manifest_order():
@@ -13,8 +13,7 @@ def test_layers_in_manifest_order():
 def test_ids_unique_and_sources_exist():
     ids = [s.id for s in LAYERS]
     assert len(set(ids)) == len(ids)
-    # gfs_snow n'est pas encore dans SOURCES (enregistrement en Task 3 de R5a)
-    assert all(s.source in SOURCES or s.source == GFS_SNOW.id for s in LAYERS)
+    assert all(s.source in SOURCES for s in LAYERS)
 
 
 def test_encodings_and_plausible_ranges_are_ordered():
