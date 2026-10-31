@@ -90,7 +90,7 @@ function tickLabel(v: number): string {
 
 /** Graduations de la légende : valeurs du registre, positions encode(v)/255 (spec couches §11). */
 export function legendTicks(def: LayerDef, enc: Encoding): { v: number; label: string; pct: number }[] {
-  return def.ticks.map((v) => ({ v, label: tickLabel(v), pct: (encode(v, enc) / 255) * 100 }));
+  return def.ticks.map((v) => ({ v, label: (def.tickLabel ?? tickLabel)(v), pct: (encode(v, enc) / 255) * 100 }));
 }
 
 /** Texte du tooltip : « — » sous le seuil de la couche, sinon son format. */

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { LAYERS, formatTemperature, layerDef } from "../src/layers/registry";
+import { LAYERS, formatSnow, formatTemperature, layerDef } from "../src/layers/registry";
 
 describe("registre des couches — spec couches §10", () => {
-  it("sept couches dans l'ordre du menu", () => {
-    expect(LAYERS.map((d) => d.id)).toEqual(["temp", "clouds", "rain", "pressure", "humidity", "pm25", "dust"]);
+  it("neuf entrées dans l'ordre du menu (neige : une couche + son mode)", () => {
+    expect(LAYERS.map((d) => d.id)).toEqual(["temp", "clouds", "rain", "pressure", "humidity", "pm25", "dust", "snowfall", "snow_depth"]);
   });
   it("arrêts strictement croissants, alpha dans 0–255", () => {
     for (const d of LAYERS) {
@@ -12,7 +12,7 @@ describe("registre des couches — spec couches §10", () => {
     }
   });
   it("couches transparentes : premier arrêt alpha 0 sous tooltipMin", () => {
-    for (const id of ["rain", "pm25", "dust"]) {
+    for (const id of ["rain", "pm25", "dust", "snowfall", "snow_depth"]) {
       const d = layerDef(id)!;
       expect(d.tooltipMin).not.toBeNull();
       expect(d.stops[0]!.rgba[3]).toBe(0);
@@ -36,6 +36,27 @@ describe("registre des couches — spec couches §10", () => {
     expect(layerDef("humidity")!.format(99.5)).toBe("100%");
     expect(layerDef("pm25")!.format(17.6)).toBe("18 µg/m³");
     expect(layerDef("dust")!.format(0)).toBe("0 µg/m³");
+  });
+  it("formatSnow : cm sous 1 m, m au-delà", () => {
+    const cases: [number, string][] = [[0.4, "0.4 cm"], [9.5, "9.5 cm"], [12, "12 cm"], [99, "99 cm"], [100, "1.0 m"], [740, "7.4 m"], [3200, "32 m"]];
+    for (const [v, out] of cases) expect(formatSnow(v)).toBe(out);
+    expect(layerDef("snowfall")!.format(9.5)).toBe("9.5 cm");
+    expect(layerDef("snow_depth")!.format(740)).toBe("7.4 m");
+  });
+  it("neige : modes, seuils et graduations dans l'encodage", () => {
+    const f = layerDef("snowfall")!, d = layerDef("snow_depth")!;
+    expect(f.modeOf).toBeUndefined();
+    expect(d.modeOf).toBe("snowfall");
+    expect([f.tooltipMin, d.tooltipMin]).toEqual([0.5, 1]);
+    expect(f.ticks).toEqual([1, 5, 20, 50, 100, 300]);
+    expect(d.ticks).toEqual([10, 50, 100, 300, 1000, 5000]);
+    for (const [def, max] of [[f, 500], [d, 5000]] as const) {
+      expect(def.stops[def.stops.length - 1]!.v).toBe(max);
+      for (const v of def.ticks) expect(v).toBeLessThanOrEqual(max);
+    }
+    expect(d.tickLabel!(10)).toBe("10 cm");
+    expect(d.tickLabel!(100)).toBe("1 m");
+    expect(d.tickLabel!(1000)).toBe("10 m");
   });
   it("formatTemperature conserve la spec navigation §6", () => {
     expect(formatTemperature(-12.34)).toBe("−12.3 °C");

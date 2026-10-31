@@ -67,6 +67,12 @@ describe("legendTicks", () => {
     expect(ticks[0]!.pct).toBeCloseTo((26 / 255) * 100, 6); // encode(0,5) = round(25,5) = 26
     expect(ticks[4]!.pct).toBeCloseTo(100, 6);
   });
+  it("neige profonde : libellés du registre (tickLabel)", () => {
+    const enc = { bits: 8, min: 0, max: 5000, scale: "sqrt" as const };
+    const ticks = legendTicks(layerDef("snow_depth")!, enc);
+    expect(ticks.map((t) => t.label)).toEqual(["10 cm", "50 cm", "1 m", "3 m", "10 m", "50 m"]);
+    expect(ticks[5]!.pct).toBeCloseTo(100, 6);
+  });
 });
 
 describe("formatReading", () => {
