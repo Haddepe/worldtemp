@@ -31,8 +31,15 @@ def validate_grid(field: Field, label: str = "") -> None:
         raise InvalidData(f"{tag}lon[0] = {field.lon[0]}, attendu 0")
 
 
-def validate_range(values: np.ndarray, plausible: tuple[float, float], label: str = "") -> None:
+def validate_range(values: np.ndarray, plausible: tuple[float, float], label: str = "",
+                   missing: float | None = None) -> None:
+    """Plage brute plausible. `missing` : les valeurs >= missing (valeur manquante GRIB) sont
+    exclues du contrôle ; un champ entièrement manquant est rejeté."""
     tag = f"{label} : " if label else ""
+    if missing is not None:
+        values = values[values < missing]
+        if values.size == 0:
+            raise InvalidData(f"{tag}aucune valeur présente (toutes >= {missing:g})")
     lo, hi = float(values.min()), float(values.max())
     if lo < plausible[0] or hi > plausible[1]:
         raise InvalidData(f"{tag}plage invraisemblable [{lo:.4g}, {hi:.4g}], attendu {plausible}")
@@ -65,7 +72,7 @@ def layer_pixels(field: Field, spec: LayerSpec) -> tuple[np.ndarray, np.ndarray]
     """Valide, convertit, réoriente, quantifie. Renvoie (valeurs converties
     réorientées en float64 — pour `stats` —, pixels uint8)."""
     validate_grid(field, spec.id)
-    validate_range(field.values, spec.plausible, spec.id)
+    validate_range(field.values, spec.plausible, spec.id, spec.missing)
     converted = reorient(np.asarray(spec.convert(field.values.astype(np.float64)), dtype=np.float64))
     return converted, quantize(converted, spec.encoding)
 

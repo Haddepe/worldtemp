@@ -69,7 +69,7 @@ def _checked(fields: Mapping[str, Field], spec: LayerSpec) -> np.ndarray:
     un NaN y empoisonnerait toutes les échéances suivantes. Lève comme un décodage en échec."""
     f = fields[spec.id]
     texture.validate_grid(f, spec.id)
-    texture.validate_range(f.values, spec.plausible, spec.id)
+    texture.validate_range(f.values, spec.plausible, spec.id, spec.missing)
     return f.values
 
 

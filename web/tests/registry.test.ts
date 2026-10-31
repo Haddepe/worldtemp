@@ -49,8 +49,8 @@ describe("registre des couches — spec couches §10", () => {
     expect(d.modeOf).toBe("snowfall");
     expect([f.tooltipMin, d.tooltipMin]).toEqual([0.5, 1]);
     expect(f.ticks).toEqual([1, 5, 20, 50, 100, 300]);
-    expect(d.ticks).toEqual([10, 50, 100, 300, 1000, 5000]);
-    for (const [def, max] of [[f, 500], [d, 5000]] as const) {
+    expect(d.ticks).toEqual([10, 50, 100, 300, 1000]);
+    for (const [def, max] of [[f, 500], [d, 1000]] as const) {
       expect(def.stops[def.stops.length - 1]!.v).toBe(max);
       for (const v of def.ticks) expect(v).toBeLessThanOrEqual(max);
     }

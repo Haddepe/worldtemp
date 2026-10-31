@@ -119,7 +119,7 @@ describe("composeCapture — neige : mode et origine du cumul", () => {
     expect(textOf(ops, "Snowfall · cm · since Sat 3 08:00")).toMatchObject({ align: "left" });
   });
   it("sans note : mode seul", () => {
-    const depth = { def: layerDef("snow_depth")!, enc: { bits: 8, min: 0, max: 5000, scale: "sqrt" as const }, model: "gfs_0p25", run: "2026-10-03T06:00:00Z" };
+    const depth = { def: layerDef("snow_depth")!, enc: { bits: 8, min: 0, max: 1000, scale: "sqrt" as const }, model: "gfs_0p25", run: "2026-10-03T06:00:00Z" };
     expect(textOf(composeCapture({ ...base, layer: depth }, measure), "Depth · cm")).toBeDefined();
   });
 });

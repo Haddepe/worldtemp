@@ -117,27 +117,29 @@ export const LAYERS: readonly LayerDef[] = [
     ticks: [60, 200, 800, 2000], tooltipMin: 20, isoStep: null,
   },
   {
-    // Cumul de neige (cm) depuis l'heure du run : blancs bleutés → bleus → violets (lisible sur glace claire).
+    // Cumul de neige (cm) depuis l'heure du run : bleus clairs → bleus → violets. Bas de gamme assez saturé
+    // pour rester visible sur la calotte blanche du Groenland et la carte claire (validé Task 7).
     id: "snowfall", label: STRINGS.layers.snow, modeLabel: STRINGS.snowModes.snowfall, unit: "cm", format: formatSnow,
     stops: [
-      s(0, 200, 225, 250, 0), s(0.5, 200, 225, 250, 0), s(1, 200, 225, 250, 170), s(5, 140, 190, 250, 210),
-      s(20, 70, 140, 235, 230), s(50, 50, 80, 210, 240), s(100, 110, 60, 200, 245), s(300, 150, 40, 170, 250),
+      s(0, 150, 195, 245, 0), s(0.5, 150, 195, 245, 0), s(1, 150, 195, 245, 190), s(5, 95, 160, 240, 215),
+      s(20, 60, 115, 225, 232), s(50, 50, 75, 205, 240), s(100, 110, 60, 200, 245), s(300, 150, 40, 170, 250),
       s(500, 90, 10, 110, 255),
     ],
     ticks: [1, 5, 20, 50, 100, 300], tooltipMin: 0.5, isoStep: null,
   },
   {
     // Épaisseur au sol (cm). Arrêts en valeur physique : dégradé froid dense de 1 à 300 cm, puis bande chaude
-    // « neige profonde » (teinte distincte) de 300 cm au maximum de l'encodage ; survit à un changement de borne.
+    // « neige profonde » (teinte distincte) de 300 cm à la borne de l'encodage (1000 cm : GFS plafonne vers
+    // 2,8 m, Task 7). Transparent sous 1 cm, comme le tooltip (tooltipMin).
     id: "snow_depth", modeOf: "snowfall", label: STRINGS.layers.snow, modeLabel: STRINGS.snowModes.depth, unit: "cm",
     format: formatSnow, tickLabel: depthTick,
     stops: [
-      s(0, 220, 238, 252, 0), s(0.5, 220, 238, 252, 0), s(1, 220, 238, 252, 120), s(2, 200, 225, 250, 160),
-      s(5, 170, 205, 248, 190), s(10, 130, 180, 245, 210), s(25, 90, 145, 235, 225), s(50, 60, 105, 220, 235),
+      s(0, 170, 205, 248, 0), s(0.99, 170, 205, 248, 0), s(1, 170, 205, 248, 150), s(2, 150, 190, 246, 175),
+      s(5, 125, 170, 244, 195), s(10, 105, 150, 240, 210), s(25, 80, 125, 232, 225), s(50, 60, 100, 220, 235),
       s(100, 50, 70, 190, 240), s(200, 90, 50, 170, 245), s(300, 140, 40, 150, 250),
-      s(330, 220, 50, 100, 252), s(1000, 250, 140, 40, 255), s(5000, 255, 225, 120, 255),
+      s(330, 220, 50, 100, 252), s(600, 250, 140, 40, 255), s(1000, 255, 225, 120, 255),
     ],
-    ticks: [10, 50, 100, 300, 1000, 5000], tooltipMin: 1, isoStep: null,
+    ticks: [10, 50, 100, 300, 1000], tooltipMin: 1, isoStep: null,
   },
 ];
 

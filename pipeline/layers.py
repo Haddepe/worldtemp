@@ -42,6 +42,7 @@ class LayerSpec:
     convert: Callable[[np.ndarray], np.ndarray]  # brut GRIB → unité affichée
     plausible: tuple[float, float]       # bornes brutes (avant convert), sinon exit 3
     encoding: Encoding
+    missing: float | None = None         # brut >= missing : valeur manquante GRIB, hors contrôle de plage
 
 
 def _identity(v: np.ndarray) -> np.ndarray:
@@ -119,14 +120,17 @@ LAYERS: tuple[LayerSpec, ...] = (
               _identity, (0.0, 500_000.0), Encoding(0, 2000, "sqrt")),
     # Neige (spec R5a) : le champ décodé de `snowfall` est l'APCP continu (cumul depuis le début
     # du run, en mm) ; la valeur publiée est dérivée par pipeline/snow.py. `plausible` borne
-    # donc l'APCP brut. `snow_depth` : SNOD en m, plage volontairement large (spec §6 : saturer
-    # est toléré, rejeter non).
+    # donc l'APCP brut. `snow_depth` : SNOD en m ; les points manquants (9999 m, océans) sont
+    # exclus du contrôle de plage, puis ramenés à 0 cm par `_m_to_cm`. GFS plafonne vers 2,8 m
+    # (Task 7, run réel 2026-10-31 06z : max 276,7 cm) : borne d'encodage max(276,7 × 1,2, 1000)
+    # = 1000 cm ; `snowfall` max 147,6 cm à f060 → max(500, 221) = 500. Plausible 30 m reste large (spec §6 : saturer est toléré, rejeter non) mais
+    # arrête une erreur d'unité.
     LayerSpec("snowfall", "gfs_snow", "SNOWFALL_10to1", "cm", "APCP", "surface",
               _keys(shortName="tp", typeOfLevel="surface", stepType="accum", startStep=0),
               _identity, (0.0, 5000.0), Encoding(0, 500, "sqrt")),
     LayerSpec("snow_depth", "gfs_snow", "SNOD_surface", "cm", "SNOD", "surface",
               _keys(shortName="sde", typeOfLevel="surface"),
-              _m_to_cm, (0.0, 10_000.0), Encoding(0, 5000, "sqrt")),
+              _m_to_cm, (0.0, 30.0), Encoding(0, 1000, "sqrt"), missing=SNOD_MISSING_M),
 )
 
 _BY_ID = {s.id: s for s in LAYERS}

@@ -68,10 +68,10 @@ describe("legendTicks", () => {
     expect(ticks[4]!.pct).toBeCloseTo(100, 6);
   });
   it("neige profonde : libellés du registre (tickLabel)", () => {
-    const enc = { bits: 8, min: 0, max: 5000, scale: "sqrt" as const };
+    const enc = { bits: 8, min: 0, max: 1000, scale: "sqrt" as const };
     const ticks = legendTicks(layerDef("snow_depth")!, enc);
-    expect(ticks.map((t) => t.label)).toEqual(["10 cm", "50 cm", "1 m", "3 m", "10 m", "50 m"]);
-    expect(ticks[5]!.pct).toBeCloseTo(100, 6);
+    expect(ticks.map((t) => t.label)).toEqual(["10 cm", "50 cm", "1 m", "3 m", "10 m"]);
+    expect(ticks[4]!.pct).toBeCloseTo(100, 6);
   });
 });
 

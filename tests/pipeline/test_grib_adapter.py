@@ -143,7 +143,9 @@ def test_decode_snow_layers_from_real_file():
     assert set(fields) == {"snowfall", "snow_depth", "cpofp"}
     for s in specs:
         _assert_gfs_grid(fields[s.id])
-        lo, hi = float(fields[s.id].values.min()), float(fields[s.id].values.max())
+        v = fields[s.id].values
+        v = v if s.missing is None else v[v < s.missing]  # SNOD : 9999 m hors contrôle de plage
+        lo, hi = float(v.min()), float(v.max())
         assert s.plausible[0] <= lo <= hi <= s.plausible[1], (s.id, lo, hi)
     cp = fields["cpofp"].values
     assert -50.001 <= float(cp.min()) and float(cp.max()) <= 100.001  # -50 : sentinelle « pas de précip. »

@@ -3,6 +3,7 @@ import pytest
 
 from pipeline import layers
 from pipeline.layers import LAYERS, Encoding, LayerSpec, by_source, get
+from pipeline.texture import InvalidData, validate_range
 from pipeline.sources import SOURCES
 
 
@@ -121,3 +122,17 @@ def test_snow_depth_missing_value_becomes_zero_not_999900_cm():
 
     out = get("snow_depth").convert(np.array([9999.0, 1.5, 0.0], dtype=np.float32))
     assert out.tolist() == [0.0, 150.0, 0.0] and out.dtype == np.float32
+
+
+def test_snow_depth_plausible_ignores_missing_but_rejects_absurd_depth():
+    # Task 7 : 9999 m (océans, bitmap GRIB) passe le contrôle de plage sans l'élargir ; une
+    # épaisseur réelle de 50 m (GFS plafonne vers 2,4 m) est une erreur d'unité ; un champ
+    # entièrement manquant est rejeté.
+    from pipeline.layers import get
+
+    spec = get("snow_depth")
+    validate_range(np.array([9999.0, 2.42, 0.0]), spec.plausible, spec.id, spec.missing)
+    with pytest.raises(InvalidData, match="snow_depth"):
+        validate_range(np.array([9999.0, 50.0, 0.0]), spec.plausible, spec.id, spec.missing)
+    with pytest.raises(InvalidData, match="aucune valeur"):
+        validate_range(np.array([9999.0, 9999.0]), spec.plausible, spec.id, spec.missing)
