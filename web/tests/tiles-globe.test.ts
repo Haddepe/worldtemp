@@ -168,6 +168,16 @@ describe("createTiledGlobe", () => {
     expect(u.uForestSize!.value).toBe(256);
   });
 
+  it("shader forêt : les lacs (land = 0, satellite quasi noir) sont relevés à la teinte d'eau, pas laissés noirs", () => {
+    const globe = createTiledGlobe("high", fakeLoader(), 8);
+    globe.update(frontView());
+    const frag = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).fragmentShader.replace(/\s+/g, " ");
+    const branch = frag.slice(frag.indexOf("if (uForestOn > 0.5) {"), frag.indexOf("} else if (uHasLayer"));
+    expect(branch).toContain("float lake = uHasMap > 0.5 ? (1.0 - land) * (1.0 - uMapStyle) : 0.0;");
+    expect(branch).toContain("color = mix(background, max(background, deepWater), lake);");
+    expect(branch.indexOf("max(background, deepWater)")).toBeLessThan(branch.indexOf("if (uHasForest > 0.5)")); // avant la forêt
+  });
+
   it("shader forêt : l'année (code) est lue au centre exact du texel le plus proche, niveau 0, jamais interpolée", () => {
     const globe = createTiledGlobe("high", fakeLoader(), 8);
     globe.update(frontView());

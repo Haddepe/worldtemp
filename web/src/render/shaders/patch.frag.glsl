@@ -92,7 +92,12 @@ void main() {
     // L'année est un code, pas une grandeur : jamais interpolée. Elle est lue au centre exact du texel
     // le plus proche, au niveau 0 (textureLod), où le filtrage linéaire rend la valeur du texel telle
     // quelle ; couvert et part, continus, viennent de la lecture filtrée (mipmaps comprises).
-    color = background;
+    // Lacs : la Blue Marble les rend presque noirs et la carte OSM les range hors des terres (land = 0).
+    // Sans couche météo pour les recouvrir, on relève le fond d'eau jusqu'à la teinte d'eau profonde
+    // (max : l'océan, plus clair, garde sa bathymétrie ; le style carte a déjà sa propre eau).
+    vec3 deepWater = vec3(0.05, 0.10, 0.20) * (0.25 + 0.75 * lambert);
+    float lake = uHasMap > 0.5 ? (1.0 - land) * (1.0 - uMapStyle) : 0.0;
+    color = mix(background, max(background, deepWater), lake);
     if (uHasForest > 0.5) {
       vec2 uvF = uForestRect.xy + vUv * uForestRect.zw;
       vec2 centre = (floor(uvF * uForestSize) + 0.5) / uForestSize;
