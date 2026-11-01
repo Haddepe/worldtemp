@@ -123,3 +123,34 @@ describe("composeCapture — neige : mode et origine du cumul", () => {
     expect(textOf(composeCapture({ ...base, layer: depth }, measure), "Depth · cm")).toBeDefined();
   });
 });
+
+describe("composeCapture — Forest : deux barres et crédit (spec forêt §7)", () => {
+  const forest = layerDef("forest")!;
+  const gradients = (ops: DrawOp[]) => ops.filter((o): o is Extract<DrawOp, { kind: "gradient" }> => o.kind === "gradient");
+  it("paysage : couvert 30–100 % et pertes 2001–2024 côte à côte, source et licence à droite", () => {
+    const ops = composeCapture({ ...base, layer: null, forest }, measure);
+    expect(band(ops)).toMatchObject({ y: 960, h: 120 });
+    const [cover, loss] = gradients(ops);
+    expect(gradients(ops)).toHaveLength(2);
+    expect(cover!.x).toBeCloseTo(21.6, 6);
+    expect(cover!.w).toBeCloseTo((729.6 - 21.6) / 2, 6);
+    expect(loss!.x).toBeCloseTo(21.6 + cover!.w + 21.6, 6);
+    expect(cover!.stops[0]!.at).toBe(0);
+    expect(cover!.stops.at(-1)!.at).toBe(1);
+    expect(loss!.stops.map((s) => s.color)[0]).toBe("rgba(255, 225, 40, 1)");
+    expect(textOf(ops, "Tree cover 2000 · %")).toMatchObject({ align: "left" });
+    expect(textOf(ops, "Forest loss by year").x).toBeCloseTo(loss!.x, 6);
+    const ticks = texts(ops).filter((o) => o.align === "center" && o.fill === "#9aa3b2").map((o) => o.text);
+    expect(ticks).toEqual(["30", "50", "75", "100", "2001", "2008", "2016", "2024"]);
+    expect(textOf(ops, "Global Forest Change 2000–2024 (v1.12)")).toMatchObject({ align: "right" });
+    expect(textOf(ops, "Hansen/UMD/Google/USGS/NASA · CC BY 4.0")).toMatchObject({ align: "right" });
+    expect(textOf(ops, "globelayers.com")).toBeDefined();
+    expect(texts(ops).some((o) => o.text.startsWith("Forecast for") || o.text.startsWith("Captured") || o.text.includes(" run "))).toBe(false);
+  });
+  it("portrait : bandeau doublé, barres sur toute la largeur", () => {
+    const ops = composeCapture({ ...base, width: 1170, height: 2532, dpr: 3, layer: null, forest }, measure);
+    expect(band(ops)).toMatchObject({ y: 2148, h: 384 });
+    const [cover, loss] = gradients(ops);
+    expect(cover!.w + loss!.w + 34.56).toBeCloseTo(1170 - 2 * 34.56, 6);
+  });
+});

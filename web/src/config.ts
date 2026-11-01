@@ -8,6 +8,11 @@ export const TILES_BASE_URL: string =
   import.meta.env.VITE_TILES_BASE_URL ??
   "https://data.globelayers.com/tiles/v1";
 
+/** Racine versionnée du jeu `forest` (spec forêt §6 : `manifest.json`, `index.bin`, `forest/z/x/y.png`). */
+export const FOREST_TILES_BASE_URL: string =
+  import.meta.env.VITE_FOREST_TILES_BASE_URL ??
+  "https://data.globelayers.com/tiles/forest/v1.12";
+
 /** Période de relecture de `forecast.json`. */
 export const REFRESH_MS = 15 * 60 * 1000;
 

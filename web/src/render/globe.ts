@@ -3,6 +3,7 @@ import type { Tier } from "../gpu/tier";
 import { type TileId, subRect, tileBounds, tileKey, tileSpan } from "../tiles/grid";
 import { type ViewState, mapStyleFor, selectTiles } from "../tiles/lod";
 import type { TileLoader } from "../tiles/loader";
+import type { ForestChannels } from "../tiles/manifest";
 import { buildPatchGeometry } from "../tiles/patch";
 import fragmentShader from "./shaders/patch.frag.glsl?raw";
 import vertexShader from "./shaders/patch.vert.glsl?raw";
@@ -26,6 +27,13 @@ export interface TiledGlobe {
   /** Blue Marble 4K locale, équirectangulaire, utilisée quand aucune tuile `sat` n'est disponible (repli). */
   setFallbackSat(texture: THREE.Texture | null): void;
   setMaxLevel(level: number): void;
+  /**
+   * Couche Forest (spec forêt §7) : allumée, le jeu `forest` est chargé et composé par-dessus le fond
+   * à la place de la couche météo (laissée telle quelle, elle revient à l'extinction).
+   */
+  setForest(on: boolean): void;
+  /** LUT 256 × 2 de la forêt (render/colormap `buildForestLut`), canaux et côté des tuiles (manifeste forêt). */
+  setForestPalette(lut: THREE.DataTexture, channels: ForestChannels, tileSize?: number): void;
   /** Sélection, chargement et mise à jour des meshes pour cette vue. Renvoie le nombre de patches affichés. */
   update(view: ViewState): number;
   dispose(): void;
@@ -36,9 +44,19 @@ interface PatchUniforms {
   satRect: THREE.Vector4;
   map: THREE.Texture | null;
   mapRect: THREE.Vector4;
+  forest: THREE.Texture | null;
+  forestRect: THREE.Vector4;
 }
 
 const ZERO_RECT = new THREE.Vector4(0, 0, 1, 1);
+
+/** Ligne k = grandeur k (couvert, année, part), 1 dans la colonne de son canal RGB : `M · texel.rgb`. */
+function channelMatrix(c: ForestChannels): THREE.Matrix3 {
+  const m = new THREE.Matrix3().set(0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const e = m.elements; // colonnes d'abord
+  [c.cover, c.year, c.share].forEach((col, row) => (e[col * 3 + row] = 1));
+  return m;
+}
 
 /** Sous-rectangle d'une tuile dans une texture équirectangulaire du monde entier (v = 0 au sud). */
 function equirectRect(t: TileId): THREE.Vector4 {
@@ -51,6 +69,7 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
   const profile = TIER_PROFILE[tier];
   let levelCap = maxLevel;
   let fallbackSat: THREE.Texture | null = null;
+  let forestOn = false;
 
   const uniforms = {
     uSat: { value: null as THREE.Texture | null },
@@ -59,6 +78,13 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uMap: { value: null as THREE.Texture | null },
     uMapRect: { value: ZERO_RECT.clone() },
     uHasMap: { value: 0 },
+    uForest: { value: null as THREE.Texture | null },
+    uForestRect: { value: ZERO_RECT.clone() },
+    uHasForest: { value: 0 },
+    uForestOn: { value: 0 },
+    uForestLut: { value: null as THREE.DataTexture | null },
+    uForestChannels: { value: channelMatrix({ cover: 0, year: 1, share: 2 }) },
+    uForestSize: { value: 512 },
     uLayerA: { value: null as THREE.Texture | null },
     uLayerB: { value: null as THREE.Texture | null },
     uMix: { value: 0 },
@@ -81,6 +107,9 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     uniforms.uMap.value = p.map;
     uniforms.uMapRect.value.copy(p.mapRect);
     uniforms.uHasMap.value = p.map ? 1 : 0;
+    uniforms.uForest.value = p.forest;
+    uniforms.uForestRect.value.copy(p.forestRect);
+    uniforms.uHasForest.value = p.forest ? 1 : 0;
     material.uniformsNeedUpdate = true;
   };
 
@@ -92,7 +121,9 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
       mesh.frustumCulled = false;         // lod.ts a déjà éliminé
       mesh.matrixAutoUpdate = false;
       mesh.onBeforeRender = () => applyPatch(mesh!);
-      mesh.userData = { sat: null, satRect: ZERO_RECT.clone(), map: null, mapRect: ZERO_RECT.clone() } satisfies PatchUniforms;
+      mesh.userData = {
+        sat: null, satRect: ZERO_RECT.clone(), map: null, mapRect: ZERO_RECT.clone(), forest: null, forestRect: ZERO_RECT.clone(),
+      } satisfies PatchUniforms;
       meshes.set(key, mesh);
       group.add(mesh);
     }
@@ -120,6 +151,17 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     } else {
       p.map = null;
     }
+    // Forêt : tuile publiée la plus fine à cet endroit (ancêtre de niveau 7 hors tropiques), puis
+    // son ancêtre chargé le plus proche ; aucune si l'index la dit vide ou si la couche est éteinte.
+    const q = forestOn ? loader.forestTile(t) : null;
+    const forest = q ? loader.resolve(q, "forest") : null;
+    if (forest) {
+      p.forest = forest.texture;
+      const r = subRect(t, forest.tile);
+      p.forestRect.set(r.offsetX, r.offsetY, r.scale, r.scale);
+    } else {
+      p.forest = null;
+    }
   };
 
   return {
@@ -142,6 +184,18 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     },
     setMaxLevel(level) {
       levelCap = level;
+    },
+    setForest(on) {
+      forestOn = on;
+      uniforms.uForestOn.value = on ? 1 : 0;
+      // Éteinte, le loader rend ses textures forêt : aucun patch ne doit plus les désigner.
+      if (!on) for (const mesh of meshes.values()) (mesh.userData as PatchUniforms).forest = null;
+      loader.setForestEnabled(on);
+    },
+    setForestPalette(lut, channels, tileSize = 512) {
+      uniforms.uForestLut.value = lut;
+      uniforms.uForestChannels.value = channelMatrix(channels);
+      uniforms.uForestSize.value = tileSize;
     },
     update(view) {
       const leaves = selectTiles(view, { maxLevel: levelCap, k: profile.k });

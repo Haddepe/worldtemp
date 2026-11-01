@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { TileIndex } from "../src/tiles/index";
-import { TileLoader, textureBytes, type TileLoaderDeps } from "../src/tiles/loader";
-import { parseManifest } from "../src/tiles/manifest";
+import { TileLoader, forestTileFor, textureBytes, type ForestSource, type TileLoaderDeps } from "../src/tiles/loader";
+import { parseForestManifest, parseManifest } from "../src/tiles/manifest";
 import { tileKey } from "../src/tiles/grid";
 
 const MANIFEST = parseManifest({
@@ -180,5 +180,166 @@ describe("TileLoader", () => {
     l.configure(MANIFEST, index());
     l.update([{ z: 0, x: 0, y: 0 }], cam);
     expect(h.calls.length).toBe(2);
+  });
+});
+
+/**
+ * Jeu `forest` réduit : niveaux 0–2, niveau 2 seulement dans la « bande tropicale » alignée sur la
+ * grille du niveau 1 (tuile 1/0/0 : lon −180…−90, lat 0…90), niveau 1 ailleurs (repli stockage).
+ * Index : 0/0/0 ; 1/0/0 et 1/1/0 ; 2/0/0 seule (2/1/1, dans la bande, est vide).
+ */
+const FOREST_MANIFEST = parseForestManifest({
+  schema_version: 1, version: "v1.12", tile_size: 512, ext: "png", index: "index.bin", max_level: 2, max_level_outside: 1,
+  tropics: { lon_min: -180, lon_max: -90, lat_min: 0, lat_max: 90 }, tropics_requested: { lon_min: -170, lon_max: -100, lat_min: 10, lat_max: 80 },
+  channels: { cover: 0, year: 1, share: 2 }, year_base: 2000, threshold: 30, source: "Hansen", license: "CC BY 4.0",
+  generated_at: "2026-10-31T00:00:00Z", lossyear_fallback: {},
+});
+
+function forestIndex(): TileIndex {
+  const b = new Uint8Array(6 + 1 + 1 + 4);
+  b.set([0x57, 0x54, 0x49, 0x58, 1, 2, 0b01, 0b11, 0b1, 0, 0, 0]);
+  return TileIndex.parse(b.buffer);
+}
+
+const FOREST_BASE = "https://t.test/tiles/forest/v1.12";
+const forestSource = (): ForestSource => ({ baseUrl: FOREST_BASE, manifest: FOREST_MANIFEST, index: forestIndex() });
+const forestUrls = (h: Harness) => h.calls.map((c) => c.url).filter((u) => u.startsWith(FOREST_BASE));
+
+describe("forestTileFor — tuile forêt à lire pour une tuile du globe (Review Focus 3)", () => {
+  const src = forestSource();
+  const at = (z: number, x: number, y: number) => forestTileFor({ z, x, y }, src.manifest, src.index);
+  it("dans la bande : la tuile elle-même si elle est à l'index, null si elle est vide", () => {
+    expect(at(2, 0, 0)).toEqual({ z: 2, x: 0, y: 0 });
+    expect(at(2, 1, 1)).toBeNull();
+    expect(at(3, 0, 0)).toEqual({ z: 2, x: 0, y: 0 }); // au-delà du niveau max : son ancêtre de niveau max
+  });
+  it("hors bande, au-delà de max_level_outside : l'ancêtre de niveau max_level_outside, jamais la tuile absente", () => {
+    expect(at(2, 2, 0)).toEqual({ z: 1, x: 1, y: 0 });
+    expect(at(2, 3, 1)).toEqual({ z: 1, x: 1, y: 0 });
+    expect(at(2, 4, 0)).toBeNull(); // ancêtre 1/2/0 absent : pas de forêt
+  });
+  it("niveaux grossiers : l'index fait foi", () => {
+    expect(at(1, 1, 0)).toEqual({ z: 1, x: 1, y: 0 });
+    expect(at(0, 0, 0)).toEqual({ z: 0, x: 0, y: 0 });
+    expect(at(0, 1, 0)).toBeNull();
+  });
+});
+
+describe("TileLoader — jeu forest", () => {
+  it("rien n'est demandé tant que la couche n'est pas active, ni sans source", () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    expect(forestUrls(h)).toEqual([]);
+    const h2 = harness();
+    const l2 = loader(h2);
+    l2.setForestEnabled(true);
+    l2.update([{ z: 2, x: 0, y: 0 }], cam);
+    expect(forestUrls(h2)).toEqual([]);
+    expect(l2.forestTile({ z: 2, x: 0, y: 0 })).toBeNull();
+  });
+
+  it("active : seules les tuiles présentes à l'index, à leur racine ; niveau 2 jamais demandé hors bande", () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource(), concurrency: 32 });
+    l.setForestEnabled(true);
+    l.update([{ z: 2, x: 0, y: 0 }, { z: 2, x: 2, y: 0 }, { z: 2, x: 1, y: 1 }], cam);
+    expect(forestUrls(h).sort()).toEqual([
+      `${FOREST_BASE}/forest/0/0/0.png`,
+      `${FOREST_BASE}/forest/1/0/0.png`,
+      `${FOREST_BASE}/forest/1/1/0.png`,
+      `${FOREST_BASE}/forest/2/0/0.png`,
+    ]);
+    // sat/map inchangés à côté
+    expect(h.calls.map((c) => c.url)).toContain("https://t.test/tiles/v1/map/2/0/0.png");
+    expect(h.calls.map((c) => c.url)).toContain("https://t.test/tiles/v1/sat/1/0/0.jpg");
+  });
+
+  it("hors bande, la feuille de niveau 2 se résout sur l'ancêtre 1/1/0 une fois chargé", async () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    const leaf = { z: 2, x: 2, y: 0 };
+    l.update([leaf], cam);
+    const q = l.forestTile(leaf)!;
+    expect(q).toEqual({ z: 1, x: 1, y: 0 });
+    expect(l.resolve(q, "forest")).toBeNull(); // pas encore chargée : rien (le shader ne dessine pas de forêt)
+    h.calls.find((c) => c.url === `${FOREST_BASE}/forest/1/1/0.png`)!.resolve(bitmap());
+    await flush();
+    expect(l.resolve(q, "forest")!.tile).toEqual({ z: 1, x: 1, y: 0 });
+  });
+
+  it("une requête forêt encore voulue n'est pas annulée à la sélection suivante", () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    const deep = h.calls.find((c) => c.url === `${FOREST_BASE}/forest/2/0/0.png`)!;
+    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    expect(deep.signal.aborted).toBe(false);
+    expect(forestUrls(h).filter((u) => u === deep.url)).toHaveLength(1);
+    l.update([{ z: 0, x: 1, y: 0 }], cam);
+    expect(deep.signal.aborted).toBe(true);
+  });
+
+  it("textures forêt : données brutes (NoColorSpace), mipmaps et filtrage linéaire (l'année est lue au centre du texel par le shader)", async () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    l.update([{ z: 0, x: 0, y: 0 }], cam);
+    for (const c of h.calls) c.resolve(bitmap());
+    await flush();
+    const f = l.get({ z: 0, x: 0, y: 0 })!.forest!;
+    expect(f.colorSpace).toBe(THREE.NoColorSpace);
+    expect(f.generateMipmaps).toBe(true);
+    expect(f.magFilter).toBe(THREE.LinearFilter);
+    expect(f.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+    expect(f.flipY).toBe(false);
+    expect(l.usedBytes).toBe(3 * textureBytes(512, 512));
+  });
+
+  it("désactivée : requêtes forêt annulées, textures forêt rendues, sat/map gardés", async () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    l.update([{ z: 1, x: 0, y: 0 }], cam);
+    for (const c of h.calls.filter((c) => !c.url.endsWith("forest/1/0/0.png"))) c.resolve(bitmap());
+    await flush();
+    const pending = h.calls.find((c) => c.url.endsWith("forest/1/0/0.png"))!;
+    const tex = l.get({ z: 0, x: 0, y: 0 })!.forest!;
+    const dispose = vi.spyOn(tex, "dispose");
+    const before = l.usedBytes;
+    l.setForestEnabled(false);
+    expect(pending.signal.aborted).toBe(true);
+    expect(dispose).toHaveBeenCalled();
+    expect(l.get({ z: 0, x: 0, y: 0 })!.forest).toBeUndefined();
+    expect(l.get({ z: 0, x: 0, y: 0 })!.sat).toBeDefined();
+    expect(l.usedBytes).toBe(before - textureBytes(512, 512));
+    const n = forestUrls(h).length;
+    l.update([{ z: 1, x: 0, y: 0 }], cam);
+    expect(forestUrls(h).length).toBe(n); // plus rien de neuf
+    expect(l.resolve({ z: 0, x: 0, y: 0 }, "forest")).toBeNull();
+  });
+
+  it("désactivée : un slot qui ne portait que la forêt est retiré", async () => {
+    const h = harness();
+    const l = loader(h, { forest: forestSource() });
+    l.setForestEnabled(true);
+    l.update([{ z: 2, x: 0, y: 0 }], cam);
+    h.calls.find((c) => c.url === `${FOREST_BASE}/forest/2/0/0.png`)!.resolve(bitmap()); // sat s'arrête au niveau 1, map pas chargé
+    await flush();
+    expect(l.get({ z: 2, x: 0, y: 0 })!.forest).toBeDefined();
+    l.setForestEnabled(false);
+    expect(l.get({ z: 2, x: 0, y: 0 })).toBeUndefined();
+    expect(l.usedBytes).toBe(0);
+  });
+
+  it("configureForest pose la source après coup (manifeste forêt arrivé plus tard)", () => {
+    const h = harness();
+    const l = loader(h);
+    l.setForestEnabled(true);
+    l.configureForest(forestSource());
+    l.update([{ z: 0, x: 0, y: 0 }], cam);
+    expect(forestUrls(h)).toEqual([`${FOREST_BASE}/forest/0/0/0.png`]);
   });
 });

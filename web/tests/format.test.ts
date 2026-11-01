@@ -3,8 +3,9 @@ import { parseForecast } from "../src/data/manifest";
 import { layerDef } from "../src/layers/registry";
 import {
   formatAgo, formatBanner, legendNote, legendTitle, formatOffset, formatReading, formatWhen, legendTicks, sourceLabel, formatWind, timelineLabel,
-  windDirection, compassPoint,
+  windDirection, compassPoint, forestLegend,
 } from "../src/ui/format";
+import { forestLegendHtml } from "../src/ui/overlay";
 import { FORECAST } from "./fixtures";
 
 const M = parseForecast(FORECAST);
@@ -119,5 +120,34 @@ describe("legendTitle / legendNote — légende neige (spec neige §5.2)", () =>
     expect(legendNote(layerDef("snowfall")!, run, "Europe/Paris")).toBe("since Sat 3 08:00");
     expect(legendNote(layerDef("snow_depth")!, run, "UTC")).toBeUndefined();
     expect(legendNote(layerDef("temp")!, run, "UTC")).toBeUndefined();
+  });
+});
+
+describe("légende Forest — deux barres (spec forêt §7)", () => {
+  const forest = layerDef("forest")!;
+  it("couvert 30 → 100 %, pertes 2001 → 2024, positions linéaires", () => {
+    const [cover, loss] = forestLegend(forest);
+    expect(cover.title).toBe("Tree cover 2000 · %");
+    expect(cover.short).toBe("%");
+    expect(cover.ticks).toEqual([{ label: "30", pct: 0 }, { label: "50", pct: (20 / 70) * 100 }, { label: "75", pct: (45 / 70) * 100 }, { label: "100", pct: 100 }]);
+    expect(cover.stops.map((s) => s.at)).toEqual([0, 20 / 70, 45 / 70, 1]); // rien sous le seuil
+    expect(loss.title).toBe("Forest loss by year");
+    expect(loss.short).toBe("Loss");
+    expect(loss.ticks.map((t) => t.label)).toEqual(["2001", "2008", "2016", "2024"]);
+    expect(loss.stops[0]).toEqual({ at: 0, color: "rgba(255, 225, 40, 1)" });
+    expect(loss.stops.at(-1)).toEqual({ at: 1, color: "rgba(230, 0, 0, 1)" });
+  });
+  it("HTML : deux parties, chacune titre (long + court), barre --stops et graduations", () => {
+    const html = forestLegendHtml(forest);
+    expect(html.match(/class="part"/g)).toHaveLength(2);
+    expect(html).toContain('<span class="name">Tree cover 2000 · %</span><span class="short">%</span>');
+    expect(html).toContain('<span class="name">Forest loss by year</span><span class="short">Loss</span>');
+    expect(html).toContain('--stops:rgba(255, 225, 40, 1) 0%');
+    expect(html).toContain('<span class="tick" style="--pct:100.00">2024</span>');
+  });
+  it("HTML : titres et graduations échappés (jamais de balisage injecté)", () => {
+    const html = forestLegendHtml({ ...forest, unit: '<img src=x onerror="1">' });
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img src=x onerror=&quot;1&quot;&gt;");
   });
 });

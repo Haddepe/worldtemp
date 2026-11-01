@@ -4,12 +4,44 @@
  * cache LRU par budget mémoire GPU.
  */
 import * as THREE from "three";
-import { type TileId, parent, tileKey } from "./grid";
+import { type TileId, parent, tileBounds, tileKey } from "./grid";
 import type { TileIndex } from "./index";
-import type { TilesManifest } from "./manifest";
+import type { ForestManifest, TilesManifest } from "./manifest";
 import { patchSphere } from "./patch";
 
-export type TileSet = "sat" | "map";
+export type TileSet = "sat" | "map" | "forest";
+
+/** Jeu `forest` (spec forêt §6) : sa propre racine, son propre manifeste et son propre index. */
+export interface ForestSource {
+  /** Racine versionnée, ex. `https://data.globelayers.com/tiles/forest/v1.12` (tuiles sous `forest/z/x/y`). */
+  baseUrl: string;
+  manifest: ForestManifest;
+  index: TileIndex;
+}
+
+/**
+ * Tuile forêt à lire pour la tuile `t` du globe (Review Focus 3) : `t` bornée au niveau le plus fin
+ * publié à cet endroit — `maxLevel` dans la bande tropicale, `maxLevelOutside` ailleurs (repli
+ * stockage) —, ou `null` si l'index dit qu'elle est vide (pas de forêt : rien à dessiner, rien à
+ * demander). Jamais une tuile absente de l'index : aucune requête 404 hors tropiques.
+ */
+export function forestTileFor(t: TileId, manifest: ForestManifest, index: TileIndex): TileId | null {
+  // La bande est alignée sur la grille de `maxLevelOutside` : le centre de la tuile suffit à la situer.
+  const b = tileBounds(t);
+  const lon = (b.lonMin + b.lonMax) / 2;
+  const lat = (b.latMin + b.latMax) / 2;
+  const r = manifest.tropics;
+  const tropical = lon > r.lonMin && lon < r.lonMax && lat > r.latMin && lat < r.latMax;
+  const cap = Math.min(tropical ? manifest.maxLevel : manifest.maxLevelOutside, index.maxLevel);
+  const k = t.z - cap;
+  const q = k > 0 ? { z: cap, x: t.x >> k, y: t.y >> k } : t;
+  return index.has(q.z, q.x, q.y) ? q : null;
+}
+
+/** Adresse d'une tuile forêt (mêmes chemins que `tile_path` du tiler) : loader et lecteur du tooltip. */
+export function forestTileUrl(src: ForestSource, t: TileId): string {
+  return `${src.baseUrl}/forest/${t.z}/${t.x}/${t.y}.${src.manifest.ext}`;
+}
 
 export interface TileLoaderDeps {
   fetchBitmap(url: string, signal: AbortSignal): Promise<ImageBitmap>;
@@ -33,6 +65,8 @@ export interface TileLoaderOptions {
   manifest: TilesManifest;
   /** `null` = pas d'index : aucune tuile `map` n'est demandée (mode repli). */
   index: TileIndex | null;
+  /** Jeu `forest` ; absent tant que son manifeste n'est pas chargé (`configureForest`). */
+  forest?: ForestSource | null;
   budgetBytes: number;
   concurrency: number;
   anisotropy: number;
@@ -44,7 +78,10 @@ export interface TileLoaderOptions {
 export interface TileEntry {
   sat?: THREE.Texture;
   map?: THREE.Texture;
+  forest?: THREE.Texture;
 }
+
+const SETS = ["sat", "map", "forest"] as const;
 
 export interface Resolved {
   tile: TileId;
@@ -55,6 +92,7 @@ export interface Resolved {
 export function textureBytes(width: number, height: number): number {
   return Math.round(width * height * 4 * (4 / 3));
 }
+
 
 type JobState = "queued" | "loading" | "waiting" | "failed";
 
@@ -83,6 +121,8 @@ export class TileLoader {
   private wanted = new Set<string>();
   private inflight = 0;
   private tick = 0;
+  /** Couche Forest active : seulement alors le jeu `forest` est demandé. */
+  private forestOn = false;
   usedBytes = 0;
 
   constructor(private opts: TileLoaderOptions) {
@@ -110,6 +150,37 @@ export class TileLoader {
     this.opts = { ...this.opts, manifest, index };
   }
 
+  /** Pose (ou retire) le jeu `forest`. */
+  configureForest(forest: ForestSource | null): void {
+    this.opts = { ...this.opts, forest };
+  }
+
+  /** Tuile forêt à lire pour `t` (voir `forestTileFor`) ; `null` sans jeu `forest` configuré. */
+  forestTile(t: TileId): TileId | null {
+    const f = this.opts.forest;
+    return f ? forestTileFor(t, f.manifest, f.index) : null;
+  }
+
+  /**
+   * Couche Forest affichée ou non. Éteinte : requêtes `forest` annulées et textures `forest` rendues
+   * tout de suite (elles ne comptent plus dans le budget des tuiles voulues).
+   */
+  setForestEnabled(on: boolean): void {
+    if (on === this.forestOn) return;
+    this.forestOn = on;
+    if (on) return;
+    for (const [key, job] of this.jobs) {
+      if (job.set === "forest") this.drop(key, job);
+    }
+    for (const [key, slot] of this.slots) {
+      const texture = slot.forest;
+      if (!texture) continue;
+      slot.bytes -= this.freeTexture(texture);
+      slot.forest = undefined;
+      if (!slot.sat && !slot.map) this.slots.delete(key); // slot vide : rien à garder
+    }
+  }
+
   resolve(t: TileId, set: TileSet): Resolved | null {
     for (let cur: TileId | null = t; cur; cur = parent(cur)) {
       const texture = this.get(cur)?.[set];
@@ -132,25 +203,31 @@ export class TileLoader {
     this.wanted = new Set(wanted.keys());
 
     for (const [key, job] of this.jobs) {
-      if (!this.wanted.has(key.slice(4))) {
-        if (job.controller) job.controller.abort();
-        if (job.timer !== null) this.deps.clearTimeout(job.timer);
-        if (job.state === "loading") this.inflight--;
-        this.jobs.delete(key);
-      }
+      if (!this.wanted.has(tileKey(job.tile))) this.drop(key, job);
     }
 
     for (const { tile, priority } of wanted.values()) {
-      if (this.needs(tile, "sat")) this.enqueue(tile, "sat", priority);
-      if (this.needs(tile, "map")) this.enqueue(tile, "map", priority);
+      for (const set of SETS) if (this.needs(tile, set)) this.enqueue(tile, set, priority);
     }
     this.evict();
     this.pump();
   }
 
+  private drop(key: string, job: Job): void {
+    if (job.controller) job.controller.abort();
+    if (job.timer !== null) this.deps.clearTimeout(job.timer);
+    if (job.state === "loading") this.inflight--;
+    this.jobs.delete(key);
+  }
+
   private needs(tile: TileId, set: TileSet): boolean {
     if (set === "sat" && tile.z > this.opts.manifest.sat.maxLevel) return false;
     if (set === "map" && (this.opts.index === null || tile.z > this.opts.manifest.map.maxLevel || this.isOcean(tile))) return false;
+    if (set === "forest") {
+      // Seulement les tuiles publiées elles-mêmes : un ancêtre se demande à son tour dans la chaîne.
+      const q = this.forestOn ? this.forestTile(tile) : null;
+      if (q === null || q.z !== tile.z) return false;
+    }
     return this.slots.get(tileKey(tile))?.[set] === undefined;
   }
 
@@ -173,8 +250,10 @@ export class TileLoader {
   }
 
   private url(job: Job): string {
+    if (job.set === "forest") return forestTileUrl(this.opts.forest!, job.tile);
+    const { z, x, y } = job.tile;
     const ext = this.opts.manifest[job.set].ext;
-    return `${this.opts.baseUrl}/${job.set}/${job.tile.z}/${job.tile.x}/${job.tile.y}.${ext}`;
+    return `${this.opts.baseUrl}/${job.set}/${z}/${x}/${y}.${ext}`;
   }
 
   private start(job: Job): void {
@@ -254,15 +333,23 @@ export class TileLoader {
     }
   }
 
+  /** Libère une texture et renvoie les octets qu'elle comptait (déduits de `usedBytes`). */
+  private freeTexture(texture: THREE.Texture): number {
+    const img = texture.image as ImageBitmap | undefined;
+    const bytes = img ? textureBytes(img.width, img.height) : 0;
+    texture.dispose();
+    if (img && typeof img.close === "function") img.close();
+    this.usedBytes -= bytes;
+    return bytes;
+  }
+
   private release(slot: Slot): void {
-    for (const set of ["sat", "map"] as const) {
+    for (const set of SETS) {
       const texture = slot[set];
-      if (!texture) continue;
-      const img = texture.image as ImageBitmap | undefined;
-      texture.dispose();
-      if (img && typeof img.close === "function") img.close();
+      if (texture) slot.bytes -= this.freeTexture(texture);
     }
-    this.usedBytes -= slot.bytes;
+    this.usedBytes -= slot.bytes; // reste éventuel (aucun en pratique)
+    slot.bytes = 0;
   }
 
   dispose(): void {

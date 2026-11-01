@@ -1,10 +1,10 @@
 import * as THREE from "three";
-import { DATA_BASE_URL, LABELS_REFRESH_MS, REFRESH_MS, STALE_RUN_AFTER_MS, TILES_BASE_URL } from "./config";
+import { DATA_BASE_URL, FOREST_TILES_BASE_URL, LABELS_REFRESH_MS, REFRESH_MS, STALE_RUN_AFTER_MS, TILES_BASE_URL } from "./config";
 import { CACHED_LAYERS, FRAME_CONCURRENCY, FrameSet, Limiter, RETRY_AFTER_MS, loadScalarFrame, loadWindFrame, type ScalarFrame } from "./data/frames";
 import { ManifestLoader, browserDeps, isRunStale } from "./data/loader";
 import type { Forecast, ForecastEntry, Grid } from "./data/manifest";
 import { captureImage } from "./capture/capture";
-import { captureFileName, captureWhen } from "./capture/naming";
+import { captureRequest } from "./capture/input";
 import { ViewGuard } from "./capture/privacy";
 import { browserShareEnv, captureChoices, saveImage, shareData, shareImage } from "./capture/share";
 import { attachViewUrl } from "./capture/view-url";
@@ -13,11 +13,13 @@ import { setupGeo } from "./geo/wiring";
 import { PIXEL_RATIO_CAP, detectTier } from "./gpu/tier";
 import { STRINGS } from "./i18n";
 import { LayerCache } from "./layers/cache";
-import { LAYERS, layerDef, type LayerDef } from "./layers/registry";
-import { availableModes, failureFallback, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam } from "./layers/select";
+import { LAYERS, layerDef, layerKind, type LayerDef } from "./layers/registry";
+import {
+  availableLayerIds, availableModes, failureFallback, layerIdsBeforeManifest, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam,
+} from "./layers/select";
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
-import { pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
-import { buildLut, createLutTexture } from "./render/colormap";
+import { bootAwaitsForest, pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
+import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
 import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
@@ -30,10 +32,11 @@ import { createWindLayer } from "./render/wind";
 import { CitySearch } from "./search/index";
 import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
-import { TileLoader } from "./tiles/loader";
-import { type TilesManifest, parseManifest } from "./tiles/manifest";
+import { type ForestSource, TileLoader } from "./tiles/loader";
+import { type TilesManifest, parseForestManifest, parseManifest } from "./tiles/manifest";
+import { browserDecodeTile, createTileReader } from "./tiles/reader";
 import { TimeCursor } from "./time/cursor";
-import { fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineRange } from "./time/timeline";
+import { type TimelineHold, fallbackFrames, framePair, loadOrder, nearestFrame, resolvePair, timelineAfterLayerChange, timelineRange } from "./time/timeline";
 import { createDialog } from "./ui/about";
 import { createCaptureMenu } from "./ui/capture-menu";
 import { createDrawer } from "./ui/drawer";
@@ -60,6 +63,16 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
   const i = await fetch(`${TILES_BASE_URL}/${manifest.map.index}`, { signal: AbortSignal.timeout(10_000) });
   if (!i.ok) throw new Error(`HTTP ${i.status} for ${manifest.map.index}`);
   return { manifest, index: TileIndex.parse(await i.arrayBuffer()) };
+}
+
+/** Jeu `forest` (spec forêt §6), indépendant de `layers/forecast.json`. */
+async function fetchForest(): Promise<ForestSource> {
+  const m = await fetch(`${FOREST_TILES_BASE_URL}/manifest.json`, { cache: "no-cache", signal: AbortSignal.timeout(10_000) });
+  if (!m.ok) throw new Error(`HTTP ${m.status} for forest manifest.json`);
+  const manifest = parseForestManifest(await m.json());
+  const i = await fetch(`${FOREST_TILES_BASE_URL}/${manifest.index}`, { signal: AbortSignal.timeout(10_000) });
+  if (!i.ok) throw new Error(`HTTP ${i.status} for forest ${manifest.index}`);
+  return { baseUrl: FOREST_TILES_BASE_URL, manifest, index: TileIndex.parse(await i.arrayBuffer()) };
 }
 
 async function boot(): Promise<void> {
@@ -239,6 +252,28 @@ async function boot(): Promise<void> {
     sceneHandle.requestRender();
   };
 
+  /** Couches tuiles dont le jeu est chargé (`orderedLayers`) : Forest une fois son manifeste lu. */
+  let forestReady = false;
+  let forestSrc: ForestSource | null = null;
+  /** Lecture du texel sous le curseur pour le tooltip Forest (tuile la plus fine présente à l'index). */
+  const forestReader = createTileReader({ source: () => forestSrc, decode: browserDecodeTile });
+  const tileLayers = (): string[] => (forestReady ? ["forest"] : []);
+  /** Charge le jeu `forest` ; vrai s'il vient d'arriver (le menu est alors à refaire). */
+  const loadForest = async (): Promise<boolean> => {
+    try {
+      const src = await fetchForest();
+      loader.configureForest(src);
+      forestSrc = src;
+      globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
+      forestReady = true;
+      console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere`);
+      return true;
+    } catch (e) {
+      console.warn("[worldtemp] forest tiles unavailable:", e);
+      return false;
+    }
+  };
+
   sceneHandle.start();
   // Mobile : globe centré entre le bandeau et les couches, pas sur l'écran entier (2026-10-03).
   // ResizeObserver : le bandeau change de hauteur quand son texte change ; replié (▾), les couches
@@ -295,11 +330,8 @@ async function boot(): Promise<void> {
     }
     return textures;
   };
-  /** Couches affichables : présentes dans le manifeste et pas en échec. */
-  const availableIds = (): string[] => {
-    const m = manifests.manifest;
-    return m ? orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)) : [];
-  };
+  /** Couches affichables et pas en échec : grilles du manifeste météo, Forest dès son jeu chargé (même sans manifeste météo). */
+  const availableIds = (): string[] => availableLayerIds(LAYERS, manifests.manifest, tileLayers(), failed);
   // Le menu donne une entrée (neige : « Snow », la base) : l'entrée déjà affichée garde son mode,
   // une autre ouvre sa base, ou son premier mode disponible (spec neige §7).
   const menu = createLayersMenu(ui.layersMenu, (key) =>
@@ -308,10 +340,16 @@ async function boot(): Promise<void> {
   const modes = createModeSwitch(ui.layerModes, (id) => void activate(id, true, true, true));
   /** Une entrée du menu n'est grisée que si aucune de ses couches (base ou mode) n'est disponible. */
   const syncMenuDisabled = (): void => {
-    const m = manifests.manifest;
-    if (!m) return;
     const available = availableIds();
-    for (const d of menuEntries(LAYERS, m)) menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+    for (const d of menuEntries(LAYERS, manifests.manifest ?? { layers: {} }, tileLayers())) {
+      menu.setDisabled(d.id, menuTarget(d.id, available, LAYERS) === null);
+    }
+  };
+  /** Menu refait sans changer de couche : Forest arrivée hors d'un manifeste météo neuf, ou sans lui. */
+  const rebuildMenu = (): void => {
+    menu.setLayers(menuEntries(LAYERS, manifests.manifest ?? { layers: {} }, tileLayers()));
+    menu.setActive(menuKey(activeId, LAYERS));
+    syncMenuDisabled();
   };
   const luts = new Map<string, { key: string; lut: THREE.DataTexture }>();
   let activeId: string | null = null;
@@ -322,6 +360,8 @@ async function boot(): Promise<void> {
   let shownSet: FrameSet<ScalarFrame> | null = null;
   /** Échéance dont la légende affiche les min/max ; −1 = à recalculer. */
   let legendIndex = -1;
+  /** Légende Forest affichée : à masquer dès qu'on la quitte pour une grille (chargement en cours). */
+  let forestLegendShown = false;
   let lastLabelsPush = 0;
   let updateFailed = false;
   /** Statut d'échec de couche (spec §13), prioritaire sur les autres statuts tant que non nul. */
@@ -391,6 +431,8 @@ async function boot(): Promise<void> {
   let prefetchAll = false;
   let playUnsub: (() => void) | null = null;
   let timelineVisible = false;
+  /** Frise masquée par une couche tuiles (Forest) et lecture retenue (`timelineAfterLayerChange`). */
+  let timelineHold: TimelineHold = { hidden: false, playing: false, resume: false };
   const timeline = createTimeline(
     {
       root: byId<HTMLElement>("timeline"),
@@ -444,7 +486,7 @@ async function boot(): Promise<void> {
     const visible = range.end > range.start;
     if (visible !== timelineVisible) {
       timelineVisible = visible;
-      timeline.setVisible(visible);
+      timeline.setVisible(visible && !timelineHold.hidden);
       ui.notifyLayout(); // les étiquettes évitent la frise
     }
   };
@@ -601,16 +643,8 @@ async function boot(): Promise<void> {
     captureButton.disabled = true;
     captureButton.setAttribute("aria-busy", "true");
     try {
-      const m = manifests.manifest;
-      const entry = shownId && m ? m.layers[shownId] : undefined;
-      const def = shownId ? layerDef(shownId) : undefined;
-      const layer = def && entry ? { def, enc: entry.encoding, model: entry.model, run: entry.run, note: legendNote(def, entry.run) } : null;
-      const tMs = layer ? cursor.state.t : Date.now();
-      const blob = await captureImage(sceneHandle, { layer, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
-      const text = layer
-        ? `${layer.def.label} · ${captureWhen(tMs)} — ${STRINGS.capture.site}`
-        : `${STRINGS.capture.shareTitle} — ${STRINGS.capture.site}`;
-      const name = captureFileName(layer ? layer.def.id : null, tMs);
+      const { layer, forest, tMs, text, name } = captureRequest({ activeId, shownId, manifest: manifests.manifest, cursorMs: cursor.state.t, nowMs: Date.now() });
+      const blob = await captureImage(sceneHandle, { layer, forest, tMs, labels: geo.labelSnapshot(), pin: tooltip.pinned() });
       const data = shareData(blob, name, text, location.href);
       const env = browserShareEnv();
       // Tactile : choix Share / Save (Android : Save → Download/, visible dans la Galerie) ; ordinateur : téléchargement direct.
@@ -722,6 +756,25 @@ async function boot(): Promise<void> {
     sceneHandle.requestRender();
   };
 
+  /** Frise selon le genre de la couche choisie (spec forêt §7, Review Focus 2) : masquée et lecture
+   * arrêtée sous Forest, rétablie telle qu'elle était au retour sur une grille ou sur Aucune. */
+  const holdTimeline = (kind: "grid" | "tiles" | null): void => {
+    const next = timelineAfterLayerChange({ ...timelineHold, playing: cursor.state.playing }, kind);
+    const hiddenChanged = next.hidden !== timelineHold.hidden;
+    timelineHold = next;
+    if (next.playing && !cursor.state.playing) {
+      prefetch();
+      cursor.play();
+      startPlayback();
+    } else if (!next.playing && cursor.state.playing) {
+      cursor.pause();
+    }
+    if (hiddenChanged) {
+      timeline.setVisible(timelineVisible && !next.hidden);
+      ui.notifyLayout(); // les étiquettes évitent la frise
+    }
+  };
+
   /** Applique la couche `id` (null = Aucune) : charge la paire autour de t, pose LUT, isolignes, légende ; `applyTime` fait le reste. */
   /** `push` : faux pour le repli après un échec — l'adresse est remplacée, pas empilée (le retour
    * arrière ne ramène pas vers la couche en échec). `keepPage` : changement de mode (neige), la page
@@ -740,7 +793,18 @@ async function boot(): Promise<void> {
       else history.replaceState(null, "", pagePath(page) + searchForPageState(location.search, page, id, windOn, windDefault(page)));
     }
     const def = id ? layerDef(id) : undefined;
-    const entry = id && manifest ? manifest.layers[id] : undefined;
+    // Couche tuiles (Forest) : composée par le globe à la place de la couche météo, sans échéances —
+    // elle suit la branche « Aucune » ci-dessous pour la couche météo, la légende et les valeurs.
+    const tiles = def !== undefined && layerKind(def) === "tiles";
+    globe.setForest(tiles);
+    ui.setForestCredit(tiles);
+    tooltip.setForest(tiles ? forestReader : null);
+    if (!tiles) forestReader.reset(); // décodages en vol annulés (AbortSignal)
+    // Retour de Forest vers une grille : sa légende ne doit pas rester pendant le chargement.
+    if (!tiles && forestLegendShown) ui.setLegendVisible(false);
+    forestLegendShown = false;
+    holdTimeline(tiles ? "tiles" : id === null ? null : "grid");
+    const entry = id && manifest && !tiles ? manifest.layers[id] : undefined;
     if (!def || !entry || !manifest) {
       shownSet?.want([]);
       shownSet = null;
@@ -749,6 +813,11 @@ async function boot(): Promise<void> {
       globe.setLayer(null, 1440, 721);
       globe.setIsoStep(0);
       ui.setLegendVisible(false);
+      if (tiles) {
+        ui.setForestLegend(def);
+        ui.setLegendVisible(true);
+        forestLegendShown = true;
+      }
       tooltip.setData(null);
       geo.setValueSource(null);
       applyTime();
@@ -861,8 +930,16 @@ async function boot(): Promise<void> {
 
   const applyData = async () => {
     if (!tilesReady) await loadTiles();
+    // Jeu forêt en parallèle du manifeste météo. Attendu avant le choix de la couche seulement si le
+    // premier chargement demande Forest (`?layer=forest`, pages forêt) : ailleurs, la couche météo
+    // démarre sans lui (deux requêtes R2 en série, revue finale M1) et le menu est refait à son
+    // arrivée. `loadForest` ne lève jamais.
+    const forestArrival = forestReady ? Promise.resolve(false) : loadForest();
+    const awaitForest = !hadManifest && bootAwaitsForest(pageDefaultsSearch(location.search, page, reduced));
+    if (!awaitForest) void forestArrival.then((arrived) => { if (arrived) rebuildMenu(); });
     try {
       const fresh = await manifests.refresh();
+      const forestNew = awaitForest ? await forestArrival : false;
       updateFailed = false;
       expireFailed();
       if (fresh) {
@@ -883,8 +960,8 @@ async function boot(): Promise<void> {
         if (windActive && fresh.layers["wind_u"] && fresh.layers["wind_v"]) {
           windSet.setFrames(framesKey(fresh.layers["wind_u"]!), fresh.layers["wind_u"]!.frames);
         }
-        const defs = orderedLayers(LAYERS, fresh); // tous les boutons : désactivés, pas absents (spec §13)
-        menu.setLayers(menuEntries(LAYERS, fresh)); // une entrée par couche de base : les modes passent par le sélecteur
+        const defs = orderedLayers(LAYERS, fresh, tileLayers()); // tous les boutons : désactivés, pas absents (spec §13)
+        menu.setLayers(menuEntries(LAYERS, fresh, tileLayers())); // une entrée par couche de base : les modes passent par le sélecteur
         syncMenuDisabled();
         const available = defs.map((d) => d.id).filter((id) => !failed.has(id));
         const firstLoad = !hadManifest;
@@ -897,11 +974,18 @@ async function boot(): Promise<void> {
             : activeId;
         updateRange();
         await activate(target, false);
+      } else if (forestNew) {
+        rebuildMenu(); // Forest arrivée après le manifeste météo
       }
       await applyWind();
       refreshBanner();
     } catch (e) {
       console.warn("[worldtemp] manifest unavailable:", e);
+      // Forest ne dépend pas des données météo : joignable par le menu, et par `?layer=forest` au démarrage.
+      if (awaitForest && (await forestArrival)) {
+        rebuildMenu();
+        if (activeId === null) await activate("forest", false);
+      }
       updateFailed = manifests.manifest !== null;
       expireFailed();
       await applyWind(); // manifeste absent → switch désactivé
@@ -920,8 +1004,8 @@ async function boot(): Promise<void> {
     const m = manifests.manifest;
     // Sans manifeste, `activate` ne fait que retenir l'id : le premier manifeste repartira de l'URL.
     const layer = m
-      ? parseLayerParam(s, orderedLayers(LAYERS, m).map((d) => d.id).filter((id) => !failed.has(id)))
-      : parseLayerParam(s, LAYERS.map((d) => d.id));
+      ? parseLayerParam(s, availableLayerIds(LAYERS, m, tileLayers(), failed))
+      : parseLayerParam(s, layerIdsBeforeManifest(LAYERS, tileLayers()));
     // Vent : historique → relu de l'entrée (défaut de la page si absent). Navigation : `?wind=` posé
     // par chaque page d'entrée (wind=1 si vent forcé, wind=0 sinon), ou page à vent forcé en
     // reduced-motion (éteint) ; l'accueil, sans `?wind=`, garde le vent inchangé.

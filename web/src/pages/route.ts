@@ -29,6 +29,13 @@ export function pageDefaultsSearch(search: string, page: PageDef, reducedMotion:
   return "?" + params.toString();
 }
 
+/** Démarrage (revue finale M1) : le jeu forêt n'est attendu avant le choix de la couche que si
+ * l'URL complétée par les défauts de la page (`pageDefaultsSearch`) demande Forest ; sinon la
+ * couche météo démarre sans lui et le menu est refait à son arrivée. */
+export function bootAwaitsForest(defaultsSearch: string): boolean {
+  return new URLSearchParams(defaultsSearch).get("layer") === "forest";
+}
+
 /** Page cible après un changement de couche par l'utilisateur ; la page courante si elle ne change pas. */
 export function pageAfterLayerChange(current: PageDef, layer: string | null, windOn: boolean): PageDef {
   if (layer === null) {

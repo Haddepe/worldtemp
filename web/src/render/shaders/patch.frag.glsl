@@ -6,6 +6,13 @@ uniform float uHasSat;
 uniform sampler2D uMap;          // R ombrage, G terre, B frontière : données (NoColorSpace)
 uniform vec4 uMapRect;
 uniform float uHasMap;           // 0 = océan connu ou tuile pas encore arrivée
+uniform sampler2D uForest;       // tuile forêt (spec forêt §6) : couvert %, année de perte, part perdue (NoColorSpace)
+uniform vec4 uForestRect;
+uniform float uHasForest;        // 0 = pas de forêt connue ici, ou tuile pas encore arrivée
+uniform float uForestOn;         // 1 = couche Forest active : elle remplace la couche météo
+uniform sampler2D uForestLut;    // 256x2 RGBA sRGB : ligne 0 couvert par octet, ligne 1 perte par octet d'année
+uniform mat3 uForestChannels;    // texel.rgb -> (couvert, année, part) selon les canaux du manifeste
+uniform float uForestSize;       // côté des tuiles forêt en texels (manifeste, 512)
 uniform sampler2D uLayerA;       // échéance A de la couche active (R8, NoColorSpace)
 uniform sampler2D uLayerB;       // échéance B (spec lot E §6.1) ; = A quand uMix = 0
 uniform float uMix;              // mélange de A vers B ; 0 = A seule, seconde série de lectures sautée
@@ -78,7 +85,41 @@ void main() {
   vec3 background = mix(satCol, mapCol, uMapStyle);
 
   vec3 color;
-  if (uHasLayer > 0.5) {
+  if (uForestOn > 0.5) {
+    // Forêt (spec forêt §7) : vert selon le couvert (transparent sous 30 %), puis pertes jaune -> rouge
+    // selon l'année, d'opacité égale à la part de forêt perdue dans le pixel (ruling R4 : part nulle,
+    // rien de la perte n'est dessiné). Octets bruts -> centres des texels de la LUT.
+    // L'année est un code, pas une grandeur : jamais interpolée. Elle est lue au centre exact du texel
+    // le plus proche, au niveau 0 (textureLod), où le filtrage linéaire rend la valeur du texel telle
+    // quelle ; couvert et part, continus, viennent de la lecture filtrée (mipmaps comprises).
+    // Lacs : la Blue Marble les rend presque noirs, et la carte OSM les compte comme terres (land = 1 :
+    // vérifié sur les tuiles map z2 à z5 du lac Victoria), donc le masque terre/mer ne les voit pas.
+    // Sans couche météo pour les recouvrir, on relève les pixels satellite très sombres ET non bleus
+    // jusqu'à la teinte médiane de l'océan profond Blue Marble (linéaire ; sRGB ≈ 5, 17, 45).
+    // Mesures (linéaire) sur blue-marble-4k.jpg et les tuiles sat R2 :
+    //  - b - max(r, g) : lacs Victoria, Tanganyika, Supérieur, Baïkal, Malawi <= 0,0028 (99e centile),
+    //    océan >= 0,0042 (1er centile) -> l'océan, bleu, n'est jamais relevé et garde sa bathymétrie ;
+    //  - max(r, g, b) : lacs ≈ 0,002 (médiane) ; forêts denses (Congo, Amazonie, taïga) au-delà de 0,012
+    //    pour plus de 96 % des pixels -> les terres sombres restent intactes (et Forest les couvre).
+    // Le style carte a déjà sa propre eau.
+    vec3 deepWater = vec3(0.0016, 0.0055, 0.025) * (0.25 + 0.75 * lambert);
+    float lake = 1.0 - uMapStyle;
+    lake *= 1.0 - smoothstep(0.003, 0.0045, sat.b - max(sat.r, sat.g));
+    lake *= 1.0 - smoothstep(0.006, 0.012, max(sat.r, max(sat.g, sat.b)));
+    color = mix(background, max(background, deepWater), lake);
+    if (uHasForest > 0.5) {
+      vec2 uvF = uForestRect.xy + vUv * uForestRect.zw;
+      vec2 centre = (floor(uvF * uForestSize) + 0.5) / uForestSize;
+      vec3 f = uForestChannels * texture2D(uForest, uvF).rgb;
+      float year = (uForestChannels * textureLod(uForest, centre, 0.0).rgb).y;
+      vec4 cover = texture2D(uForestLut, vec2((f.x * 255.0 + 0.5) / 256.0, 0.25));
+      vec4 loss = texture2D(uForestLut, vec2((year * 255.0 + 0.5) / 256.0, 0.75));
+      float light = 0.85 + 0.15 * lambert;
+      color = mix(color, cover.rgb * mix(1.0, tone, land) * light, cover.a);
+      color = mix(color, loss.rgb * light, loss.a * f.z);
+    }
+    color = mix(color, vec3(1.0), border * 0.7);
+  } else if (uHasLayer > 0.5) {
     // Fondu entre échéances (spec lot E §6.1) : octets mélangés avant la LUT, palette et isobares justes.
     // Branche sur uniform (cohérente pour tout le draw) : à l'arrêt sur une échéance, coût inchangé.
     float t = catmullRom(uLayerA, hm, uGridSize).r;

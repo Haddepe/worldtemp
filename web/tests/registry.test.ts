@@ -1,9 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { LAYERS, formatSnow, formatTemperature, layerDef } from "../src/layers/registry";
+import { LAYERS, formatSnow, formatTemperature, layerDef, layerKind } from "../src/layers/registry";
 
 describe("registre des couches — spec couches §10", () => {
-  it("neuf entrées dans l'ordre du menu (neige : une couche + son mode)", () => {
-    expect(LAYERS.map((d) => d.id)).toEqual(["temp", "clouds", "rain", "pressure", "humidity", "pm25", "dust", "snowfall", "snow_depth"]);
+  it("dix entrées dans l'ordre du menu (neige : une couche + son mode ; forêt en dernier)", () => {
+    expect(LAYERS.map((d) => d.id)).toEqual(["temp", "clouds", "rain", "pressure", "humidity", "pm25", "dust", "snowfall", "snow_depth", "forest"]);
+  });
+  it("forêt : seule couche « tiles », libellé Forest ; les autres sont des grilles (kind absent)", () => {
+    expect(LAYERS.filter((d) => layerKind(d) === "tiles").map((d) => d.id)).toEqual(["forest"]);
+    expect(LAYERS.filter((d) => d.id !== "forest").every((d) => d.kind === undefined)).toBe(true);
+    const f = layerDef("forest")!;
+    expect(f.label).toBe("Forest");
+    expect(f.kind).toBe("tiles");
+    expect(f.isoStep).toBeNull();
+  });
+  it("forêt : couvert transparent sous 30 %, opaque de 30 à 100 % ; pertes de 2001 (jaune) à 2024 (rouge)", () => {
+    const f = layerDef("forest")!;
+    for (const st of f.stops) expect(st.rgba[3] === 0).toBe(st.v < 30);
+    expect(f.stops[f.stops.length - 1]!.v).toBe(100);
+    const loss = f.lossStops!;
+    expect(loss[0]!.v).toBe(2001);
+    expect(loss[loss.length - 1]!.v).toBe(2024);
+    for (let i = 1; i < loss.length; i++) expect(loss[i]!.v).toBeGreaterThan(loss[i - 1]!.v);
+    const [r0, g0, b0] = loss[0]!.rgba;
+    const [r1, g1, b1] = loss[loss.length - 1]!.rgba;
+    expect(r0).toBeGreaterThan(200); expect(g0).toBeGreaterThan(180); expect(b0).toBeLessThan(100); // jaune
+    expect(r1).toBeGreaterThan(200); expect(g1).toBeLessThan(40); expect(b1).toBeLessThan(40);      // rouge vif
+    for (const st of loss) expect(st.rgba[3]).toBe(255); // l'opacité vient de la part perdue (canal share), pas de la palette
   });
   it("arrêts strictement croissants, alpha dans 0–255", () => {
     for (const d of LAYERS) {

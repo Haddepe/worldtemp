@@ -187,6 +187,9 @@ html, body {
 #legend .ticks { position: relative; height: 1.4rem; font-size: 0.75rem; color: var(--panel-muted); }
 #legend .tick { position: absolute; left: calc(var(--pct) * 1%); transform: translateX(-50%); }
 #legend .extremes { font-size: 0.75rem; color: var(--panel-muted); display: flex; justify-content: space-between; }
+/* Forest (spec forêt §7) : deux barres (couvert, pertes) empilées ; le titre court ne sert qu'au téléphone. */
+#legend .title .short { display: none; }
+#legend .part + .part { margin-top: 0.35rem; }
 
 #fatal {
   position: fixed;
@@ -277,6 +280,13 @@ html, body {
   #legend .bar { grid-column: 1; grid-row: 1; width: 0.6rem; height: auto; background: linear-gradient(to top, var(--stops)); }
   #legend .ticks { grid-column: 2; grid-row: 1; height: auto; min-width: 1.6rem; font-size: 0.65rem; }
   #legend .tick { left: 0; bottom: calc(var(--pct) * 1%); transform: translateY(50%); }
+  /* Forest : les deux parties côte à côte, chacune barre verticale + graduations, titre court dessous. */
+  #legend .part {
+    grid-row: 1 / -1; display: grid; grid-template-columns: auto auto; grid-template-rows: 1fr auto;
+    column-gap: 0.3rem; min-height: 0;
+  }
+  #legend .part + .part { margin-top: 0; }
+  #legend .title .short { display: inline; }
   #controls {
     grid-row: 4; grid-column: 1 / -1; justify-self: stretch;
     flex-direction: row; overflow-x: auto; scroll-snap-type: x proximity; gap: 0.4rem;

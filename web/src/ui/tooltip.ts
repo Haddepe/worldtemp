@@ -4,9 +4,11 @@
  */
 import * as THREE from "three";
 import { sampleSource, type ValueSource } from "../data/sampling";
+import { STRINGS } from "../i18n";
 import type { LayerDef } from "../layers/registry";
 import { projectToScreen } from "../render/pick";
 import { lonLatToVec3 } from "../tiles/patch";
+import type { ForestReading, TileReader } from "../tiles/reader";
 import { sampleUV, type WindField } from "../wind/sim";
 import { formatReading, formatWind } from "./format";
 import { byId } from "./overlay";
@@ -83,6 +85,12 @@ export function tooltipText(name: string | undefined, values: readonly string[])
   return lines.length ? lines.join("\n") : null;
 }
 
+/** Ligne du tooltip Forest : perte (part > 0, R4) avant couvert ; `null` = tuile vide à l'index. */
+export function forestText(r: ForestReading | null): string {
+  if (r === null || (r.cover === 0 && r.lossYear === null)) return STRINGS.forest.none;
+  return r.lossYear !== null ? STRINGS.forest.lost(r.lossYear) : STRINGS.forest.cover(r.cover);
+}
+
 /** Position du coin haut-gauche du tooltip : centré, au-dessus du point (en dessous près du bord haut). */
 export function placeTooltip(
   point: { x: number; y: number },
@@ -100,6 +108,8 @@ export function placeTooltip(
 export interface Tooltip {
   setReading(r: Reading | null, mode: "hover" | "pin"): void;
   setData(d: TooltipData | null): void;
+  /** Lecteur de tuiles Forest (couche active) ; `null` retire la ligne forêt. */
+  setForest(reader: Pick<TileReader, "peek" | "read"> | null): void;
   /** Champ de vent actif (spec vent §10) ; `null` retire la ligne « Vent … ». */
   setWind(field: WindField | null): void;
   /** Reprojection après un rendu ou un déplacement de la souris. */
@@ -132,6 +142,8 @@ export function mouseInput(
 }
 
 const MARKER_HALF = 6;
+/** Délai entre le dernier mouvement et la lecture d'une tuile forêt non décodée. */
+const FOREST_READ_DELAY_MS = 100;
 
 /** `els` : éléments injectables pour les tests (Vitest tourne sans DOM). */
 export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): Tooltip {
@@ -141,6 +153,9 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
   let mode: "hover" | "pin" = "hover";
   let data: TooltipData | null = null;
   let wind: WindField | null = null;
+  let forest: Pick<TileReader, "peek" | "read"> | null = null;
+  /** Dernière projection : un décodage de tuile qui se termine replace la bulle (sa largeur change). */
+  let lastView: { camera: THREE.PerspectiveCamera; width: number; height: number } | null = null;
   const point = new THREE.Vector3();
   const windSample = { u: 0, v: 0 };
   let markerScreen: { x: number; y: number } | null = null;
@@ -151,10 +166,44 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     markerScreen = null;
   };
 
+  let forestTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelForestRead = (): void => {
+    if (forestTimer !== null) clearTimeout(forestTimer);
+    forestTimer = null;
+  };
+  /**
+   * Lecture différée de 100 ms après le dernier mouvement (revue T6, Important 2) : un survol rapide
+   * ne télécharge pas une tuile par case traversée. Au décodage, relecture du point COURANT.
+   */
+  const scheduleForestRead = (): void => {
+    cancelForestRead();
+    forestTimer = setTimeout(() => {
+      forestTimer = null;
+      const asked = forest;
+      if (!asked || !reading) return;
+      asked.read(reading.lon, reading.lat).then(
+        () => {
+          if (forest !== asked || !reading) return;
+          refreshText();
+          if (lastView) api.update(lastView.camera, lastView.width, lastView.height);
+        },
+        () => {}, // échec (cache négatif du lecteur) ou demande remplacée : « … » reste
+      );
+    }, FOREST_READ_DELAY_MS);
+  };
+
   const refreshText = () => {
     if (!reading) return;
     const values: string[] = [];
     if (data) values.push(formatReading(data.def, sampleSource(data, reading.lon, reading.lat)));
+    if (forest) {
+      const r = forest.peek(reading.lon, reading.lat);
+      if (r === undefined) {
+        // Tuile pas encore décodée : « … », jamais une valeur devinée (Review Focus 1).
+        values.push(STRINGS.forest.pending);
+        scheduleForestRead();
+      } else values.push(forestText(r));
+    }
     if (wind) {
       sampleUV(wind, reading.lon, reading.lat, windSample);
       values.push(formatWind(windSample.u, windSample.v));
@@ -163,7 +212,7 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
     if (text !== null) tip.textContent = text;
   };
 
-  return {
+  const api: Tooltip = {
     setReading(r, m) {
       reading = r;
       mode = m;
@@ -183,10 +232,16 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
       wind = f && f.uv.length === f.grid.width * f.grid.height * 2 ? f : null;
       refreshText();
     },
+    setForest(reader) {
+      cancelForestRead();
+      forest = reader;
+      refreshText();
+    },
     update(camera, width, height) {
+      lastView = { camera, width, height };
       // Épinglé, le marqueur s'affiche même sans rien à écrire (📍 sans couche : on voit où l'on
       // est arrivé) ; la bulle, elle, reste masquée tant qu'elle n'a pas de texte.
-      const hasText = reading !== null && (data !== null || wind !== null || !!reading.name);
+      const hasText = reading !== null && (data !== null || wind !== null || forest !== null || !!reading.name);
       if (!reading || (!hasText && mode !== "pin")) {
         hide();
         return;
@@ -221,4 +276,5 @@ export function createTooltip(els?: { tip: HTMLElement; marker: HTMLElement }): 
       return { x: markerScreen.x, y: markerScreen.y, text: tip.hidden ? null : tip.textContent };
     },
   };
+  return api;
 }

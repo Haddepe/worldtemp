@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createDialog } from "../src/ui/about";
 
@@ -40,5 +42,20 @@ describe("createDialog — panneau About (spec site public §5)", () => {
     expect(d.raw.close).not.toHaveBeenCalled();
     d.clickOn(d.el);
     expect(d.raw.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("crédit Forest (spec forêt §5.2) — index.html", () => {
+  const html = readFileSync(join(__dirname, "..", "index.html"), "utf8");
+  const CREDIT = "Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12), CC BY 4.0";
+  it("#attribution : mention masquée par défaut, affichée quand Forest est active", () => {
+    const attribution = html.match(/<p id="attribution">([\s\S]*?)<\/p>/)![1]!;
+    expect(attribution).toContain(`<span id="attribution-forest" hidden> · ${CREDIT}</span>`);
+  });
+  it("panneau About : crédit permanent, couche décrite, repli 2023 mentionné", () => {
+    const about = html.match(/<dialog id="about"[\s\S]*?<\/dialog>/)![0];
+    expect(about).toContain(CREDIT);
+    expect(about).toContain("<strong>Forest</strong>");
+    expect(about).toMatch(/2023 release/);
   });
 });

@@ -76,6 +76,18 @@
 /japan-snow-forecast/
   Cache-Control: public, max-age=0, must-revalidate
 
+/deforestation-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/amazon-deforestation-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/borneo-deforestation-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/congo-basin-deforestation-map/
+  Cache-Control: public, max-age=0, must-revalidate
+
 /og.jpg
   Cache-Control: public, max-age=86400
 

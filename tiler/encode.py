@@ -97,3 +97,49 @@ def write_manifest(path: Path, *, version: str, generated_at: str, sat_max: int,
         "sources": SOURCES,
     }
     Path(path).write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+FOREST_SOURCE = "Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12)"
+FOREST_LICENSE = "CC BY 4.0"
+
+
+def write_forest_manifest(
+    path: Path,
+    *,
+    version: str,
+    generated_at: str,
+    max_level: int,
+    max_level_outside: int,
+    tropics: dict[str, float],
+    tropics_requested: dict[str, float],
+    channels: dict[str, int],
+    threshold: int,
+    lossyear_fallback: dict[str, list[str]] | None = None,
+) -> None:
+    """Manifeste du jeu `forest` (spec forêt §6), publié sous `tiles/forest/<version>/manifest.json`.
+
+    `tropics` = bande où `max_level` existe, déjà alignée sur la grille du niveau `max_level_outside`
+    (union des tuiles coupant la bande demandée) ; `tropics_requested` = bornes passées en CLI.
+    Ailleurs la pyramide s'arrête à `max_level_outside`. L'index de présence (`index.bin`) fait foi
+    tuile par tuile. `lossyear_fallback` = {version: dalles dont l'année de perte vient de cette
+    version (règle R7, sans l'année 2024)}.
+    """
+    manifest = {
+        "schema_version": 1,
+        "version": version,
+        "tile_size": TILE_SIZE,
+        "ext": "png",
+        "index": "index.bin",
+        "max_level": max_level,
+        "max_level_outside": max_level_outside,
+        "tropics": dict(tropics),
+        "tropics_requested": dict(tropics_requested),
+        "channels": dict(channels),
+        "year_base": 2000,
+        "threshold": threshold,
+        "source": FOREST_SOURCE,
+        "license": FOREST_LICENSE,
+        "generated_at": generated_at,
+        "lossyear_fallback": {v: sorted(n) for v, n in (lossyear_fallback or {}).items()},
+    }
+    Path(path).write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

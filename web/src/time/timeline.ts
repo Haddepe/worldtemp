@@ -109,3 +109,21 @@ function byDistance(target: number, n: number): number[] {
 export function nearestFrame(p: FramePair): number {
   return p.f < 0.5 ? p.a : p.b;
 }
+
+/** État de la frise vis-à-vis d'une couche tuiles (spec forêt §7) : `hidden` = masquée par elle,
+ * `playing` = lecture en cours, `resume` = la lecture tournait quand elle a été masquée. */
+export interface TimelineHold {
+  hidden: boolean;
+  playing: boolean;
+  resume: boolean;
+}
+
+/**
+ * Frise après un changement de couche (Review Focus 2). Vers une couche tuiles (Forest) : masquée,
+ * lecture arrêtée, son état retenu. Vers une grille ou Aucune (`null`) : rétablie, la lecture reprend
+ * si elle tournait. Sans changement de genre, rien ne bouge. L'instant du curseur n'est jamais touché.
+ */
+export function timelineAfterLayerChange(prev: TimelineHold, next: "grid" | "tiles" | null): TimelineHold {
+  if (next === "tiles") return prev.hidden ? prev : { hidden: true, playing: false, resume: prev.playing };
+  return prev.hidden ? { hidden: false, playing: prev.resume, resume: false } : prev;
+}

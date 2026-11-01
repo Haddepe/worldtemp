@@ -1,14 +1,29 @@
 /** Logique pure du menu et de l'URL (spec couches §12) ; le DOM est dans ui/layers-menu.ts. */
 import type { Forecast } from "../data/manifest";
-import type { LayerDef } from "./registry";
+import { type LayerDef, layerKind } from "./registry";
 
 export const DEFAULT_LAYER = "temp";
 const PARAM = "layer";
 const NONE = "none";
 
-/** Couches affichables : ordre du registre, présentes dans le manifeste. */
-export function orderedLayers(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">): LayerDef[] {
-  return defs.filter((d) => d.id in manifest.layers);
+/** Couches affichables, ordre du registre : les grilles présentes dans le manifeste, les couches
+ * tuiles dont le jeu est chargé (`tiles`, ex. `["forest"]` une fois le manifeste forêt lu) —
+ * indépendamment de `layers/forecast.json`. */
+export function orderedLayers(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">, tiles: readonly string[] = []): LayerDef[] {
+  return defs.filter((d) => (layerKind(d) === "tiles" ? tiles.includes(d.id) : d.id in manifest.layers));
+}
+
+/** Ids affichables (`availableIds` de main) : grilles du manifeste météo s'il est chargé, couches
+ * tuiles dont le jeu est chargé même sans lui (la forêt ne dépend pas des données météo), moins les
+ * couches en échec. */
+export function availableLayerIds(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers"> | null, tiles: readonly string[], failed: ReadonlySet<string> | ReadonlyMap<string, unknown>): string[] {
+  return orderedLayers(defs, manifest ?? { layers: {} }, tiles).map((d) => d.id).filter((id) => !failed.has(id));
+}
+
+/** Ids que `?layer=` peut retenir avant le manifeste météo : toutes les grilles (le manifeste
+ * tranchera), mais une couche tuiles seulement si son jeu est chargé — sinon globe nu. */
+export function layerIdsBeforeManifest(defs: readonly LayerDef[], tiles: readonly string[]): string[] {
+  return defs.filter((d) => layerKind(d) === "grid" || tiles.includes(d.id)).map((d) => d.id);
 }
 
 /** `?layer=` → id de couche, `null` pour « Aucune ». Inconnu ou absent : `temp`, sinon la première disponible. */
@@ -63,8 +78,8 @@ export function availableModes(id: string | null, available: readonly string[], 
 
 /** Entrées du menu (ordre du registre) : chaque base dont la base ou un mode est au manifeste —
  * « Snow » reste joignable quand seul `snow_depth` est publié. */
-export function menuEntries(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">): LayerDef[] {
-  const ids = orderedLayers(defs, manifest).map((d) => d.id);
+export function menuEntries(defs: readonly LayerDef[], manifest: Pick<Forecast, "layers">, tiles: readonly string[] = []): LayerDef[] {
+  const ids = orderedLayers(defs, manifest, tiles).map((d) => d.id);
   return menuLayers(defs).filter((d) => menuTarget(d.id, ids, defs) !== null);
 }
 
