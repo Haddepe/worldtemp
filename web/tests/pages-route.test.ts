@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { PAGES, pagePath, type PageDef } from "../src/pages/registry";
-import { pageForPath, pageDefaultsSearch, pageAfterLayerChange, pageAfterModeChange, searchForPageChange, searchForPageState, searchWithShownView } from "../src/pages/route";
+import { bootAwaitsForest, pageForPath, pageDefaultsSearch, pageAfterLayerChange, pageAfterModeChange, searchForPageChange, searchForPageState, searchWithShownView } from "../src/pages/route";
 
 const page = (slug: string) => PAGES.find((p) => p.slug === slug)!;
 
@@ -133,5 +133,17 @@ describe("pageAfterModeChange — changer de mode ne change jamais de page (neig
   it("page couche : inchangée", () => {
     const p = page("rain-map");
     expect(pageAfterModeChange(p)).toBe(p);
+  });
+});
+
+describe("bootAwaitsForest (revue finale M1)", () => {
+  const page = (slug: string): PageDef => PAGES.find((p) => p.slug === slug)!;
+  it("attend le jeu forêt seulement si le démarrage demande Forest", () => {
+    expect(bootAwaitsForest(pageDefaultsSearch("", page("deforestation-map"), false))).toBe(true);
+    expect(bootAwaitsForest(pageDefaultsSearch("", page("congo-basin-deforestation-map"), false))).toBe(true);
+    expect(bootAwaitsForest(pageDefaultsSearch("?layer=forest", page("temperature-map"), false))).toBe(true);
+    expect(bootAwaitsForest(pageDefaultsSearch("", page(""), false))).toBe(false); // accueil : température
+    expect(bootAwaitsForest(pageDefaultsSearch("", page("temperature-map"), false))).toBe(false);
+    expect(bootAwaitsForest(pageDefaultsSearch("?layer=rain", page("deforestation-map"), false))).toBe(false); // URL prioritaire
   });
 });

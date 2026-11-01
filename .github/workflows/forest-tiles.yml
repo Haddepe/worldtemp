@@ -13,10 +13,10 @@ on:
         type: string
         default: "v1.12"
       max_level_outside:
-        description: "Niveau max hors bande tropicale (8 = partout au niveau 8 ; 7 = repli stockage)"
+        description: "Niveau max hors bande tropicale (7 = production, repli stockage ; 8 partout ≈ 11,1 Go > quota R2 de 10 Go)"
         type: choice
-        options: ["8", "7"]
-        default: "8"
+        options: ["7", "8"]
+        default: "7"
       sample:
         description: "Estimation : lire 1 bloc sur K (7 ou 13) ; vide = génération complète"
         type: string
@@ -93,7 +93,7 @@ jobs:
           ( peak=0; while true; do u=$(df --output=used -B1M . | tail -1 | tr -d ' '); [ "$u" -gt "$peak" ] && peak=$u && echo "$peak" > disk-peak-mb; sleep 20; done ) &
           SAMPLER=$!
           # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
-          set +e  # pipefail du shell par défaut : on relève le code de sortie nous-mêmes
+          set +e  # Actions lance `bash -e` sans pipefail : `tee` masquerait l'échec du tiler, PIPESTATUS[0] le relève
           /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box ${{ matrix.box }} --out out --work work \
             --min-level 1 --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
             --tropics=$TROPICS $SAMPLE_ARG 2>&1 | tee log.txt; rc=${PIPESTATUS[0]}

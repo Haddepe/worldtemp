@@ -18,7 +18,7 @@ import {
   availableLayerIds, availableModes, failureFallback, layerIdsBeforeManifest, menuEntries, menuKey, menuTarget, orderedLayers, parseLayerParam,
 } from "./layers/select";
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
-import { pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
+import { bootAwaitsForest, pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
@@ -930,12 +930,16 @@ async function boot(): Promise<void> {
 
   const applyData = async () => {
     if (!tilesReady) await loadTiles();
-    // Jeu forêt en parallèle du manifeste météo, attendu avant le choix de la couche : `?layer=forest`
-    // doit le trouver dès le premier chargement. `loadForest` ne lève jamais.
+    // Jeu forêt en parallèle du manifeste météo. Attendu avant le choix de la couche seulement si le
+    // premier chargement demande Forest (`?layer=forest`, pages forêt) : ailleurs, la couche météo
+    // démarre sans lui (deux requêtes R2 en série, revue finale M1) et le menu est refait à son
+    // arrivée. `loadForest` ne lève jamais.
     const forestArrival = forestReady ? Promise.resolve(false) : loadForest();
+    const awaitForest = !hadManifest && bootAwaitsForest(pageDefaultsSearch(location.search, page, reduced));
+    if (!awaitForest) void forestArrival.then((arrived) => { if (arrived) rebuildMenu(); });
     try {
       const fresh = await manifests.refresh();
-      const forestNew = await forestArrival;
+      const forestNew = awaitForest ? await forestArrival : false;
       updateFailed = false;
       expireFailed();
       if (fresh) {
@@ -978,11 +982,9 @@ async function boot(): Promise<void> {
     } catch (e) {
       console.warn("[worldtemp] manifest unavailable:", e);
       // Forest ne dépend pas des données météo : joignable par le menu, et par `?layer=forest` au démarrage.
-      if (await forestArrival) {
+      if (awaitForest && (await forestArrival)) {
         rebuildMenu();
-        if (!hadManifest && activeId === null && new URLSearchParams(pageDefaultsSearch(location.search, page, reduced)).get("layer") === "forest") {
-          await activate("forest", false);
-        }
+        if (activeId === null) await activate("forest", false);
       }
       updateFailed = manifests.manifest !== null;
       expireFailed();

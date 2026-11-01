@@ -36,7 +36,8 @@ def aggregate(
       ne touchent qu'une minorité des pixels d'un bloc 5x5 ; une règle majoritaire ou à part
       minimale les effacerait au niveau 8. La plus récente (max) est aussi associative.
 
-    Composition : `aggregate(*aggregate(c, l, a), b)` (cover, year, share) donne la même année que `aggregate(c, l, a*b)`
+    Composition : `cover, year, share = aggregate(c, l, a)` puis `aggregate(cover, year, b, share)`
+    donne la même année que `aggregate(c, l, a*b)`
     (exact : « une perte quelque part » et max se composent), et un couvert proche de
     `aggregate(c, l, a*b)` (moyenne de moyennes, non pondérée par le nombre de pixels forêt de
     chaque sous-bloc ; écart borné par 70, en pratique quelques points). Pour la même raison,

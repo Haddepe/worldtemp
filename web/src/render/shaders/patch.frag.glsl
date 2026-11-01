@@ -92,11 +92,20 @@ void main() {
     // L'année est un code, pas une grandeur : jamais interpolée. Elle est lue au centre exact du texel
     // le plus proche, au niveau 0 (textureLod), où le filtrage linéaire rend la valeur du texel telle
     // quelle ; couvert et part, continus, viennent de la lecture filtrée (mipmaps comprises).
-    // Lacs : la Blue Marble les rend presque noirs et la carte OSM les range hors des terres (land = 0).
-    // Sans couche météo pour les recouvrir, on relève le fond d'eau jusqu'à la teinte d'eau profonde
-    // (max : l'océan, plus clair, garde sa bathymétrie ; le style carte a déjà sa propre eau).
-    vec3 deepWater = vec3(0.05, 0.10, 0.20) * (0.25 + 0.75 * lambert);
-    float lake = uHasMap > 0.5 ? (1.0 - land) * (1.0 - uMapStyle) : 0.0;
+    // Lacs : la Blue Marble les rend presque noirs, et la carte OSM les compte comme terres (land = 1 :
+    // vérifié sur les tuiles map z2 à z5 du lac Victoria), donc le masque terre/mer ne les voit pas.
+    // Sans couche météo pour les recouvrir, on relève les pixels satellite très sombres ET non bleus
+    // jusqu'à la teinte médiane de l'océan profond Blue Marble (linéaire ; sRGB ≈ 5, 17, 45).
+    // Mesures (linéaire) sur blue-marble-4k.jpg et les tuiles sat R2 :
+    //  - b - max(r, g) : lacs Victoria, Tanganyika, Supérieur, Baïkal, Malawi <= 0,0028 (99e centile),
+    //    océan >= 0,0042 (1er centile) -> l'océan, bleu, n'est jamais relevé et garde sa bathymétrie ;
+    //  - max(r, g, b) : lacs ≈ 0,002 (médiane) ; forêts denses (Congo, Amazonie, taïga) au-delà de 0,012
+    //    pour plus de 96 % des pixels -> les terres sombres restent intactes (et Forest les couvre).
+    // Le style carte a déjà sa propre eau.
+    vec3 deepWater = vec3(0.0016, 0.0055, 0.025) * (0.25 + 0.75 * lambert);
+    float lake = 1.0 - uMapStyle;
+    lake *= 1.0 - smoothstep(0.003, 0.0045, sat.b - max(sat.r, sat.g));
+    lake *= 1.0 - smoothstep(0.006, 0.012, max(sat.r, max(sat.g, sat.b)));
     color = mix(background, max(background, deepWater), lake);
     if (uHasForest > 0.5) {
       vec2 uvF = uForestRect.xy + vUv * uForestRect.zw;

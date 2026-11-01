@@ -168,14 +168,29 @@ describe("createTiledGlobe", () => {
     expect(u.uForestSize!.value).toBe(256);
   });
 
-  it("shader forêt : les lacs (land = 0, satellite quasi noir) sont relevés à la teinte d'eau, pas laissés noirs", () => {
+  it("shader forêt : les lacs (satellite quasi noir, non bleu) sont relevés à la teinte d'océan, pas laissés noirs", () => {
     const globe = createTiledGlobe("high", fakeLoader(), 8);
     globe.update(frontView());
     const frag = ((globe.group.children[0] as THREE.Mesh).material as THREE.ShaderMaterial).fragmentShader.replace(/\s+/g, " ");
     const branch = frag.slice(frag.indexOf("if (uForestOn > 0.5) {"), frag.indexOf("} else if (uHasLayer"));
-    expect(branch).toContain("float lake = uHasMap > 0.5 ? (1.0 - land) * (1.0 - uMapStyle) : 0.0;");
+    expect(branch).toContain("float lake = 1.0 - uMapStyle;"); // pas de masque terre/mer : OSM compte les lacs en terres
+    expect(branch).toContain("lake *= 1.0 - smoothstep(0.003, 0.0045, sat.b - max(sat.r, sat.g));"); // non bleu seul
+    expect(branch).toContain("lake *= 1.0 - smoothstep(0.006, 0.012, max(sat.r, max(sat.g, sat.b)));"); // très sombre seul
+    expect(branch).toContain("vec3 deepWater = vec3(0.0016, 0.0055, 0.025) * (0.25 + 0.75 * lambert);"); // teinte océan Blue Marble
     expect(branch).toContain("color = mix(background, max(background, deepWater), lake);");
     expect(branch.indexOf("max(background, deepWater)")).toBeLessThan(branch.indexOf("if (uHasForest > 0.5)")); // avant la forêt
+  });
+
+  it("shader forêt : poids de lac sur des pixels Blue Marble mesurés (lacs relevés, océan et forêts intacts)", () => {
+    // Miroir TS des deux lignes `lake *=` du shader, sur des pixels sRGB mesurés dans blue-marble-4k.jpg.
+    const lin = (c: number) => { const s = c / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+    const smooth = (a: number, b: number, x: number) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+    const weight = (srgb: [number, number, number]) => {
+      const [r, g, b] = srgb.map(lin) as [number, number, number];
+      return (1 - smooth(0.003, 0.0045, b - Math.max(r, g))) * (1 - smooth(0.006, 0.012, Math.max(r, g, b)));
+    };
+    for (const lakePx of [[1, 7, 3], [3, 2, 5], [0, 3, 6], [0, 8, 8]] as const) expect(weight([...lakePx])).toBeGreaterThan(0.99); // Victoria, Tanganyika, Supérieur, Baïkal
+    for (const px of [[5, 15, 42], [9, 24, 58], [2, 5, 20], [28, 70, 128], [26, 53, 68], [60, 58, 30], [15, 35, 10], [81, 64, 44]] as const) expect(weight([...px])).toBeLessThan(0.01); // Pacifique, Guinée, océan très sombre, plateau, Bahamas, sédiments, forêt dense, savane
   });
 
   it("shader forêt : l'année (code) est lue au centre exact du texel le plus proche, niveau 0, jamais interpolée", () => {
