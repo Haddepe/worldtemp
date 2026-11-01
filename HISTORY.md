@@ -704,7 +704,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-03 | fix/brave-tier — nombre de cœurs ignoré sous Brave (profil GPU juste), centre du globe aux 42 % de l'espace libre sur mobile ; chemin borné (diagnostic avec l'utilisateur, TDD) | ✅ mergée, déployée par CI | `d6aed4a` | 677 vitest locaux + timeout connu `geo-loader` |
 | 2026-10-24 | feat/landing-pages — lot G (chantier audience ③) : 16 pages couche/région générées au build + sitemap, résumé sous le bandeau, « Read more », tiroir ☰, adresse qui suit la couche, 16 images OG (spec `2026-10-24-landing-pages-design.md`, plan `2026-10-24-landing-pages.md` 6 tâches, subagent-driven ; revue finale opus « with fixes » : 1 Critical + 1 Important + 5 Minor corrigés, re-revue propre) | ✅ mergée | `964b001` | 779 vitest locaux, 283 pytest (10 skipped) ; bundle 185,96 Ko gzip |
 | 2026-10-31 | feat/snow — lot R5a : couche neige à deux modes (Snowfall cumulé 10:1 depuis le run, Depth SNOD), source dérivée `gfs_snow` isolée, reprise exacte, 4 pages + images OG (spec `2026-10-31-snow-design.md`, plan `2026-10-31-snow.md` 8 tâches, subagent-driven ; revue finale « prêt à merger avec retouches légères » + vague de correction) | ✅ mergé `72ad975` | merge à suivre | 811 vitest (68 fichiers) ; 318 passed / 12 skipped pytest local |
-| 2026-11-01 | feat/forest — lot R5b : couche Forest (Hansen GFC v1.12, couvert 2000 ≥ 30 % + pertes 2001–2024 par année) en tuiles jusqu'au niveau 8 sous ±30°, 7 ailleurs (21 086 tuiles, 3,795 Go sur R2), tooltip, légende double, capture, 4 pages + images OG (spec `2026-10-31-forest-design.md`, plan `2026-10-31-forest.md` 9 tâches, subagent-driven ; revue finale « prêt à merger avec corrections » + vague de correction) | 🟡 prête, merge en attente de l'accord utilisateur | — | 881 vitest (70 fichiers) ; 392 passed / 17 skipped pytest local ; bundle 195,28 Ko gzip |
+| 2026-11-01 | feat/forest — lot R5b : couche Forest (Hansen GFC v1.12, couvert 2000 ≥ 30 % + pertes 2001–2024 par année) en tuiles jusqu'au niveau 8 sous ±30°, 7 ailleurs (21 086 tuiles, 3,795 Go sur R2), tooltip, légende double, capture, 4 pages + images OG (spec `2026-10-31-forest-design.md`, plan `2026-10-31-forest.md` 9 tâches, subagent-driven ; revue finale « prêt à merger avec corrections » + vague de correction) | ✅ mergé | `47af1b3` | 881 vitest (70 fichiers) ; 392 passed / 17 skipped pytest local ; bundle 195,28 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -808,7 +808,7 @@ Ordre recommandé le 2026-09-19 : D (livré) → E (livré) → F (livré) → f
 | R2 | ~~**Mesure d'audience**~~ ✅ lot D : beacon Cloudflare Web Analytics au build de production (actif dès que `CF_BEACON_TOKEN` est renseigné, voir §9) | ~~Aucun script d'analytics dans le code~~ | D |
 | R3 | ~~**Dimension temporelle**~~ ✅ lot E : curseur temporel sur 48 h, pas de 3 h, lecture automatique | ~~Une seule échéance (l'heure courante) ; ni curseur de prévision ni animation, alors que GFS fournit les échéances~~ | E |
 | R4 | ~~**Recherche et localisation**~~ ✅ lot F | ~~Ni recherche de ville ni « ma position »~~ | F |
-| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS). **Demandé par l'utilisateur le 2026-10-24 : une couche neige et une couche forêt / déforestation (si possible : source hors GFS, ex. Global Forest Watch, statique ou annuelle)** ; **neige livrée** (lot R5a, merge `72ad975`, 2026-10-31), **forêt / déforestation livrée** (lot R5b, branche `feat/forest`, 2026-11-01, merge en attente). **Nouveau chantier demandé par l'utilisateur le 2026-11-01 : zoom plus profond (peut-être pour la seule couche Forest) pour voir les petites parcelles déboisées** — niveau ≥ 9 et/ou distance minimale de caméra plus courte ; budget R2 ≈ 8,5 / 10 Go, donc niveau 9 limité à des zones ou autre stockage | R5a ✅ (merge `72ad975`) ; R5b ✅ (merge en attente) ; zoom profond à concevoir |
+| R5 | **Couches supplémentaires** | Rafales, neige, couverture neigeuse, CAPE/orages, UV ; vagues (source autre que GFS). **Demandé par l'utilisateur le 2026-10-24 : une couche neige et une couche forêt / déforestation (si possible : source hors GFS, ex. Global Forest Watch, statique ou annuelle)** ; **neige livrée** (lot R5a, merge `72ad975`, 2026-10-31), **forêt / déforestation livrée** (lot R5b, merge `47af1b3`, 2026-11-01). **Nouveau chantier demandé par l'utilisateur le 2026-11-01 : zoom plus profond (peut-être pour la seule couche Forest) pour voir les petites parcelles déboisées** — niveau ≥ 9 et/ou distance minimale de caméra plus courte ; budget R2 ≈ 8,5 / 10 Go, donc niveau 9 limité à des zones ou autre stockage | R5a ✅ (merge `72ad975`) ; R5b ✅ (merge en attente) ; zoom profond à concevoir |
 | R6 | **PWA et hors-ligne** | Rien | — |
 | R7 | **Autres langues, unités impériales** | Après le lot D le site est en anglais seul, unités métriques ; `web/src/i18n/` est prévu pour accueillir d'autres langues (pas de sélecteur aujourd'hui) | — |
 | R8 | **Pages de contenu par couche, événements d'usage (PostHog), image Open Graph par couche** | Écartés du lot D (spec §10) | — |
@@ -830,14 +830,15 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71 ; lot R5b (2026-11-01) : n° 
 
 ## 9. État actuel & prochaine action
 
-### 2026-11-01 — Lot R5b forêt prêt à merger : couvert et pertes Hansen en tuiles, 4 pages (`feat/forest`)
+### 2026-11-01 — Lot R5b forêt livré : couvert et pertes Hansen en tuiles, 4 pages (merge `47af1b3`)
 
 - **Livré sur `feat/forest`** (plan `2026-10-31-forest.md`, 9 tâches subagent-driven) : couche **Forest** du menu — couvert 2000 ≥ 30 % en vert d'intensité, pertes 2001–2024 jaune → rouge selon l'année, opacité = part de forêt perdue ; tuiles jusqu'au niveau 8 (≈ 150 m) sous ±30°, 7 ailleurs ; frise masquée sous Forest ; tooltip couvert + année ; légende double ; crédit Hansen CC BY 4.0 ; capture 📷 ; 4 pages `/deforestation-map/`, `/amazon-deforestation-map/`, `/borneo-deforestation-map/`, `/congo-basin-deforestation-map/` avec images OG (textes validés par l'utilisateur).
 - **Génération et envoi** : génération complète **41234253797** (8 boîtes + index, `max_level_outside = 7`, sans envoi) puis envoi R2 **41246090068** (accord utilisateur) — 21 086 tuiles, 3,795 Go sous `tiles/forest/v1.12/`, bucket ≈ 8,52 Go / 10 ; replis `lossyear` v1.11 sur 4 dalles (§2, §6).
 - **Validation Brave (T8)** : critères 1–5 et 8 de la spec + hors tropiques, 8/8 PASS ; GLSL compilé en vrai. Vague de correction de la revue finale (2026-11-01, `029ce76`) vérifiée dans Brave : océan côtier identique à « None » (pas de coutures), lacs Victoria/Tanganyika en bleu nuit, couches météo inchangées, image OG du Congo recapturée.
 - **Décisions utilisateur (2026-11-01)** : garder « année la plus récente » de loin ; corriger les lacs noirs avant merge ; nouveau chantier **zoom plus profond** (§8, R5).
 - **Tests :** 881 vitest (70 fichiers), 392 passed / 17 skipped pytest local, `tsc` OK ; bundle **195,28 Ko gzip** (plafond relevé, §5). `history_check` ✓.
-- **Prochaine action :** merger `feat/forest` dans `master` **avec l'accord de l'utilisateur** (le déploiement suit), puis signaler les 4 URLs : IndexNow (automatique au déploiement), Bing `submit_url_batch`, inspection Google.
+- **Merge** `47af1b3` (accord utilisateur), tests sur le résultat : 392 pytest / 17 skipped, 881 vitest, `tsc` OK.
+- **Prochaine action :** signaler les 4 URLs : IndexNow (automatique au déploiement), Bing `submit_url_batch`, inspection Google.
 
 ### 2026-10-31 (3) — Lot R5b forêt : conception, plan, workflow de génération sur `master`
 
@@ -1983,7 +1984,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-11-01 (**lot R5b forêt prêt à merger sur `feat/forest`** — couvert 2000 ≥ 30 % + pertes 2001–2024 Hansen v1.12 en tuiles (21 086, 3,795 Go), 4 pages ; 881 vitest + 392 pytest, bundle 195,28 Ko gzip ; merge en attente de l'accord utilisateur)
+**Dernière mise à jour :** 2026-11-01 (**lot R5b forêt mergé `47af1b3`** — couche Forest Hansen v1.12 en tuiles, 4 pages, déployée)
+**Entrée précédente :** 2026-11-01 (**lot R5b forêt prêt à merger sur `feat/forest`** — couvert 2000 ≥ 30 % + pertes 2001–2024 Hansen v1.12 en tuiles (21 086, 3,795 Go), 4 pages ; 881 vitest + 392 pytest, bundle 195,28 Ko gzip ; merge en attente de l'accord utilisateur)
 **Entrée précédente :** 2026-10-31 (**lot R5b forêt : spec, plan, workflow de génération sur `master`** — exécution en cours sur `feat/forest`)
 **Entrée précédente :** 2026-10-31 (**lot R5a neige mergé `72ad975`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip)
 **Entrée précédente :** 2026-10-31 (**lot R5a neige prêt à merger sur `feat/snow`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip ; merge en attente de l'accord utilisateur)
