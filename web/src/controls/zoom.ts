@@ -119,6 +119,8 @@ export function anchorRotate(
 export interface ZoomControl {
   /** À appeler par la boucle de rendu avant `controls.update()`. Renvoie true si la caméra a bougé. */
   beforeUpdate(): boolean;
+  /** Nouvelles bornes d'altitude (lot R5c : plus bas sous Forest) ; prises en compte au geste suivant. */
+  setRange(aMin: number, aMax: number): void;
   dispose(): void;
 }
 
@@ -133,7 +135,8 @@ export interface ZoomOptions {
 const SMOOTHING = 0.25;
 const CONVERGENCE = 1e-4;
 
-export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveCamera, opts: ZoomOptions): ZoomControl {
+export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveCamera, options: ZoomOptions): ZoomControl {
+  const opts = { ...options }; // copie : `setRange` réécrit aMin/aMax sans toucher l'objet de l'appelant
   let wheelActive = false;
   let aTarget = 0;
   let pinchA: number | null = null;
@@ -262,6 +265,10 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
       }
       if (!wheelActive && !pinchBase) anchor = null;
       return moved;
+    },
+    setRange(aMin, aMax) {
+      opts.aMin = aMin;
+      opts.aMax = aMax;
     },
     dispose() {
       if (pinchBase) opts.onPinch?.(false); // ne pas laisser enableRotate coincé à false

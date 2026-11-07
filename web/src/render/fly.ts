@@ -5,6 +5,7 @@
  */
 import * as THREE from "three";
 import { lonLatToVec3 } from "../tiles/patch";
+import { vec3ToLonLat } from "./pick";
 
 export const FLY_MS = 1500;
 export const FLY_DISTANCE = 1.15;
@@ -37,6 +38,16 @@ export function flyPosition(from: THREE.Vector3, toDir: THREE.Vector3, toD: numb
   return out.copy(a).applyQuaternion(q).multiplyScalar(d);
 }
 
+/**
+ * Remontée en quittant Forest (lot R5c) : `null` si la caméra est déjà à `minDistance` ou plus haut,
+ * sinon le point sous la caméra à la distance `minDistance` (cible d'un vol vertical).
+ */
+export function climbTarget(position: THREE.Vector3, minDistance: number): { lon: number; lat: number; d: number } | null {
+  if (position.length() >= minDistance) return null;
+  const { lon, lat } = vec3ToLonLat(position);
+  return { lon, lat, d: minDistance };
+}
+
 export interface FlightDeps {
   camera: { position: THREE.Vector3; lookAt(x: number, y: number, z: number): void };
   controls: { enableDamping: boolean; update(): boolean };
@@ -48,6 +59,7 @@ export interface FlightDeps {
 export class Flight {
   private unsub: (() => void) | null = null;
   private damping = true;
+  private onCancel: (() => void) | null = null;
 
   constructor(private readonly deps: FlightDeps) {}
 
@@ -55,7 +67,8 @@ export class Flight {
     return this.unsub !== null;
   }
 
-  start(lon: number, lat: number, distance: number, onArrive: () => void): void {
+  /** `onCancel` : appelé une fois si le vol est interrompu (`cancel()` ou nouveau départ), jamais à l'arrivée. */
+  start(lon: number, lat: number, distance: number, onArrive: () => void, onCancel?: () => void): void {
     this.cancel();
     const { camera, controls } = this.deps;
     const toDir = lonLatToVec3(lon, lat);
@@ -73,6 +86,7 @@ export class Flight {
     controls.enableDamping = false;
     controls.update();
     const from = camera.position.clone();
+    this.onCancel = onCancel ?? null;
     let t0: number | null = null;
     this.unsub = this.deps.onFrame((now) => {
       t0 ??= now;
@@ -89,10 +103,14 @@ export class Flight {
   }
 
   cancel(): void {
-    if (this.unsub) this.finish();
+    if (!this.unsub) return;
+    const cb = this.onCancel;
+    this.finish();
+    cb?.();
   }
 
   private finish(): void {
+    this.onCancel = null;
     this.unsub?.();
     this.unsub = null;
     this.deps.controls.enableDamping = this.damping;

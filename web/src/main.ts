@@ -20,12 +20,12 @@ import {
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
 import { bootAwaitsForest, pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
-import { FLY_DISTANCE, Flight } from "./render/fly";
+import { FLY_DISTANCE, Flight, climbTarget } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
 import { FOREST_TIER_LEVEL, TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
-import { createScene } from "./render/scene";
+import { FOREST_MIN_DISTANCE, MIN_DISTANCE, createScene, initialMinDistance } from "./render/scene";
 import { globeShiftPx } from "./render/view-shift";
 import { createStarsLayer } from "./render/stars";
 import { createWindLayer } from "./render/wind";
@@ -140,8 +140,17 @@ async function boot(): Promise<void> {
   const lon = Number(params.get("lon"));
   const lat = Number(params.get("lat"));
   const d = Number(params.get("d"));
+  // Limite basse selon la couche demandée au démarrage (`?layer=` complété par la page, même source
+  // que le choix de la couche) : une vue partagée sous Forest (d = 1,0105) est posée telle quelle.
+  const bootMinDistance = initialMinDistance(params.get("layer"));
+  /** Vrai tant que la limite basse Forest est en place (lot R5c) : la quitter remonte la caméra. */
+  let deepCamera = bootMinDistance !== MIN_DISTANCE;
+  /** Vrai pendant le vol de remontée : rallumer Forest l'interrompt. */
+  let climbing = false;
   if (Number.isFinite(lon) && Number.isFinite(lat) && params.has("lon") && params.has("lat")) {
-    sceneHandle.setInitialView(lon, lat, Number.isFinite(d) && params.has("d") ? d : 1.3);
+    sceneHandle.setInitialView(lon, lat, Number.isFinite(d) && params.has("d") ? d : 1.3, bootMinDistance);
+  } else {
+    sceneHandle.setMinDistance(bootMinDistance);
   }
 
   const loader = new TileLoader({
@@ -802,6 +811,26 @@ async function boot(): Promise<void> {
     // Couche tuiles (Forest) : composée par le globe à la place de la couche météo, sans échéances —
     // elle suit la branche « Aucune » ci-dessous pour la couche météo, la légende et les valeurs.
     const tiles = def !== undefined && layerKind(def) === "tiles";
+    // Lot R5c : sous Forest, caméra plus basse et tuiles jusqu'au niveau profond (sur-zoom au-delà).
+    // En la quittant (vers toute autre couche ou Aucune), remontée à MIN_DISTANCE : la limite normale
+    // n'est posée qu'après le vol (ou à son annulation) — OrbitControls y ramènerait d'un saut.
+    if (tiles) {
+      deepCamera = true;
+      if (climbing) flight.cancel();
+      sceneHandle.setMinDistance(FOREST_MIN_DISTANCE);
+      if (forestSrc) globe.setForestMaxLevel(forestSrc.deepMaxLevel);
+    } else if (deepCamera) {
+      deepCamera = false;
+      const apply = (): void => {
+        climbing = false;
+        if (!deepCamera) sceneHandle.setMinDistance(MIN_DISTANCE);
+      };
+      const c = climbTarget(sceneHandle.camera.position, MIN_DISTANCE);
+      if (c) {
+        climbing = true;
+        flight.start(c.lon, c.lat, c.d, apply, apply);
+      } else apply();
+    }
     globe.setForest(tiles);
     ui.setForestCredit(tiles);
     tooltip.setForest(tiles ? forestReader : null);

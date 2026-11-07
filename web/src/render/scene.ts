@@ -17,8 +17,16 @@ export interface SceneHandle {
   onViewChange(cb: (view: ViewState) => void): void;
   /** Callback appelé à chaque frame rAF avec l'horodatage ; renvoyer `true` demande un rendu. Renvoie la désinscription. */
   onFrame(cb: (nowMs: number) => boolean): () => void;
-  /** Place la caméra au-dessus d'un point (paramètres d'URL `lon`, `lat`, `d`). */
-  setInitialView(lon: number, lat: number, distance: number): void;
+  /**
+   * Place la caméra au-dessus d'un point (paramètres d'URL `lon`, `lat`, `d`), sans vol. `minDistance`
+   * (défaut MIN_DISTANCE) devient la limite basse et borne `distance` (lot R5c : plus bas sous Forest).
+   */
+  setInitialView(lon: number, lat: number, distance: number, minDistance?: number): void;
+  /**
+   * Limite basse de la caméra (OrbitControls et zoom maison). OrbitControls y ramène la distance au
+   * prochain `update()` : pour remonter sans saut, voler d'abord, poser la limite ensuite.
+   */
+  setMinDistance(d: number): void;
   /** Remonte l'image de `px` px CSS (négatif = descend) : globe centré dans l'espace libre sur mobile. */
   setViewShift(px: number): void;
   start(): void;
@@ -26,6 +34,13 @@ export interface SceneHandle {
 
 export const MIN_DISTANCE = 1.042; // ≈ 2° de large à l'écran (spec tuiles §5 « Caméra »)
 export const MAX_DISTANCE = 4;
+/** Sous Forest (lot R5c) : altitude minimale divisée par 4 (≈ 1,0105), sur-zoom au-delà du niveau 9. */
+export const FOREST_MIN_DISTANCE = 1 + (MIN_DISTANCE - 1) / 4;
+
+/** Limite basse à poser au démarrage selon la couche initiale (`?layer=` complété par la page). */
+export function initialMinDistance(layerId: string | null): number {
+  return layerId === "forest" ? FOREST_MIN_DISTANCE : MIN_DISTANCE;
+}
 
 /**
  * Rendu à la demande (spec 2 §4) : la boucle rAF ne dessine que si les contrôles bougent
@@ -162,8 +177,14 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       shift = px;
       resize();
     },
-    setInitialView(lon, lat, distance) {
-      const d = Math.min(MAX_DISTANCE, Math.max(MIN_DISTANCE, distance));
+    setMinDistance(d) {
+      controls.minDistance = d;
+      zoom.setRange(d - 1, MAX_DISTANCE - 1);
+    },
+    setInitialView(lon, lat, distance, minDistance = MIN_DISTANCE) {
+      controls.minDistance = minDistance;
+      zoom.setRange(minDistance - 1, MAX_DISTANCE - 1);
+      const d = Math.min(MAX_DISTANCE, Math.max(minDistance, distance));
       camera.position.copy(lonLatToVec3(lon, lat).multiplyScalar(d));
       camera.lookAt(0, 0, 0);
       controls.update();

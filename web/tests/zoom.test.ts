@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { PinchTracker, WHEEL_BASE, anchorRotate, keepAnchor, nextAltitude, normalizeWheel, pinchAltitude, type Anchor } from "../src/controls/zoom";
+import { PinchTracker, WHEEL_BASE, anchorRotate, attachZoom, keepAnchor, nextAltitude, normalizeWheel, pinchAltitude, type Anchor } from "../src/controls/zoom";
 import { pickSphere, projectToScreen } from "../src/render/pick";
 
 const A_MIN = 0.042;
@@ -180,5 +180,43 @@ describe("anchorRotate", () => {
     anchorRotate(cam, anchor, W, H);
     const s = projectToScreen(anchor.point, cam, W, H);
     expect(Math.hypot(s.x - anchor.screen.x, s.y - anchor.screen.y)).toBeLessThan(0.05);
+  });
+});
+
+describe("attachZoom — setRange (lot R5c, Forest plus bas)", () => {
+  /** Canvas minimal : écouteurs mémorisés, rectangle fixe 800 × 600. */
+  function fakeCanvas() {
+    const listeners = new Map<string, (e: unknown) => void>();
+    const canvas = {
+      addEventListener: (type: string, cb: (e: unknown) => void) => listeners.set(type, cb),
+      removeEventListener: (type: string) => listeners.delete(type),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    } as unknown as HTMLCanvasElement;
+    const wheel = (deltaY: number) =>
+      listeners.get("wheel")!({ deltaY, deltaMode: 0, clientX: 400, clientY: 300, preventDefault: () => {} });
+    return { canvas, wheel };
+  }
+
+  function zoomToBottom(range?: [number, number]): number {
+    const camera = new THREE.PerspectiveCamera(45, 800 / 600, 0.001, 10);
+    camera.position.set(0, 0, 1.3);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const { canvas, wheel } = fakeCanvas();
+    const zoom = attachZoom(canvas, camera, { requestRender: () => {}, aMin: A_MIN, aMax: A_MAX });
+    if (range) zoom.setRange(range[0], range[1]);
+    for (let i = 0; i < 40; i++) {
+      wheel(-300);
+      for (let j = 0; j < 80; j++) zoom.beforeUpdate();
+    }
+    zoom.dispose();
+    return camera.position.length() - 1;
+  }
+
+  it("sans setRange : la molette s'arrête à aMin", () => {
+    expect(zoomToBottom()).toBeCloseTo(A_MIN, 6);
+  });
+  it("setRange(0.0105, 3) : descend jusqu'à 0,0105, pas plus bas", () => {
+    expect(zoomToBottom([0.0105, 3])).toBeCloseTo(0.0105, 6);
   });
 });

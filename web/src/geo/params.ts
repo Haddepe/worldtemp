@@ -18,7 +18,7 @@ export function withView(search: string, lon: number, lat: number, d: number): s
   const p = new URLSearchParams(search);
   p.set("lon", lon.toFixed(2));
   p.set("lat", lat.toFixed(2));
-  p.set("d", d.toFixed(3));
+  p.set("d", d.toFixed(4)); // 4 décimales : 1,0105 sous Forest (lot R5c)
   return `?${p.toString()}`;
 }
 

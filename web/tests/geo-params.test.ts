@@ -16,8 +16,11 @@ describe("parseFlag / withFlag — ?labels=, ?rivers= (spec repères §6)", () =
 });
 
 describe("withView — URL partageable après un vol", () => {
-  it("réécrit lon, lat (2 décimales) et d (3 décimales), garde le reste", () => {
-    expect(withView("?layer=temp&lon=1&d=3", 6.44976, 48.17264, 1.15)).toBe("?layer=temp&lon=6.45&d=1.150&lat=48.17");
+  it("réécrit lon, lat (2 décimales) et d (4 décimales), garde le reste", () => {
+    expect(withView("?layer=temp&lon=1&d=3", 6.44976, 48.17264, 1.15)).toBe("?layer=temp&lon=6.45&d=1.1500&lat=48.17");
+  });
+  it("d sous Forest (1,0105) garde ses 4 décimales", () => {
+    expect(withView("", -60, -8, 1.0105)).toBe("?lon=-60.00&lat=-8.00&d=1.0105");
   });
 });
 
