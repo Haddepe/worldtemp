@@ -718,7 +718,7 @@ que par un test : ce sont eux qui se reproduisent.)*
 | 2026-10-24 | feat/landing-pages — lot G (chantier audience ③) : 16 pages couche/région générées au build + sitemap, résumé sous le bandeau, « Read more », tiroir ☰, adresse qui suit la couche, 16 images OG (spec `2026-10-24-landing-pages-design.md`, plan `2026-10-24-landing-pages.md` 6 tâches, subagent-driven ; revue finale opus « with fixes » : 1 Critical + 1 Important + 5 Minor corrigés, re-revue propre) | ✅ mergée | `964b001` | 779 vitest locaux, 283 pytest (10 skipped) ; bundle 185,96 Ko gzip |
 | 2026-10-31 | feat/snow — lot R5a : couche neige à deux modes (Snowfall cumulé 10:1 depuis le run, Depth SNOD), source dérivée `gfs_snow` isolée, reprise exacte, 4 pages + images OG (spec `2026-10-31-snow-design.md`, plan `2026-10-31-snow.md` 8 tâches, subagent-driven ; revue finale « prêt à merger avec retouches légères » + vague de correction) | ✅ mergé `72ad975` | merge à suivre | 811 vitest (68 fichiers) ; 318 passed / 12 skipped pytest local |
 | 2026-11-01 | feat/forest — lot R5b : couche Forest (Hansen GFC v1.12, couvert 2000 ≥ 30 % + pertes 2001–2024 par année) en tuiles jusqu'au niveau 8 sous ±30°, 7 ailleurs (21 086 tuiles, 3,795 Go sur R2), tooltip, légende double, capture, 4 pages + images OG (spec `2026-10-31-forest-design.md`, plan `2026-10-31-forest.md` 9 tâches, subagent-driven ; revue finale « prêt à merger avec corrections » + vague de correction) | ✅ mergé | `47af1b3` | 881 vitest (70 fichiers) ; 392 passed / 17 skipped pytest local ; bundle 195,28 Ko gzip |
-| 2026-11-07 | feat/forest-deep — lot R5c : zoom forêt profond, niveau 9 partout (+ 8 hors tropiques) en 266 archives WTPK (117 615 tuiles, 15,92 Go) sur Hugging Face, manifeste R2 étendu de `deep`, caméra plus basse sous Forest et remontée en vol (spec `2026-11-07-forest-deep-zoom-design.md`, plan 7 tâches subagent-driven) | ⏳ prêt à merger (master fusionné dans la branche, `bf51e7c`) | — | 919 vitest (72 fichiers) ; 405 passed / 17 skipped pytest local ; bundle 197,09 Ko gzip |
+| 2026-11-07 | feat/forest-deep — lot R5c : zoom forêt profond, niveau 9 partout (+ 8 hors tropiques) en 266 archives WTPK (117 615 tuiles, 15,92 Go) sur Hugging Face, manifeste R2 étendu de `deep`, caméra plus basse sous Forest et remontée en vol (spec `2026-11-07-forest-deep-zoom-design.md`, plan 7 tâches subagent-driven) | ✅ mergé | `dc85b0c` | 919 vitest (72 fichiers) ; 405 passed / 17 skipped pytest local ; bundle 197,09 Ko gzip |
 
 ## 8. Dette technique connue
 
@@ -855,7 +855,8 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71 ; lot R5b (2026-11-01) : n° 
 - **Production des tuiles** : estimation (run 42381017499, 1 bloc sur 7) ≈ 17 Go ; génération + envoi (run **42384120498**, ≈ 4 h 15, accord utilisateur) : **266 archives, 117 615 tuiles, 15,92 Go**, révision HF `dac8a22`. **Manifeste R2** réécrit depuis la session (accord utilisateur, §5) : seul objet modifié, servi octet pour octet ; le site en ligne l'ignore jusqu'au merge.
 - **Validation Brave** (`vite preview` :5173, accord utilisateur) : Rondônia, Landes et Bornéo au niveau 9 (parcelles et coupes de la tempête Klaus nettes), tooltip juste, remontée en passant à Temperature, Hugging Face bloqué → niveaux R2 sans erreur (2 tentatives en 25 s), 412 px lisible, météo inchangée.
 - **Tests :** 919 vitest (72 fichiers), 405 passed / 17 skipped pytest local, `tsc` OK ; bundle **197,09 Ko gzip** (plafond relevé, §5). `history_check` ✓. Les deux surveillances locales du run ont été coupées par Claude Code faute de mémoire sur le poste (le run lui-même n'était pas touché).
-- **Prochaine action :** merge `--no-ff` de `feat/forest-deep` (accord utilisateur), push, CI verte, zoom profond vérifié en prod sur `/deforestation-map/` ; puis ligne §7 avec le sha de merge.
+- **Merge** `dc85b0c` (accord utilisateur), tests sur le résultat : 405 pytest / 17 skipped, 919 vitest, `tsc` OK.
+- **Prochaine action :** après le déploiement, vérifier le zoom profond en prod sur `/deforestation-map/` ; vers le 2026-11-21, bilan Bing (23 URLs renvoyées) et impressions Google ; ensuite P2 (rotation automatique) ou dettes.
 
 ### 2026-11-07 — Bilan des moteurs : Google indexe tout, Bing avance lentement
 
@@ -2018,7 +2019,7 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-11-07 (**lot R5c zoom forêt profond prêt à merger** — niveau 9 partout, 266 archives WTPK (15,92 Go) sur Hugging Face, manifeste R2 étendu de `deep` ; 919 vitest + 405 pytest, bundle 197,09 Ko gzip)
+**Dernière mise à jour :** 2026-11-07 (**lot R5c zoom forêt profond mergé `dc85b0c`** — niveau 9 partout, 266 archives WTPK (15,92 Go) sur Hugging Face, manifeste R2 étendu de `deep` ; 919 vitest + 405 pytest, bundle 197,09 Ko gzip)
 **Entrée précédente :** 2026-11-07 (**bilan des moteurs** — Google 25/25 URLs indexées, ≈ 16 impressions/jour ; Bing 5 URLs indexées, 23 URLs renvoyées)
 **Entrée précédente :** 2026-11-01 (**lot R5b forêt mergé `47af1b3`** — couche Forest Hansen v1.12 en tuiles, 4 pages, déployée)
 **Entrée précédente :** 2026-11-01 (**lot R5b forêt prêt à merger sur `feat/forest`** — couvert 2000 ≥ 30 % + pertes 2001–2024 Hansen v1.12 en tuiles (21 086, 3,795 Go), 4 pages ; 881 vitest + 392 pytest, bundle 195,28 Ko gzip ; merge en attente de l'accord utilisateur)
