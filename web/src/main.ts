@@ -22,7 +22,7 @@ import { bootAwaitsForest, pageAfterLayerChange, pageAfterModeChange, pageDefaul
 import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
 import { FLY_DISTANCE, Flight } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
-import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
+import { FOREST_TIER_LEVEL, TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
 import { createScene } from "./render/scene";
@@ -32,6 +32,7 @@ import { createWindLayer } from "./render/wind";
 import { CitySearch } from "./search/index";
 import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
+import { DeepCatalog, browserFetchJson, browserFetchRange } from "./tiles/deep";
 import { type ForestSource, TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseForestManifest, parseManifest } from "./tiles/manifest";
 import { browserDecodeTile, createTileReader } from "./tiles/reader";
@@ -65,8 +66,8 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
   return { manifest, index: TileIndex.parse(await i.arrayBuffer()) };
 }
 
-/** Jeu `forest` (spec forêt §6), indépendant de `layers/forecast.json`. */
-async function fetchForest(): Promise<ForestSource> {
+/** Jeu `forest` (spec forêt §6), indépendant de `layers/forecast.json` ; niveaux profonds posés par l'appelant. */
+async function fetchForest(): Promise<Omit<ForestSource, "deep" | "deepMaxLevel">> {
   const m = await fetch(`${FOREST_TILES_BASE_URL}/manifest.json`, { cache: "no-cache", signal: AbortSignal.timeout(10_000) });
   if (!m.ok) throw new Error(`HTTP ${m.status} for forest manifest.json`);
   const manifest = parseForestManifest(await m.json());
@@ -261,12 +262,17 @@ async function boot(): Promise<void> {
   /** Charge le jeu `forest` ; vrai s'il vient d'arriver (le menu est alors à refaire). */
   const loadForest = async (): Promise<boolean> => {
     try {
-      const src = await fetchForest();
+      const base = await fetchForest();
+      const info = base.manifest.deep;
+      // Niveaux profonds (lot R5c) : une cellule chargée relance le rendu, donc `loader.update`.
+      const deep = info ? new DeepCatalog(info, { fetchJson: browserFetchJson, fetchRange: browserFetchRange, onChange: () => sceneHandle.requestRender() }) : null;
+      const deepMaxLevel = info ? Math.min(info.maxLevel, FOREST_TIER_LEVEL[decision.tier]) : base.manifest.maxLevel;
+      const src: ForestSource = { ...base, deep, deepMaxLevel };
       loader.configureForest(src);
       forestSrc = src;
       globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
       forestReady = true;
-      console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere`);
+      console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere${deep ? `, deep ≤ ${deepMaxLevel}` : ""}`);
       return true;
     } catch (e) {
       console.warn("[worldtemp] forest tiles unavailable:", e);

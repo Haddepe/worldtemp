@@ -5,7 +5,8 @@
  * vide à l'index = pas de forêt (`null`) ; une tuile pas encore décodée = rien (`peek` → undefined).
  */
 import { tileAt, tileBounds, type TileId } from "./grid";
-import { forestTileFor, forestTileUrl, type ForestSource } from "./loader";
+import { type ByteRange, rangeHeader } from "./deep";
+import { forestTileFor, forestTileRequest, type ForestSource } from "./loader";
 
 export interface ForestReading {
   /** Couvert 2000, % de canopée (0 sous le seuil). */
@@ -26,7 +27,8 @@ export interface TilePixels {
 export interface TileReaderDeps {
   /** Jeu forêt courant ; `null` tant que son manifeste n'est pas chargé. */
   source(): ForestSource | null;
-  decode(url: string, signal: AbortSignal): Promise<TilePixels>;
+  /** `range` non nul : tuile profonde lue dans son archive (requête Range). */
+  decode(url: string, signal: AbortSignal, range?: ByteRange | null): Promise<TilePixels>;
   /** Tuiles décodées gardées (≈ 1 Mo chacune à 512 px). */
   cacheSize?: number;
   /** Décodages simultanés au plus (survol rapide : pas une requête par case traversée). */
@@ -52,9 +54,16 @@ interface Entry {
   controller: AbortController;
 }
 
+/** Tuile à décoder : clé de cache = URL (tuile R2) ou `url#offset` (tuile profonde, même archive). */
+interface Req {
+  key: string;
+  url: string;
+  range: ByteRange | null;
+}
+
 /** Demande en attente d'une place de décodage : une seule, la plus récente. */
 interface Waiting {
-  url: string;
+  req: Req;
   promise: Promise<TilePixels>;
   resolve(p: TilePixels): void;
   reject(e: Error): void;
@@ -65,18 +74,20 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
   const maxInflight = Math.max(1, deps.maxInflight ?? 1);
   const cooldown = deps.failureCooldownMs ?? 10_000;
   const now = deps.now ?? (() => Date.now());
-  /** Ordre d'insertion = ordre d'usage (LRU) ; clé = URL, qui porte la racine versionnée. */
+  /** Ordre d'insertion = ordre d'usage (LRU) ; clé = `Req.key`, qui porte la racine versionnée. */
   const cache = new Map<string, Entry>();
-  /** Cache négatif : URL → instant jusqu'auquel elle n'est pas redemandée. */
+  /** Cache négatif : clé → instant jusqu'auquel la tuile n'est pas redemandée. */
   const failedUntil = new Map<string, number>();
   let inflight = 0;
   let waiting: Waiting | null = null;
 
-  const locate = (lon: number, lat: number): { src: ForestSource; tile: TileId; url: string } | null => {
+  const locate = (lon: number, lat: number): { src: ForestSource; tile: TileId; req: Req } | null => {
     const src = deps.source();
     if (!src) return null;
-    const tile = forestTileFor(tileAt(src.manifest.maxLevel, lon, lat), src.manifest, src.index);
-    return tile ? { src, tile, url: forestTileUrl(src, tile) } : null;
+    const tile = forestTileFor(tileAt(src.deepMaxLevel, lon, lat), src);
+    if (!tile) return null;
+    const { url, range } = forestTileRequest(src, tile);
+    return { src, tile, req: { key: range ? `${url}#${range.offset}` : url, url, range } };
   };
 
   const touch = (url: string, e: Entry): void => {
@@ -100,11 +111,12 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
     return false;
   };
 
-  const start = (url: string): Entry => {
+  const start = (req: Req): Entry => {
+    const key = req.key;
     const controller = new AbortController();
     inflight++;
-    const entry: Entry = { promise: deps.decode(url, controller.signal), pixels: null, controller };
-    cache.set(url, entry);
+    const entry: Entry = { promise: deps.decode(req.url, controller.signal, req.range), pixels: null, controller };
+    cache.set(key, entry);
     const done = (): void => {
       inflight--;
       drain();
@@ -116,9 +128,9 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
         done();
       },
       () => {
-        if (cache.get(url) === entry) cache.delete(url);
+        if (cache.get(key) === entry) cache.delete(key);
         // Annulé (couche quittée) n'est pas un échec : pas de cache négatif.
-        if (!controller.signal.aborted) failedUntil.set(url, now() + cooldown);
+        if (!controller.signal.aborted) failedUntil.set(key, now() + cooldown);
         done();
       },
     );
@@ -130,21 +142,22 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
     if (!waiting || inflight >= maxInflight) return;
     const w = waiting;
     waiting = null;
-    const e = cache.get(w.url);
+    const e = cache.get(w.req.key);
     if (e) e.promise.then(w.resolve, w.reject);
-    else if (coolingDown(w.url)) w.reject(new Error(`tile failed recently: ${w.url}`));
-    else start(w.url).promise.then(w.resolve, w.reject);
+    else if (coolingDown(w.req.key)) w.reject(new Error(`tile failed recently: ${w.req.key}`));
+    else start(w.req).promise.then(w.resolve, w.reject);
   };
 
-  const pixelsFor = (url: string): Promise<TilePixels> => {
-    const e = cache.get(url);
+  const pixelsFor = (req: Req): Promise<TilePixels> => {
+    const key = req.key;
+    const e = cache.get(key);
     if (e) {
-      touch(url, e);
+      touch(key, e);
       return e.promise;
     }
-    if (coolingDown(url)) return Promise.reject(new Error(`tile failed recently: ${url}`));
-    if (inflight < maxInflight) return start(url).promise;
-    if (waiting?.url === url) return waiting.promise;
+    if (coolingDown(key)) return Promise.reject(new Error(`tile failed recently: ${key}`));
+    if (inflight < maxInflight) return start(req).promise;
+    if (waiting?.req.key === key) return waiting.promise;
     waiting?.reject(new Error("superseded by a newer tile request"));
     let resolve!: (p: TilePixels) => void;
     let reject!: (e: Error) => void;
@@ -152,7 +165,7 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
       resolve = res;
       reject = rej;
     });
-    waiting = { url, promise, resolve, reject };
+    waiting = { req, promise, resolve, reject };
     return promise;
   };
 
@@ -171,15 +184,15 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
     peek(lon, lat) {
       const at = locate(lon, lat);
       if (!at) return null;
-      const e = cache.get(at.url);
+      const e = cache.get(at.req.key);
       if (!e?.pixels) return undefined;
-      touch(at.url, e);
+      touch(at.req.key, e);
       return texel(at.src, at.tile, e.pixels, lon, lat);
     },
     async read(lon, lat) {
       const at = locate(lon, lat);
       if (!at) return null;
-      const px = await pixelsFor(at.url);
+      const px = await pixelsFor(at.req);
       return texel(at.src, at.tile, px, lon, lat);
     },
     reset() {
@@ -191,9 +204,9 @@ export function createTileReader(deps: TileReaderDeps): TileReader {
 }
 
 /** Décodage navigateur : `createImageBitmap` sans retournement ni conversion, puis `getImageData`. */
-export async function browserDecodeTile(url: string, signal: AbortSignal): Promise<TilePixels> {
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+export async function browserDecodeTile(url: string, signal: AbortSignal, range?: ByteRange | null): Promise<TilePixels> {
+  const r = await fetch(url, range ? { signal, headers: { Range: rangeHeader(range) } } : { signal });
+  if (range ? r.status !== 206 : !r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
   const bmp = await createImageBitmap(await r.blob(), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
   try {
     const canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement("canvas"), { width: bmp.width, height: bmp.height });

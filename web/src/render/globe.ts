@@ -14,6 +14,9 @@ export const TIER_PROFILE: Record<Tier, { maxLevel: number; segments: number; bu
   low: { maxLevel: 7, segments: 16, budgetBytes: 96 * 1024 * 1024, concurrency: 4, k: 1.5 },
 };
 
+/** Niveau forêt le plus fin lu par tier (lot R5c) : 9 (archives profondes) en `high`, 8 en `low`. */
+export const FOREST_TIER_LEVEL: Record<Tier, number> = { high: 9, low: 8 };
+
 export interface TiledGlobe {
   group: THREE.Group;
   /**

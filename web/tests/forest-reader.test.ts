@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { TileIndex } from "../src/tiles/index";
+import type { ByteRange, DeepCatalog, DeepLookup } from "../src/tiles/deep";
 import type { ForestSource } from "../src/tiles/loader";
 import { parseForestManifest } from "../src/tiles/manifest";
 import { createTileReader, type TilePixels } from "../src/tiles/reader";
@@ -23,7 +24,7 @@ function index(): TileIndex {
 }
 
 const BASE = "https://t.test/tiles/forest/v1.12";
-const source = (channels?: { cover: number; year: number; share: number }): ForestSource => ({ baseUrl: BASE, manifest: manifest(channels), index: index() });
+const source = (channels?: { cover: number; year: number; share: number }): ForestSource => ({ baseUrl: BASE, manifest: manifest(channels), index: index(), deep: null, deepMaxLevel: 2 });
 
 /** Tuile 4 × 4 RGBA (ligne 0 au nord) : un texel (col, row) porte `rgb`, les autres 0. */
 function pixels(texels: Record<string, [number, number, number]>): TilePixels {
@@ -221,5 +222,29 @@ describe("createTileReader — lecture d'un texel de tuile forêt (Review Focus 
     p = r.read(-153, 76.5);
     await d.flush();
     expect((await p)!.cover).toBe(95);
+  });
+
+  it("tuile profonde : lue dans l'archive par plage, clé de cache url#offset, niveau profond (lot R5c)", async () => {
+    const ARCHIVE = "https://hf.test/v1.12/0_0.wtpk";
+    const deep = {
+      lookup: (t: { z: number; x: number; y: number }): DeepLookup => ({ state: "present", url: ARCHIVE, range: { offset: 1000 * t.x + t.y + 16, length: 10 } }),
+    } as unknown as DeepCatalog;
+    const src: ForestSource = { ...source(), deep, deepMaxLevel: 3 };
+    const seen: { url: string; range: ByteRange | null | undefined }[] = [];
+    const decode = vi.fn(async (url: string, _signal: AbortSignal, range?: ByteRange | null) => {
+      seen.push({ url, range });
+      return pixels({ "0,0": [40, 0, 0] });
+    });
+    const r = createTileReader({ source: () => src, decode });
+    // (−153, 76.5) et (−150, 80) : tuile 3/1/0 ; (−170, 80) : tuile 3/0/0, même archive.
+    expect(await r.read(-153, 76.5)).toEqual({ cover: 0, lossYear: null, level: 3 });
+    await r.read(-150, 80);
+    await r.read(-170, 80);
+    expect(seen).toEqual([
+      { url: ARCHIVE, range: { offset: 1016, length: 10 } },
+      { url: ARCHIVE, range: { offset: 16, length: 10 } },
+    ]);
+    expect(r.peek(-153, 76.5)).toBeDefined();
+    expect(r.peek(-170, 80)).toBeDefined();
   });
 });
