@@ -179,15 +179,19 @@ def _download(url: str, dest: Path, **retry) -> None:
 def _fetch_text(url: str, **retry) -> str:
     """Petit fichier texte (listes officielles) avec les mêmes essais que les dalles."""
 
-    def attempt() -> str:
+    def attempt() -> bytes:
         with urllib.request.urlopen(url, timeout=60) as r:
             length = r.headers.get("Content-Length")
             body = r.read()
         if length is not None and len(body) != int(length):
             raise _ShortRead(f"{len(body)} octets reçus sur {length}")
-        return body.decode("utf-8")
+        return body
 
-    return _with_retries(f"lecture {url}", attempt, **retry)
+    body = _with_retries(f"lecture {url}", attempt, **retry)
+    try:
+        return body.decode("utf-8")
+    except UnicodeDecodeError as e:  # liste corrompue : réessayer ne la corrigera pas
+        raise HansenReadError(f"lecture {url} : contenu non UTF-8 ({e})") from e
 
 
 class HansenBackend:
@@ -224,7 +228,11 @@ class HansenBackend:
         if _is_url(self.base):
             text = _fetch_text(f"{self.base}{layer}.txt", sleep=self._sleep)
         else:
-            text = (Path(self.base) / f"{layer}.txt").read_text(encoding="utf-8")
+            path = Path(self.base) / f"{layer}.txt"
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as e:
+                raise HansenReadError(f"lecture {path} : contenu non UTF-8 ({e})") from e
         names = parse_list(text, layer)
         if not names:
             raise HansenReadError(f"liste officielle vide : {layer}")
@@ -329,11 +337,9 @@ class HansenBackend:
             absent[layer] = {n for n in present if (layer, n) in self.missing and n not in self.fallback}
             out.append(self._warp(paths, bounds, w, h, layer) if paths else np.zeros((h, w), np.uint8))
         cover, loss = out
-        only_loss = absent["lossyear"] - absent["treecover2000"]
+        # Un lossyear 404 sur de la forêt a déjà été remplacé par le repli R7 (ou a levé) : il ne
+        # reste à vérifier que treecover2000 seul absent.
         only_cover = absent["treecover2000"] - absent["lossyear"]
-        for n in sorted(only_loss):
-            if (cover[self._window(n, bounds, w, h)] >= FOREST_THRESHOLD).any():
-                raise HansenReadError(f"lossyear {n} absent (404) sur une zone de forêt : pertes perdues")
         for n in sorted(only_cover):
             if loss[self._window(n, bounds, w, h)].any():
                 raise HansenReadError(f"treecover2000 {n} absent (404) sur une zone de pertes")

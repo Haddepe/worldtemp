@@ -170,6 +170,10 @@ def test_max_level_outside_must_not_exceed_max_level(tmp_path):
         _build(tmp_path, FakeHansen(), max_level=2, max_level_outside=3)
     with pytest.raises(ValueError):
         _build(tmp_path, FakeHansen(), min_level=0)
+    with pytest.raises(ValueError, match="sample"):
+        _build(tmp_path, FakeHansen(), sample=0)
+    with pytest.raises(ValueError, match="min_level"):
+        _build(tmp_path, FakeHansen(), min_level=3, max_level=3, max_level_outside=2)
 
 
 def test_backend_error_fails_the_build_without_index(tmp_path):

@@ -80,6 +80,8 @@ jobs:
       - name: Tuiles forêt, boîte ${{ matrix.box }}
         env:
           SAMPLE: ${{ inputs.sample }}
+          BOX: ${{ matrix.box }}
+          MAX_LEVEL_OUTSIDE: ${{ inputs.max_level_outside }}
         run: |
           if [ -n "$SAMPLE" ]; then
             [[ "$SAMPLE" =~ ^[0-9]+$ ]] && [ "$SAMPLE" -ge 2 ] || { echo "::error::sample doit être un entier ≥ 2"; exit 1; }
@@ -94,8 +96,8 @@ jobs:
           SAMPLER=$!
           # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
           set +e  # Actions lance `bash -e` sans pipefail : `tee` masquerait l'échec du tiler, PIPESTATUS[0] le relève
-          /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box ${{ matrix.box }} --out out --work work \
-            --min-level 1 --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
+          /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box "$BOX" --out out --work work \
+            --min-level 1 --max-level 8 --max-level-outside "$MAX_LEVEL_OUTSIDE" \
             --tropics=$TROPICS $SAMPLE_ARG 2>&1 | tee log.txt; rc=${PIPESTATUS[0]}
           set -e
           [ "$rc" = 0 ] || { cat time.txt; kill $SAMPLER; exit 1; }
@@ -108,7 +110,7 @@ jobs:
           if [ -d out/forest/1 ]; then cp -r out/forest/1 level1/forest/1; fi
           du -sh out/forest
           {
-            echo "### Boîte ${{ matrix.box }}"
+            echo "### Boîte $BOX"
             grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
             echo "- disque : départ $base Mo, pic $peak Mo, cache + tuiles $((peak - base)) Mo"
             echo "- tuiles : $(du -sh out/forest | cut -f1)"
@@ -139,7 +141,9 @@ jobs:
       # Tuiles d'une boîte : seulement génération complète des 8 boîtes (jamais un échantillon).
       - name: Envoi sur R2
         if: ${{ inputs.upload && env.FULL_SET == 'true' }}
-        run: rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/forest" --transfers 32 --checkers 32 --header-upload "$IMMUTABLE" --stats 1m --stats-one-line
+        env:
+          VERSION: ${{ inputs.version }}
+        run: rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/$VERSION/forest" --transfers 32 --checkers 32 --header-upload "$IMMUTABLE" --stats 1m --stats-one-line
 
   # Lecture seule, indépendant des boîtes : occupation actuelle du bucket (limite gratuite 10 Go).
   r2-size:
@@ -216,13 +220,15 @@ jobs:
         if: ${{ inputs.sample == '' }}
         env:
           BOXES: ${{ inputs.boxes }}
+          VERSION: ${{ inputs.version }}
+          MAX_LEVEL_OUTSIDE: ${{ inputs.max_level_outside }}
         run: |
           # Garde : un index partiel par boîte demandée, sinon rien n'est fusionné.
           want=$(python -c "import json, os; print(len(json.loads(os.environ['BOXES'])))")
           got=$(ls partial/*/index-partial.bin | wc -l)
           [ "$want" = "$got" ] || { echo "::error::$got index partiels pour $want boîtes"; exit 1; }
           python -m tiler.main merge-forest-index --inputs partial/*/index-partial.bin --out-dir out \
-            --version ${{ inputs.version }} --max-level 8 --max-level-outside ${{ inputs.max_level_outside }} \
+            --version "$VERSION" --max-level 8 --max-level-outside "$MAX_LEVEL_OUTSIDE" \
             --tropics=$TROPICS --level1-dir level1 --fallbacks partial/*/lossyear-fallback.json
           ls -la out out/forest/0
           cat out/manifest.json
@@ -234,11 +240,16 @@ jobs:
           retention-days: 30
       - name: Avertissement run partiel (rien publié)
         if: ${{ inputs.upload && env.FULL_SET != 'true' }}
+        env:
+          BOXES: ${{ inputs.boxes }}
+          SAMPLE: ${{ inputs.sample }}
         run: |
-          echo "::warning::Run partiel ou échantillon (boxes=${{ inputs.boxes }}, sample=${{ inputs.sample }}) : rien n'est envoyé sur R2"
+          echo "::warning::Run partiel ou échantillon (boxes=$BOXES, sample=$SAMPLE) : rien n'est envoyé sur R2"
       - name: Envoi sur R2 (niveau 0, index immutable, manifeste revalidé à 5 min)
         if: ${{ inputs.upload && env.FULL_SET == 'true' }}
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/forest" --header-upload "$IMMUTABLE"
-          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/index.bin" --header-upload "$IMMUTABLE" --retries 5
-          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/forest/${{ inputs.version }}/manifest.json" --header-upload "Cache-Control: public, max-age=300" --retries 5
+          rclone copy out/forest "r2:${{ secrets.R2_BUCKET }}/tiles/forest/$VERSION/forest" --header-upload "$IMMUTABLE"
+          rclone copyto out/index.bin "r2:${{ secrets.R2_BUCKET }}/tiles/forest/$VERSION/index.bin" --header-upload "$IMMUTABLE" --retries 5
+          rclone copyto out/manifest.json "r2:${{ secrets.R2_BUCKET }}/tiles/forest/$VERSION/manifest.json" --header-upload "Cache-Control: public, max-age=300" --retries 5

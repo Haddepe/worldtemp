@@ -36,10 +36,10 @@ def aggregate(
       ne touchent qu'une minorité des pixels d'un bloc 5x5 ; une règle majoritaire ou à part
       minimale les effacerait au niveau 8. La plus récente (max) est aussi associative.
 
-    Composition : `cover, year, share = aggregate(c, l, a)` puis `aggregate(cover, year, b, share)`
-    donne la même année que `aggregate(c, l, a*b)`
+    Composition : `cover, year, share = aggregate(c, loss, a)` puis `aggregate(cover, year, b, share)`
+    donne la même année que `aggregate(c, loss, a*b)`
     (exact : « une perte quelque part » et max se composent), et un couvert proche de
-    `aggregate(c, l, a*b)` (moyenne de moyennes, non pondérée par le nombre de pixels forêt de
+    `aggregate(c, loss, a*b)` (moyenne de moyennes, non pondérée par le nombre de pixels forêt de
     chaque sous-bloc ; écart borné par 70, en pratique quelques points). Pour la même raison,
     `min_loss_share` > 0 casse l'égalité de composition : le garder à 0 sur la pyramide.
     Les entrées déjà agrégées sont valides : couvert 0 ou >= 30, année ignorée si couvert 0.
