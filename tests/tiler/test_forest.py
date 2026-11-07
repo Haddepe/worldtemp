@@ -8,10 +8,10 @@ def _blk(cover_val, loss_val=0, f=5):
 
 
 def test_threshold_29_is_not_forest_30_is():
-    c, l = _blk(29)
-    assert forest.aggregate(c, l, 5)[0][0, 0] == 0
-    c, l = _blk(30)
-    assert forest.aggregate(c, l, 5)[0][0, 0] == 30
+    c, loss = _blk(29)
+    assert forest.aggregate(c, loss, 5)[0][0, 0] == 0
+    c, loss = _blk(30)
+    assert forest.aggregate(c, loss, 5)[0][0, 0] == 30
 
 
 def test_mean_only_over_forest_pixels():
@@ -23,45 +23,45 @@ def test_mean_only_over_forest_pixels():
 
 def test_loss_on_non_forest_pixel_ignored():
     c = np.zeros((2, 2), np.uint8)
-    l = np.zeros((2, 2), np.uint8)
-    c[0, 0], l[0, 1] = 90, 12  # perte sur pixel non forêt
-    _, yr, sh = forest.aggregate(c, l, 2)
+    loss = np.zeros((2, 2), np.uint8)
+    c[0, 0], loss[0, 1] = 90, 12  # perte sur pixel non forêt
+    _, yr, sh = forest.aggregate(c, loss, 2)
     assert sh[0, 0] == 0
     assert yr[0, 0] == 0
 
 
 def test_year_most_recent_among_lost_forest_pixels():
     c = np.full((4, 4), 80, np.uint8)
-    l = np.zeros((4, 4), np.uint8)
-    l[0, 0], l[3, 3] = 5, 20
-    assert forest.aggregate(c, l, 4)[1][0, 0] == 20
+    loss = np.zeros((4, 4), np.uint8)
+    loss[0, 0], loss[3, 3] = 5, 20
+    assert forest.aggregate(c, loss, 4)[1][0, 0] == 20
 
 
 def test_thin_clearing_minority_is_kept():
     # route d'un pixel de large dans un bloc 5x5 : 5 pixels perdus sur 25
     c = np.full((5, 5), 90, np.uint8)
-    l = np.zeros((5, 5), np.uint8)
-    l[:, 2] = 9
-    assert forest.aggregate(c, l, 5)[1][0, 0] == 9
+    loss = np.zeros((5, 5), np.uint8)
+    loss[:, 2] = 9
+    assert forest.aggregate(c, loss, 5)[1][0, 0] == 9
 
 
 def test_factor_1_identity_up_to_threshold():
     rng = np.random.default_rng(0)
     c = rng.integers(0, 101, (8, 8), dtype=np.uint8)
-    l = rng.integers(0, 25, (8, 8), dtype=np.uint8)
-    cov, yr, sh = forest.aggregate(c, l, 1)
+    loss = rng.integers(0, 25, (8, 8), dtype=np.uint8)
+    cov, yr, sh = forest.aggregate(c, loss, 1)
     f = c >= 30
     assert np.array_equal(cov, np.where(f, c, 0))
-    assert np.array_equal(yr, np.where(f, l, 0))
+    assert np.array_equal(yr, np.where(f, loss, 0))
 
 
 def test_composition_4_then_2_close_to_8():
     rng = np.random.default_rng(1)
     c = rng.integers(0, 101, (64, 64), dtype=np.uint8)
-    l = (rng.random((64, 64)) < 0.05) * rng.integers(1, 25, (64, 64))
-    l = l.astype(np.uint8)
-    direct_c, direct_y, direct_s = forest.aggregate(c, l, 8)
-    c4, y4, s4 = forest.aggregate(c, l, 4)
+    loss = (rng.random((64, 64)) < 0.05) * rng.integers(1, 25, (64, 64))
+    loss = loss.astype(np.uint8)
+    direct_c, direct_y, direct_s = forest.aggregate(c, loss, 8)
+    c4, y4, s4 = forest.aggregate(c, loss, 4)
     two_c, two_y, two_s = forest.aggregate(c4, y4, 2, s4)
     assert np.array_equal(direct_y, two_y)  # exact
     assert np.abs(direct_c.astype(int) - two_c).max() <= 12  # moyenne de moyennes
@@ -74,6 +74,8 @@ def test_no_extra_copy_large_array():
     cov, yr, sh = forest.aggregate(c, np.zeros_like(c), 8)
     assert sh.max() == 0
     assert cov.shape == (512, 512) and cov.dtype == np.uint8 and yr.max() == 0
+    # Sorties nouvelles : aucune ne partage sa mémoire avec l'entrée (pas de vue déguisée).
+    assert not any(np.shares_memory(o, c) for o in (cov, yr, sh))
 
 
 def test_encode_round_trip_and_empty():
@@ -99,11 +101,11 @@ def test_is_empty_false_with_single_forest_pixel():
 
 def test_share_exact_on_synthetic_block():
     c = np.full((5, 5), 90, np.uint8)
-    l = np.zeros((5, 5), np.uint8)
-    l[:, 2] = 9  # 5 perdus sur 25 forêt
-    assert forest.aggregate(c, l, 5)[2][0, 0] == round(255 * 5 / 25)
+    loss = np.zeros((5, 5), np.uint8)
+    loss[:, 2] = 9  # 5 perdus sur 25 forêt
+    assert forest.aggregate(c, loss, 5)[2][0, 0] == round(255 * 5 / 25)
     c[0, 0] = 0  # 24 pixels forêt
-    assert forest.aggregate(c, l, 5)[2][0, 0] == round(255 * 5 / 24)
+    assert forest.aggregate(c, loss, 5)[2][0, 0] == round(255 * 5 / 24)
 
 
 def test_share_zero_without_loss_or_forest():

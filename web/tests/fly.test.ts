@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
-import { FLY_MS, Flight, easeInOut, flyPosition } from "../src/render/fly";
+import { FLY_MS, Flight, climbTarget, easeInOut, flyPosition } from "../src/render/fly";
 import { lonLatToVec3 } from "../src/tiles/patch";
 
 describe("easeInOut", () => {
@@ -109,5 +109,54 @@ describe("Flight", () => {
     expect(arrive).toHaveBeenCalledTimes(1);
     expect(f.deps.camera.position.clone().normalize().distanceTo(lonLatToVec3(6.45, 48.17))).toBeLessThan(1e-9);
     expect(f.deps.requestRender).toHaveBeenCalled();
+  });
+  it("cancel pendant un vol : onCancel une fois, jamais onArrive (Review Focus 3)", () => {
+    const f = fakeDeps();
+    const flight = new Flight(f.deps);
+    const arrive = vi.fn();
+    const cancelled = vi.fn();
+    flight.start(-60, -8, 1.042, arrive, cancelled);
+    f.tick(0);
+    f.tick(FLY_MS / 2);
+    flight.cancel();
+    flight.cancel(); // plus de vol : rien
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(arrive).not.toHaveBeenCalled();
+  });
+  it("arrivée : onArrive seul, onCancel jamais (même par un cancel ou un départ ultérieur)", () => {
+    const f = fakeDeps();
+    const flight = new Flight(f.deps);
+    const arrive = vi.fn();
+    const cancelled = vi.fn();
+    flight.start(-60, -8, 1.042, arrive, cancelled);
+    f.tick(0);
+    f.tick(FLY_MS);
+    flight.cancel();
+    flight.start(0, 0, 1.15, vi.fn());
+    expect(arrive).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+  it("un nouveau départ pendant un vol appelle l'onCancel du vol remplacé", () => {
+    const f = fakeDeps();
+    const flight = new Flight(f.deps);
+    const cancelled = vi.fn();
+    flight.start(-60, -8, 1.042, vi.fn(), cancelled);
+    flight.start(0, 0, 1.15, vi.fn());
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("climbTarget", () => {
+  it("caméra sous la limite : point sous la caméra, à la limite", () => {
+    const pos = lonLatToVec3(-60, -8).multiplyScalar(1.0105);
+    const c = climbTarget(pos, 1.042)!;
+    expect(c).not.toBeNull();
+    expect(c.lon).toBeCloseTo(-60, 6);
+    expect(c.lat).toBeCloseTo(-8, 6);
+    expect(c.d).toBe(1.042);
+  });
+  it("caméra au-dessus (ou à) la limite : null", () => {
+    expect(climbTarget(lonLatToVec3(-60, -8).multiplyScalar(1.3), 1.042)).toBeNull();
+    expect(climbTarget(lonLatToVec3(-60, -8).multiplyScalar(1.042), 1.042)).toBeNull();
   });
 });

@@ -481,6 +481,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fallbacks", nargs="*", type=Path, default=[],
                    help="lossyear-fallback.json des boîtes (règle R7, recopié au manifeste)")
 
+    p = sub.add_parser("pack-deep", help="archives WTPK des tuiles forêt profondes (R5c)")
+    p.add_argument("--out-dir", required=True, type=Path)
+    p.add_argument("--dest", required=True, type=Path)
+    p.add_argument("--catalog-fragment", required=True, type=Path)
+    p.add_argument("--tropics", type=parse_bounds, default=None,
+                   help="bande tropicale du manifeste R2 (défaut : celle de tropical_bounds(TROPICS, 7))")
+
+    p = sub.add_parser("merge-deep-catalog")
+    p.add_argument("--fragments", required=True, nargs="+", type=Path)
+    p.add_argument("--out", required=True, type=Path)
+
+    p = sub.add_parser("add-deep-manifest")
+    p.add_argument("--manifest", required=True, type=Path)
+    p.add_argument("--base-url", required=True)
+    p.add_argument("--max-level", required=True, type=int)
+    p.add_argument("--out", required=True, type=Path)
+
     a = ap.parse_args(argv)
     if a.cmd == "extract-gebco":
         from .gdal_adapter import extract_gebco_tile
@@ -534,6 +551,36 @@ def main(argv: list[str] | None = None) -> int:
         print(merge_forest_indexes(a.inputs, a.out_dir, version=a.version, generated_at=_now(), max_level=a.max_level,
                                    max_level_outside=a.max_level_outside, tropics=a.tropics, level1_dir=a.level1_dir,
                                    lossyear_fallback={v: sorted(n) for v, n in fallback.items()}))
+        return 0
+    if a.cmd == "pack-deep":
+        from .pack import pack_deep
+
+        tropics = a.tropics or tropical_bounds(TROPICS, 7)
+        fragment = pack_deep(a.out_dir, a.dest, tropics)
+        a.catalog_fragment.parent.mkdir(parents=True, exist_ok=True)
+        a.catalog_fragment.write_text(json.dumps(fragment, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"pack-deep : {len(fragment)} cellules, {sum(c['count'] for c in fragment.values())} tuiles")
+        return 0
+    if a.cmd == "merge-deep-catalog":
+        cells: dict[str, dict[str, int]] = {}
+        for f in a.fragments:
+            for name, info in json.loads(f.read_text(encoding="utf-8")).items():
+                if name in cells:
+                    ap.error(f"cellule {name} présente dans plusieurs fragments (dernier : {f})")
+                cells[name] = info
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps({"format": "wtpk1", "cells": dict(sorted(cells.items()))}, indent=1) + "\n",
+                         encoding="utf-8")
+        print(f"catalogue : {len(cells)} cellules")
+        return 0
+    if a.cmd == "add-deep-manifest":
+        manifest = json.loads(a.manifest.read_text(encoding="utf-8"))
+        if a.max_level <= manifest["max_level"]:
+            ap.error(f"--max-level {a.max_level} doit dépasser le max_level du manifeste ({manifest['max_level']})")
+        manifest["deep"] = {"base_url": a.base_url.rstrip("/"), "max_level": a.max_level,
+                            "catalog": "catalog.json", "format": "wtpk1"}
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return 0
     return 2
 

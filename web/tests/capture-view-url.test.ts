@@ -38,7 +38,7 @@ describe("attachViewUrl — vue écrite au repos de la caméra (spec capture §4
     expect(h.replace).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(h.replace).toHaveBeenCalledTimes(1);
-    expect(h.replace).toHaveBeenCalledWith("?layer=dust&lon=10.00&lat=20.00&d=2.000");
+    expect(h.replace).toHaveBeenCalledWith("?layer=dust&lon=10.00&lat=20.00&d=2.0000");
   });
   it("rendus sans mouvement (vent animé) : aucun minuteur, aucune écriture", () => {
     const h = harness();
@@ -57,7 +57,7 @@ describe("attachViewUrl — vue écrite au repos de la caméra (spec capture §4
     expect(h.replace).not.toHaveBeenCalled();
     h.moveTo(30, 20, 1.3);
     vi.advanceTimersByTime(SETTLE_MS);
-    expect(h.replace).toHaveBeenCalledWith("?layer=dust&lon=30.00&lat=20.00&d=1.300");
+    expect(h.replace).toHaveBeenCalledWith("?layer=dust&lon=30.00&lat=20.00&d=1.3000");
   });
   it("pendant un vol (images bloquées ≥ 400 ms) : rien, et la garde n'est pas levée", () => {
     const guard = new ViewGuard();

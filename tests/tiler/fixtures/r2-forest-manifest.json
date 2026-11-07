@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "version": "v1.12",
+  "tile_size": 512,
+  "ext": "png",
+  "index": "index.bin",
+  "max_level": 8,
+  "max_level_outside": 7,
+  "tropics": {
+    "lon_min": -180.0,
+    "lon_max": 180.0,
+    "lat_min": -30.9375,
+    "lat_max": 30.9375
+  },
+  "tropics_requested": {
+    "lon_min": -180.0,
+    "lon_max": 180.0,
+    "lat_min": -30.0,
+    "lat_max": 30.0
+  },
+  "channels": {
+    "cover": 0,
+    "year": 1,
+    "share": 2
+  },
+  "year_base": 2000,
+  "threshold": 30,
+  "source": "Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12)",
+  "license": "CC BY 4.0",
+  "generated_at": "2026-10-31T23:27:26Z",
+  "lossyear_fallback": {
+    "v1.11": [
+      "00N_070E",
+      "10S_180W",
+      "20N_120W",
+      "20S_040W"
+    ]
+  }
+}

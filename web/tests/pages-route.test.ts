@@ -107,8 +107,8 @@ describe("searchWithShownView", () => {
     expect(searchWithShownView("?lon=1&lat=2&d=3", page("sahara-dust-forecast"), page("dust-forecast"), never)).toBe("?lon=1&lat=2&d=3");
   });
   it("région non touchée vers une page sans vue : la vue affichée est écrite", () => {
-    expect(searchWithShownView("", page("sahara-dust-forecast"), page("dust-forecast"), shown)).toBe("?lon=10.00&lat=45.00&d=1.800");
-    expect(searchWithShownView("?labels=0", page("europe-heatwave-map"), page("rain-map"), shown)).toBe("?labels=0&lon=10.00&lat=45.00&d=1.800");
+    expect(searchWithShownView("", page("sahara-dust-forecast"), page("dust-forecast"), shown)).toBe("?lon=10.00&lat=45.00&d=1.8000");
+    expect(searchWithShownView("?labels=0", page("europe-heatwave-map"), page("rain-map"), shown)).toBe("?labels=0&lon=10.00&lat=45.00&d=1.8000");
   });
   it("garde « ma position » ou vol en cours (shown() null) : aucune vue écrite", () => {
     expect(searchWithShownView("?labels=0", page("europe-heatwave-map"), page("rain-map"), () => null)).toBe("?labels=0");

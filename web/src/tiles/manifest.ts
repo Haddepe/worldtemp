@@ -92,6 +92,19 @@ export interface ForestManifest {
   generatedAt: string;
   /** Version de repli → dalles dont l'année de perte vient de cette version. */
   lossyearFallback: Record<string, string[]>;
+  /** Niveaux profonds en archives `WTPK` (lot R5c) ; `null` = pyramide R2 seule. */
+  deep: DeepInfo | null;
+}
+
+/** Champ `deep` du manifeste forêt (optionnel, `schema_version` reste 1) : voir tiles/deep.ts. */
+export interface DeepInfo {
+  /** Racine des archives, ex. `https://huggingface.co/datasets/<owner>/<repo>/resolve/<sha>/v1.12`. */
+  baseUrl: string;
+  /** Niveau le plus fin des archives, > `maxLevel` R2. */
+  maxLevel: number;
+  /** Nom du catalogue sous `baseUrl`. */
+  catalog: string;
+  format: "wtpk1";
 }
 
 function box(o: Rec, field: string): LonLatBox {
@@ -124,6 +137,15 @@ function fallbacks(o: Rec): Record<string, string[]> {
   return out;
 }
 
+function deep(o: Rec, maxLevel: number): DeepInfo | null {
+  if (o.deep === undefined || o.deep === null) return null;
+  const d = rec(o.deep, "deep");
+  const deepMax = uint(d, "max_level", "deep");
+  if (deepMax <= maxLevel) throw new ManifestError("deep.max_level: expected > max_level");
+  if (d.format !== "wtpk1") throw new ManifestError(`deep.format: unknown format ${String(d.format)}`);
+  return { baseUrl: str(d, "base_url", "deep"), maxLevel: deepMax, catalog: str(d, "catalog", "deep"), format: "wtpk1" };
+}
+
 export function parseForestManifest(value: unknown): ForestManifest {
   const m = rec(value, "root");
   if (m.schema_version !== 1) throw new ManifestError("expected schema_version 1");
@@ -149,5 +171,6 @@ export function parseForestManifest(value: unknown): ForestManifest {
     license: str(m, "license", "root"),
     generatedAt: str(m, "generated_at", "root"),
     lossyearFallback: fallbacks(m),
+    deep: deep(m, maxLevel),
   };
 }

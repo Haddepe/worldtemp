@@ -9,9 +9,9 @@ const satTex = new THREE.Texture();
 const mapTex = new THREE.Texture();
 const forestTex = new THREE.Texture();
 
-function fakeLoader(forestEnabled: boolean[] = []): TileLoader {
+function fakeLoader(forestEnabled: boolean[] = [], leaves: TileId[][] = []): TileLoader {
   return {
-    update: () => {},
+    update: (l: TileId[]) => leaves.push(l),
     isOcean: () => false,
     get: () => undefined,
     usedBytes: 0,
@@ -202,5 +202,30 @@ describe("createTiledGlobe", () => {
     expect(frag).toContain("float year = (uForestChannels * textureLod(uForest, centre, 0.0).rgb).y;");
     expect(frag).toContain("vec2((year * 255.0 + 0.5) / 256.0, 0.75)"); // pertes indexées par l'année exacte
     expect(frag).not.toContain("f.y * 255.0");                           // jamais l'année filtrée
+  });
+
+  it("setForestMaxLevel : sous Forest, la sélection descend jusqu'au niveau forêt ; hors Forest, levelCap seul", () => {
+    const leaves: TileId[][] = [];
+    const globe = createTiledGlobe("high", fakeLoader([], leaves), 8);
+    const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.001, 10);
+    camera.position.set(0, 0, 1.0105);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+    const view = viewStateFrom(camera, 720);
+    const maxZ = () => Math.max(...leaves[leaves.length - 1]!.map((t) => t.z));
+    globe.setForestMaxLevel(9);
+    globe.update(view);
+    expect(maxZ()).toBe(8); // Forest éteinte : plafond inchangé
+    globe.setForest(true);
+    globe.update(view);
+    expect(maxZ()).toBe(9);
+    globe.setForestMaxLevel(6); // plus bas que levelCap : levelCap l'emporte
+    globe.update(view);
+    expect(maxZ()).toBe(8);
+    globe.setForestMaxLevel(9);
+    globe.setForest(false);
+    globe.update(view);
+    expect(maxZ()).toBe(8);
   });
 });

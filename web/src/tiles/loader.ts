@@ -5,6 +5,7 @@
  */
 import * as THREE from "three";
 import { type TileId, parent, tileBounds, tileKey } from "./grid";
+import { type ByteRange, type DeepCatalog, rangeHeader } from "./deep";
 import type { TileIndex } from "./index";
 import type { ForestManifest, TilesManifest } from "./manifest";
 import { patchSphere } from "./patch";
@@ -17,42 +18,80 @@ export interface ForestSource {
   baseUrl: string;
   manifest: ForestManifest;
   index: TileIndex;
+  /** Niveaux profonds (lot R5c) ; `null` sans champ `deep` au manifeste. */
+  deep: DeepCatalog | null;
+  /** Niveau le plus fin à lire : `min(deep.maxLevel, FOREST_TIER_LEVEL[tier])`, `manifest.maxLevel` sans `deep`. */
+  deepMaxLevel: number;
 }
+
+/** Niveau le plus fin publié sur R2 à l'endroit de `t` : `maxLevel` dans la bande tropicale, `maxLevelOutside` ailleurs. */
+function r2Cap(t: TileId, src: ForestSource): number {
+  // La bande est alignée sur la grille de `maxLevelOutside` : le centre de la tuile suffit à la situer.
+  const b = tileBounds(t);
+  const lon = (b.lonMin + b.lonMax) / 2;
+  const lat = (b.latMin + b.latMax) / 2;
+  const r = src.manifest.tropics;
+  const tropical = lon > r.lonMin && lon < r.lonMax && lat > r.latMin && lat < r.latMax;
+  return Math.min(tropical ? src.manifest.maxLevel : src.manifest.maxLevelOutside, src.index.maxLevel);
+}
+
+const ancestorAt = (t: TileId, z: number): TileId => {
+  const k = t.z - z;
+  return k > 0 ? { z, x: t.x >> k, y: t.y >> k } : t;
+};
 
 /**
  * Tuile forêt à lire pour la tuile `t` du globe (Review Focus 3) : `t` bornée au niveau le plus fin
  * publié à cet endroit — `maxLevel` dans la bande tropicale, `maxLevelOutside` ailleurs (repli
  * stockage) —, ou `null` si l'index dit qu'elle est vide (pas de forêt : rien à dessiner, rien à
  * demander). Jamais une tuile absente de l'index : aucune requête 404 hors tropiques.
+ *
+ * Au-delà de ce plafond R2, avec des niveaux profonds (lot R5c) : la tuile de niveau
+ * `min(t.z, deepMaxLevel)` dans son archive. Présente → elle ; absente → `null` même si l'ancêtre R2
+ * existe (bord de forêt : pas de forêt étirée, Review Focus 5) ; répertoire pas encore chargé ou en
+ * échec → règle R2 (l'ancêtre R2 s'affiche sans trou, Review Focus 1 et 2). Les trois cas
+ * concluent dès le premier niveau essayé, donc un seul niveau est essayé (jamais un repli sur un
+ * niveau profond intermédiaire) : deux niveaux d'une même zone peuvent relever de cellules
+ * différentes (une tuile z8 peut chevaucher une frontière de cellule), donc d'états différents.
  */
-export function forestTileFor(t: TileId, manifest: ForestManifest, index: TileIndex): TileId | null {
-  // La bande est alignée sur la grille de `maxLevelOutside` : le centre de la tuile suffit à la situer.
-  const b = tileBounds(t);
-  const lon = (b.lonMin + b.lonMax) / 2;
-  const lat = (b.latMin + b.latMax) / 2;
-  const r = manifest.tropics;
-  const tropical = lon > r.lonMin && lon < r.lonMax && lat > r.latMin && lat < r.latMax;
-  const cap = Math.min(tropical ? manifest.maxLevel : manifest.maxLevelOutside, index.maxLevel);
-  const k = t.z - cap;
-  const q = k > 0 ? { z: cap, x: t.x >> k, y: t.y >> k } : t;
-  return index.has(q.z, q.x, q.y) ? q : null;
+export function forestTileFor(t: TileId, src: ForestSource): TileId | null {
+  const cap = r2Cap(t, src);
+  const z = Math.min(t.z, src.deepMaxLevel);
+  if (src.deep && z > cap) {
+    const q = ancestorAt(t, z);
+    const found = src.deep.lookup(q);
+    if (found.state === "present") return q;
+    if (found.state === "absent") return null;
+  }
+  const q = ancestorAt(t, cap);
+  return src.index.has(q.z, q.x, q.y) ? q : null;
 }
 
-/** Adresse d'une tuile forêt (mêmes chemins que `tile_path` du tiler) : loader et lecteur du tooltip. */
-export function forestTileUrl(src: ForestSource, t: TileId): string {
-  return `${src.baseUrl}/forest/${t.z}/${t.x}/${t.y}.${src.manifest.ext}`;
+/**
+ * Requête d'une tuile forêt rendue par `forestTileFor` (loader et lecteur du tooltip) : chemin R2
+ * (`tile_path` du tiler) et plage nulle, ou archive profonde et plage du PNG.
+ */
+export function forestTileRequest(src: ForestSource, t: TileId): { url: string; range: ByteRange | null } {
+  if (src.deep && t.z > r2Cap(t, src)) {
+    const found = src.deep.lookup(t);
+    // Un répertoire chargé n'est jamais oublié : une tuile choisie par `forestTileFor` y reste.
+    if (found.state !== "present") throw new Error(`deep forest tile ${tileKey(t)} is not in its archive`);
+    return { url: found.url, range: found.range };
+  }
+  return { url: `${src.baseUrl}/forest/${t.z}/${t.x}/${t.y}.${src.manifest.ext}`, range: null };
 }
 
 export interface TileLoaderDeps {
-  fetchBitmap(url: string, signal: AbortSignal): Promise<ImageBitmap>;
+  /** `range` non nul : tuile profonde lue dans son archive (requête Range, réponse 206). */
+  fetchBitmap(url: string, signal: AbortSignal, range?: ByteRange | null): Promise<ImageBitmap>;
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
 }
 
 export const browserTileDeps: TileLoaderDeps = {
-  async fetchBitmap(url, signal) {
-    const r = await fetch(url, { signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  async fetchBitmap(url, signal, range) {
+    const r = await fetch(url, range ? { signal, headers: { Range: rangeHeader(range) } } : { signal });
+    if (range ? r.status !== 206 : !r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
     const blob = await r.blob();
     return createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });
   },
@@ -158,7 +197,7 @@ export class TileLoader {
   /** Tuile forêt à lire pour `t` (voir `forestTileFor`) ; `null` sans jeu `forest` configuré. */
   forestTile(t: TileId): TileId | null {
     const f = this.opts.forest;
-    return f ? forestTileFor(t, f.manifest, f.index) : null;
+    return f ? forestTileFor(t, f) : null;
   }
 
   /**
@@ -249,18 +288,27 @@ export class TileLoader {
     }
   }
 
-  private url(job: Job): string {
-    if (job.set === "forest") return forestTileUrl(this.opts.forest!, job.tile);
+  private request(job: Job): { url: string; range: ByteRange | null } {
+    if (job.set === "forest") return forestTileRequest(this.opts.forest!, job.tile);
     const { z, x, y } = job.tile;
     const ext = this.opts.manifest[job.set].ext;
-    return `${this.opts.baseUrl}/${job.set}/${z}/${x}/${y}.${ext}`;
+    return { url: `${this.opts.baseUrl}/${job.set}/${z}/${x}/${y}.${ext}`, range: null };
   }
 
   private start(job: Job): void {
+    // Requête calculée avant tout état : si elle lève, le job échoue sans fuite de concurrence.
+    let req: { url: string; range: ByteRange | null };
+    try {
+      req = this.request(job);
+    } catch {
+      this.fail(job);
+      return;
+    }
     job.state = "loading";
     job.controller = new AbortController();
     this.inflight++;
-    this.deps.fetchBitmap(this.url(job), job.controller.signal).then(
+    const { url, range } = req;
+    this.deps.fetchBitmap(url, job.controller.signal, range).then(
       (bitmap) => {
         if (this.jobs.get(job.key) !== job) {
           if (typeof bitmap.close === "function") bitmap.close();
@@ -274,24 +322,29 @@ export class TileLoader {
       () => {
         if (this.jobs.get(job.key) !== job) return;
         this.inflight--;
-        job.attempts++;
-        job.controller = null;
-        const delay = this.delays[job.attempts - 1];
-        if (delay === undefined) {
-          job.state = "failed";
-        } else {
-          job.state = "waiting";
-          job.timer = this.deps.setTimeout(() => {
-            job.timer = null;
-            if (this.jobs.get(job.key) === job) {
-              job.state = "queued";
-              this.pump();
-            }
-          }, delay);
-        }
+        this.fail(job);
         this.pump();
       },
     );
+  }
+
+  /** Échec d'un job (chargement ou calcul de requête) : nouvel essai différé, ou abandon. */
+  private fail(job: Job): void {
+    job.attempts++;
+    job.controller = null;
+    const delay = this.delays[job.attempts - 1];
+    if (delay === undefined) {
+      job.state = "failed";
+    } else {
+      job.state = "waiting";
+      job.timer = this.deps.setTimeout(() => {
+        job.timer = null;
+        if (this.jobs.get(job.key) === job) {
+          job.state = "queued";
+          this.pump();
+        }
+      }, delay);
+    }
   }
 
   private store(job: Job, bitmap: ImageBitmap): void {

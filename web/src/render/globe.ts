@@ -14,6 +14,9 @@ export const TIER_PROFILE: Record<Tier, { maxLevel: number; segments: number; bu
   low: { maxLevel: 7, segments: 16, budgetBytes: 96 * 1024 * 1024, concurrency: 4, k: 1.5 },
 };
 
+/** Niveau forêt le plus fin lu par tier (lot R5c) : 9 (archives profondes) en `high`, 8 en `low`. */
+export const FOREST_TIER_LEVEL: Record<Tier, number> = { high: 9, low: 8 };
+
 export interface TiledGlobe {
   group: THREE.Group;
   /**
@@ -27,6 +30,9 @@ export interface TiledGlobe {
   /** Blue Marble 4K locale, équirectangulaire, utilisée quand aucune tuile `sat` n'est disponible (repli). */
   setFallbackSat(texture: THREE.Texture | null): void;
   setMaxLevel(level: number): void;
+  /** Niveau le plus fin sous Forest (lot R5c, `ForestSource.deepMaxLevel`) : la sélection descend jusqu'à
+   * `max(levelCap, level)` quand Forest est allumée ; `sat`/`map` se lisent alors sur l'ancêtre. */
+  setForestMaxLevel(level: number): void;
   /**
    * Couche Forest (spec forêt §7) : allumée, le jeu `forest` est chargé et composé par-dessus le fond
    * à la place de la couche météo (laissée telle quelle, elle revient à l'extinction).
@@ -68,6 +74,7 @@ function equirectRect(t: TileId): THREE.Vector4 {
 export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: number): TiledGlobe {
   const profile = TIER_PROFILE[tier];
   let levelCap = maxLevel;
+  let forestLevelCap = 0;
   let fallbackSat: THREE.Texture | null = null;
   let forestOn = false;
 
@@ -185,6 +192,9 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
     setMaxLevel(level) {
       levelCap = level;
     },
+    setForestMaxLevel(level) {
+      forestLevelCap = level;
+    },
     setForest(on) {
       forestOn = on;
       uniforms.uForestOn.value = on ? 1 : 0;
@@ -198,7 +208,7 @@ export function createTiledGlobe(tier: Tier, loader: TileLoader, maxLevel: numbe
       uniforms.uForestSize.value = tileSize;
     },
     update(view) {
-      const leaves = selectTiles(view, { maxLevel: levelCap, k: profile.k });
+      const leaves = selectTiles(view, { maxLevel: forestOn ? Math.max(levelCap, forestLevelCap) : levelCap, k: profile.k });
       loader.update(leaves, view.cameraPosition);
       uniforms.uMapStyle.value = mapStyleFor(view.cameraPosition.length());
       const keep = new Set<string>();

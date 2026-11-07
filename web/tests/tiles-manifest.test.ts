@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ManifestError, parseForestManifest, parseManifest } from "../src/tiles/manifest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const SAMPLE = {
   schema_version: 1,
@@ -49,6 +51,11 @@ const FOREST = {
   lossyear_fallback: { "v1.11": ["00N_070E", "10S_180W"] },
 };
 
+/** Manifeste forêt publié sur R2 (copie de tests/tiler/fixtures/r2-forest-manifest.json). */
+const R2_FOREST: unknown = JSON.parse(readFileSync(join(__dirname, "fixtures", "r2-forest-manifest.json"), "utf8"));
+
+const DEEP = { base_url: "https://huggingface.co/datasets/o/r/resolve/0123abc/v1.12", max_level: 9, catalog: "catalog.json", format: "wtpk1" };
+
 describe("parseForestManifest", () => {
   it("accepte le manifeste écrit par le tiler", () => {
     expect(parseForestManifest(FOREST)).toEqual({
@@ -68,8 +75,31 @@ describe("parseForestManifest", () => {
       license: "CC BY 4.0",
       generatedAt: "2026-10-31T20:00:00Z",
       lossyearFallback: { "v1.11": ["00N_070E", "10S_180W"] },
+      deep: null,
     });
     expect(parseForestManifest({ ...FOREST, lossyear_fallback: {} }).lossyearFallback).toEqual({});
+  });
+
+  it("manifeste R2 publié (sans `deep`) → deep nul", () => {
+    expect(parseForestManifest(R2_FOREST).deep).toBeNull();
+  });
+
+  it("champ `deep` valide → champs (lot R5c)", () => {
+    expect(parseForestManifest({ ...FOREST, deep: DEEP }).deep).toEqual({
+      baseUrl: "https://huggingface.co/datasets/o/r/resolve/0123abc/v1.12", maxLevel: 9, catalog: "catalog.json", format: "wtpk1",
+    });
+  });
+
+  it("champ `deep` incohérent → ManifestError", () => {
+    const bad: Record<string, unknown>[] = [
+      { ...DEEP, max_level: 8 }, // ≤ max_level R2
+      { ...DEEP, max_level: 7 },
+      { ...DEEP, format: "wtpk2" },
+      { ...DEEP, base_url: "" },
+      { ...DEEP, catalog: undefined },
+    ];
+    for (const d of bad) expect(() => parseForestManifest({ ...FOREST, deep: d }), JSON.stringify(d)).toThrow(ManifestError);
+    expect(() => parseForestManifest({ ...FOREST, deep: "x" })).toThrow(ManifestError);
   });
 
   it("rejette un manifeste incohérent", () => {

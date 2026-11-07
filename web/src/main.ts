@@ -20,18 +20,19 @@ import {
 import { pagePath, type PageDef, type PageView } from "./pages/registry";
 import { bootAwaitsForest, pageAfterLayerChange, pageAfterModeChange, pageDefaultsSearch, pageForPath, searchForPageChange, searchForPageState, searchWithShownView } from "./pages/route";
 import { buildForestLut, buildLut, createLutTexture } from "./render/colormap";
-import { FLY_DISTANCE, Flight } from "./render/fly";
+import { FLY_DISTANCE, Flight, climbTarget } from "./render/fly";
 import { FrameTextures } from "./render/frame-textures";
-import { TIER_PROFILE, createTiledGlobe } from "./render/globe";
+import { FOREST_TIER_LEVEL, TIER_PROFILE, createTiledGlobe } from "./render/globe";
 import { createHaloLayer } from "./render/halo";
 import { ndcFromCanvas, pickSphere, vec3ToLonLat } from "./render/pick";
-import { createScene } from "./render/scene";
+import { FOREST_MIN_DISTANCE, MIN_DISTANCE, createScene, initialMinDistance } from "./render/scene";
 import { globeShiftPx } from "./render/view-shift";
 import { createStarsLayer } from "./render/stars";
 import { createWindLayer } from "./render/wind";
 import { CitySearch } from "./search/index";
 import { createSearchUi } from "./search/ui";
 import { TileIndex } from "./tiles/index";
+import { DeepCatalog, browserFetchJson, browserFetchRange } from "./tiles/deep";
 import { type ForestSource, TileLoader } from "./tiles/loader";
 import { type TilesManifest, parseForestManifest, parseManifest } from "./tiles/manifest";
 import { browserDecodeTile, createTileReader } from "./tiles/reader";
@@ -65,8 +66,8 @@ async function fetchTiles(): Promise<{ manifest: TilesManifest; index: TileIndex
   return { manifest, index: TileIndex.parse(await i.arrayBuffer()) };
 }
 
-/** Jeu `forest` (spec forêt §6), indépendant de `layers/forecast.json`. */
-async function fetchForest(): Promise<ForestSource> {
+/** Jeu `forest` (spec forêt §6), indépendant de `layers/forecast.json` ; niveaux profonds posés par l'appelant. */
+async function fetchForest(): Promise<Omit<ForestSource, "deep" | "deepMaxLevel">> {
   const m = await fetch(`${FOREST_TILES_BASE_URL}/manifest.json`, { cache: "no-cache", signal: AbortSignal.timeout(10_000) });
   if (!m.ok) throw new Error(`HTTP ${m.status} for forest manifest.json`);
   const manifest = parseForestManifest(await m.json());
@@ -139,8 +140,17 @@ async function boot(): Promise<void> {
   const lon = Number(params.get("lon"));
   const lat = Number(params.get("lat"));
   const d = Number(params.get("d"));
+  // Limite basse selon la couche demandée au démarrage (`?layer=` complété par la page, même source
+  // que le choix de la couche) : une vue partagée sous Forest (d = 1,0105) est posée telle quelle.
+  const bootMinDistance = initialMinDistance(params.get("layer"));
+  /** Vrai tant que la limite basse Forest est en place (lot R5c) : la quitter remonte la caméra. */
+  let deepCamera = bootMinDistance !== MIN_DISTANCE;
+  /** Vrai pendant le vol de remontée : rallumer Forest l'interrompt. */
+  let climbing = false;
   if (Number.isFinite(lon) && Number.isFinite(lat) && params.has("lon") && params.has("lat")) {
-    sceneHandle.setInitialView(lon, lat, Number.isFinite(d) && params.has("d") ? d : 1.3);
+    sceneHandle.setInitialView(lon, lat, Number.isFinite(d) && params.has("d") ? d : 1.3, bootMinDistance);
+  } else {
+    sceneHandle.setMinDistance(bootMinDistance);
   }
 
   const loader = new TileLoader({
@@ -258,15 +268,38 @@ async function boot(): Promise<void> {
   /** Lecture du texel sous le curseur pour le tooltip Forest (tuile la plus fine présente à l'index). */
   const forestReader = createTileReader({ source: () => forestSrc, decode: browserDecodeTile });
   const tileLayers = (): string[] => (forestReady ? ["forest"] : []);
+  /** Faux seulement si la source est chargée sans `deep` : inconnu (pas encore chargée) → profond. */
+  const forestHasDeep = (): boolean => forestSrc === null || forestSrc.deep !== null;
+  /** Quitte la caméra profonde : remontée à MIN_DISTANCE, limite normale posée après le vol (pas de saut). */
+  const leaveDeepCamera = (): void => {
+    if (!deepCamera) return;
+    deepCamera = false;
+    const apply = (): void => {
+      climbing = false;
+      if (!deepCamera) sceneHandle.setMinDistance(MIN_DISTANCE);
+    };
+    const c = climbTarget(sceneHandle.camera.position, MIN_DISTANCE);
+    if (c) {
+      climbing = true;
+      flight.start(c.lon, c.lat, c.d, apply, apply);
+    } else apply();
+  };
   /** Charge le jeu `forest` ; vrai s'il vient d'arriver (le menu est alors à refaire). */
   const loadForest = async (): Promise<boolean> => {
     try {
-      const src = await fetchForest();
+      const base = await fetchForest();
+      const info = base.manifest.deep;
+      // Niveaux profonds (lot R5c) : une cellule chargée relance le rendu, donc `loader.update`.
+      const deep = info ? new DeepCatalog(info, { fetchJson: browserFetchJson, fetchRange: browserFetchRange, onChange: () => sceneHandle.requestRender() }) : null;
+      const deepMaxLevel = info ? Math.min(info.maxLevel, FOREST_TIER_LEVEL[decision.tier]) : base.manifest.maxLevel;
+      const src: ForestSource = { ...base, deep, deepMaxLevel };
       loader.configureForest(src);
       forestSrc = src;
+      // Forest déjà active (vue de démarrage ?layer=forest) mais sans niveaux profonds : remontée.
+      if (!deep) leaveDeepCamera();
       globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
       forestReady = true;
-      console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere`);
+      console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere${deep ? `, deep ≤ ${deepMaxLevel}` : ""}`);
       return true;
     } catch (e) {
       console.warn("[worldtemp] forest tiles unavailable:", e);
@@ -796,6 +829,19 @@ async function boot(): Promise<void> {
     // Couche tuiles (Forest) : composée par le globe à la place de la couche météo, sans échéances —
     // elle suit la branche « Aucune » ci-dessous pour la couche météo, la légende et les valeurs.
     const tiles = def !== undefined && layerKind(def) === "tiles";
+    // Lot R5c : sous Forest, caméra plus basse et tuiles jusqu'au niveau profond (sur-zoom au-delà).
+    // En la quittant (vers toute autre couche ou Aucune), remontée à MIN_DISTANCE : la limite normale
+    // n'est posée qu'après le vol (ou à son annulation) — OrbitControls y ramènerait d'un saut.
+    // Sans niveaux profonds au manifeste (`forestSrc.deep` nul), Forest garde la limite normale.
+    if (tiles && forestHasDeep()) {
+      deepCamera = true;
+      if (climbing) flight.cancel();
+      sceneHandle.setMinDistance(FOREST_MIN_DISTANCE);
+      if (forestSrc) globe.setForestMaxLevel(forestSrc.deepMaxLevel);
+    } else {
+      if (tiles && forestSrc) globe.setForestMaxLevel(forestSrc.deepMaxLevel);
+      leaveDeepCamera();
+    }
     globe.setForest(tiles);
     ui.setForestCredit(tiles);
     tooltip.setForest(tiles ? forestReader : null);

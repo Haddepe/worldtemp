@@ -493,3 +493,44 @@ def test_r7_both_versions_404_over_forest_raises(tmp_path, server):
     with pytest.raises(hansen.HansenReadError, match="v1.11"):
         be.read_block(R6_BOUNDS, 2, 2, 2)
     assert be.fallback == set()
+
+
+def test_read_block_two_blocks_tile_marked_missing_then_fallback(tmp_path, server):
+    """R7 sur deux blocs : 1er bloc sans forêt (dalle marquée absente), 2e sur forêt → repli v1.11."""
+    _Handler.files[f"/{hansen.file_name('treecover2000', R6)}"] = bytes([80]) * 16
+    _Handler.files[f"/v111/{hansen.fallback_file_name('lossyear', R6)}"] = bytes([12]) * 16
+    be = hansen.HansenBackend(tmp_path / "work", base=server + "/", fallback_base=server + "/v111",
+                              available={layer: {R6} for layer in hansen.LAYERS}, sleep=_no_sleep([]))
+    forest_on = {"v": False}
+
+    def warp(sources, bounds, w, h, layer):
+        if layer == "treecover2000":
+            return np.full((h, w), 80 if forest_on["v"] else 0, np.uint8)
+        return np.full((h, w), sources[0].read_bytes()[0], np.uint8)
+
+    be._warp = warp
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)  # bloc 1 : pas de forêt, lossyear 404 → zéros
+    assert not cover.any() and not loss.any()
+    assert ("lossyear", R6) in be.missing and be.fallback == set()
+    forest_on["v"] = True
+    cover, loss = be.read_block(R6_BOUNDS, 2, 2, 2)  # bloc 2 : forêt → repli, sans nouveau 404
+    assert (cover == 80).all() and (loss == 12).all()
+    assert be.fallback == {R6}
+    assert _Handler.hits[f"/{hansen.file_name('lossyear', R6)}"] == 1
+    # Même résultat qu'un repli direct (backend neuf, forêt dès le 1er bloc).
+    direct = _r7_backend(tmp_path / "d", server, cover=80, fallback_loss=12)
+    d_cover, d_loss = direct.read_block(R6_BOUNDS, 2, 2, 2)
+    assert np.array_equal(cover, d_cover) and np.array_equal(loss, d_loss)
+
+
+def test_unicode_error_becomes_hansen_read_error(tmp_path):
+    (tmp_path / "treecover2000.txt").write_bytes(b"\xff\xfe\x80")
+    (tmp_path / "lossyear.txt").write_bytes(b"\xff\xfe\x80")
+    with pytest.raises(hansen.HansenReadError, match="UTF-8"):
+        hansen.HansenBackend(tmp_path / "work", base=str(tmp_path))
+
+
+def test_official_list_not_utf8_over_http_is_hansen_read_error(tmp_path, server):
+    _Handler.files["/treecover2000.txt"] = b"\xff\xfe\x80"
+    with pytest.raises(hansen.HansenReadError, match="UTF-8"):
+        hansen.HansenBackend(tmp_path / "work", base=server, sleep=_no_sleep([]))
