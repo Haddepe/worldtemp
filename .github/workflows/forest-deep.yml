@@ -52,6 +52,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Entrées cohérentes
+        env:
+          VERSION: ${{ inputs.version }}
+          UPLOAD_HF: ${{ inputs.upload_hf }}
+          PATCH_MANIFEST: ${{ inputs.patch_manifest }}
+        run: |
+          # L'objet R2 réécrit est tiles/forest/$VERSION/manifest.json : une autre version viserait un autre manifeste.
+          [ "$VERSION" = v1.12 ] || { echo "::error::version '$VERSION' refusée (seule v1.12 est autorisée)"; exit 1; }
+          # patch_manifest dépend du catalogue, produit seulement avec upload_hf : sinon le job manifest serait sauté sans bruit.
+          if [ "$PATCH_MANIFEST" = true ] && [ "$UPLOAD_HF" != true ]; then
+            echo "::error::patch_manifest exige upload_hf"; exit 1
+          fi
       - name: Aucune écriture R2 hors manifeste
         env:
           WF: .github/workflows/forest-deep.yml
@@ -111,9 +123,10 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           if [ -n "$SAMPLE" ]; then
-            # Grille du niveau 9 : 32 blocs par rangée de boîte (8 tuiles de côté) contre 22 (niveau 8)
-            # et 16 (niveau 7). K doit être premier avec les trois, sinon l'échantillon retombe toujours
-            # sur les mêmes colonnes : impair et non multiple de 11 (7 et 13 conviennent).
+            # Grille : 32 blocs par rangée de boîte au niveau 9 (blocs de 8 tuiles) et 22 au niveau 8
+            # (blocs de 6) ; seuls ces deux niveaux sont générés. K doit être premier avec les deux, sinon
+            # l'échantillon retombe toujours sur les mêmes colonnes : impair et non multiple de 11
+            # (7 et 13 conviennent).
             [[ "$SAMPLE" =~ ^[0-9]+$ ]] && [ "$SAMPLE" -ge 2 ] || { echo "::error::sample doit être un entier ≥ 2"; exit 1; }
             [ $((SAMPLE % 2)) -eq 1 ] && [ $((SAMPLE % 11)) -ne 0 ] || { echo "::error::sample doit être impair et non multiple de 11 (grille du niveau 9 : 32 blocs par rangée), ex. 7 ou 13"; exit 1; }
             SAMPLE_ARG="--sample $SAMPLE"
@@ -189,6 +202,12 @@ jobs:
           import os, pathlib, random, time
           from huggingface_hub import HfApi
 
+          def transport_error(e):
+              # huggingface_hub 2.x repose sur httpx2 (dépendance épinglée) : ses erreurs de transport
+              # n'héritent pas d'OSError. Test par nom de classe, indépendant du nom du paquet HTTP.
+              names = {"TransportError", "TimeoutException", "NetworkError"}
+              return isinstance(e, (ConnectionError, TimeoutError, OSError)) or any(c.__name__ in names for c in type(e).__mro__)
+
           version, box = os.environ["VERSION"], os.environ["BOX"]
           folder = pathlib.Path("deep") / version
           if not list(folder.glob("*.wtpk")):
@@ -206,7 +225,7 @@ jobs:
               except Exception as e:
                   status = getattr(getattr(e, "response", None), "status_code", None)
                   retry = status in (409, 412, 429) or (status is not None and status >= 500) \
-                      or (status is None and isinstance(e, (ConnectionError, TimeoutError, OSError)))
+                      or (status is None and transport_error(e))
                   if not retry or attempt == 5:
                       raise
                   wait = 30 * 2 ** (attempt - 1) + random.uniform(0, 15)
@@ -266,6 +285,12 @@ jobs:
           import json, os, random, time
           from huggingface_hub import HfApi
 
+          def transport_error(e):
+              # huggingface_hub 2.x repose sur httpx2 (dépendance épinglée) : ses erreurs de transport
+              # n'héritent pas d'OSError. Test par nom de classe, indépendant du nom du paquet HTTP.
+              names = {"TransportError", "TimeoutException", "NetworkError"}
+              return isinstance(e, (ConnectionError, TimeoutError, OSError)) or any(c.__name__ in names for c in type(e).__mro__)
+
           version, repo = os.environ["VERSION"], os.environ["HF_REPO"]
           api = HfApi(token=os.environ["HF_TOKEN"])
 
@@ -276,7 +301,7 @@ jobs:
                   except Exception as e:
                       status = getattr(getattr(e, "response", None), "status_code", None)
                       retry = status in (409, 412, 429) or (status is not None and status >= 500) \
-                          or (status is None and isinstance(e, (ConnectionError, TimeoutError, OSError)))
+                          or (status is None and transport_error(e))
                       if not retry or attempt == 5:
                           raise
                       wait = 30 * 2 ** (attempt - 1) + random.uniform(0, 15)
