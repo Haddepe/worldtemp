@@ -219,4 +219,20 @@ describe("attachZoom — setRange (lot R5c, Forest plus bas)", () => {
   it("setRange(0.0105, 3) : descend jusqu'à 0,0105, pas plus bas", () => {
     expect(zoomToBottom([0.0105, 3])).toBeCloseTo(0.0105, 6);
   });
+  it("setRange pendant un geste de molette : la cible est ré-bornée, le geste converge (fix round 1)", () => {
+    const camera = new THREE.PerspectiveCamera(45, 800 / 600, 0.001, 10);
+    camera.position.set(0, 0, 1.03);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const { canvas, wheel } = fakeCanvas();
+    const zoom = attachZoom(canvas, camera, { requestRender: () => {}, aMin: 0.0105, aMax: A_MAX });
+    wheel(-300); // cible calculée avec aMin = 0,0105
+    zoom.setRange(0.042, 3); // remontée : limite normale posée pendant le geste
+    let moved = true;
+    for (let j = 0; j < 500 && moved; j++) moved = zoom.beforeUpdate();
+    expect(moved).toBe(false);
+    expect(camera.position.length() - 1).toBeCloseTo(0.042, 6);
+    zoom.dispose();
+  });
 });
+

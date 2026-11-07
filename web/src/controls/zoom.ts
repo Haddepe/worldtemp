@@ -269,6 +269,9 @@ export function attachZoom(canvas: HTMLCanvasElement, camera: THREE.PerspectiveC
     setRange(aMin, aMax) {
       opts.aMin = aMin;
       opts.aMax = aMax;
+      // Cible d'un geste en cours ré-bornée : sinon, calculée avec l'ancienne borne (molette pendant la
+      // remontée de Forest), elle resterait hors de portée d'OrbitControls et le geste ne convergerait jamais.
+      if (wheelActive) aTarget = clamp(aTarget, aMin, aMax);
     },
     dispose() {
       if (pinchBase) opts.onPinch?.(false); // ne pas laisser enableRotate coincé à false

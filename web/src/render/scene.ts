@@ -37,6 +37,14 @@ export const MAX_DISTANCE = 4;
 /** Sous Forest (lot R5c) : altitude minimale divisée par 4 (≈ 1,0105), sur-zoom au-delà du niveau 9. */
 export const FOREST_MIN_DISTANCE = 1 + (MIN_DISTANCE - 1) / 4;
 
+/**
+ * Vitesse de rotation d'OrbitControls à la distance `d` : 0,25·(d−1), plafonnée à 0,5 et planchée à
+ * l'altitude minimale Forest, pour garder la même vitesse à l'écran jusqu'en bas de Forest (lot R5c).
+ */
+export function rotateSpeedFor(d: number): number {
+  return Math.min(0.5, Math.max(0.25 * (FOREST_MIN_DISTANCE - 1), 0.25 * (d - 1)));
+}
+
 /** Limite basse à poser au démarrage selon la couche initiale (`?layer=` complété par la page). */
 export function initialMinDistance(layerId: string | null): number {
   return layerId === "forest" ? FOREST_MIN_DISTANCE : MIN_DISTANCE;
@@ -91,7 +99,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     camera.near = Math.max(0.002, (d - 1) * 0.3);
     camera.far = d + 2;
     camera.updateProjectionMatrix();
-    controls.rotateSpeed = Math.min(0.5, Math.max(0.01, 0.25 * (d - 1)));
+    controls.rotateSpeed = rotateSpeedFor(d);
   };
 
   let shift = 0;
