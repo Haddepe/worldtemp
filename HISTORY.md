@@ -830,6 +830,13 @@ Lot G : n° 69 ; lot R5a (2026-10-31) : n° 70, 71 ; lot R5b (2026-11-01) : n° 
 
 ## 9. État actuel & prochaine action
 
+### 2026-11-07 — Bilan des moteurs : Google indexe tout, Bing avance lentement
+
+- **Google Search Console** (connecteur) : sitemap valide, **25/25 URLs indexées** (17 du lot G + 4 neige + 4 forêt) ; les 4 pages forêt sont « Submitted and indexed », explorées le 2026-11-03. Sur 28 jours : 252 impressions, 12 clics, position moyenne ≈ 56 ; **10 à 33 impressions par jour depuis le 25 octobre**, sans hausse nette en novembre (≈ 16/jour). Sur 14 jours, les pages les plus vues sont `/temperature-map/` (112 impressions, 3 clics, position ≈ 65), `/wind-map/` (26), `/arctic-temperature-map/` (19) et `/humidity-map/` (18, position ≈ 31, la meilleure) ; pages forêt : 1 impression. Les requêtes sont génériques (« global temperature map », « live global wind map ») et classées entre la 50ᵉ et la 100ᵉ place. Le critère du lot G est atteint (URLs indexées, impressions non nulles), mais le trafic reste marginal.
+- **Bing Webmaster** (connecteur, reconnecté par `/mcp` après un délai de connexion dépassé) : index passé de **2 à 5 URLs le 2026-10-31**. `/antarctica-temperature-map/` a été explorée le 2026-10-29 ; `/temperature-map/`, `/wind-map/`, `/rain-map/`, `/snow-map/` et `/deforestation-map/` n'ont jamais été explorées. Les 156 à 236 pages explorées par jour mi-octobre sont des données, pas des pages. L'accueil progresse : 323 impressions et 21 clics sur la dernière semaine mesurée, position ≈ 6. **23 URLs renvoyées** par `submit_url_batch` (toutes sauf l'accueil ; quota de 100 par jour).
+- **Aucun code modifié** ; tests non relancés (rien à tester).
+- **Prochaine action :** vers le 2026-11-21, vérifier dans Bing l'exploration des pages renvoyées, puis comparer les impressions Google sur 4 semaines. Ensuite, chantier au choix : zoom forêt plus profond (R5), P2 (rotation automatique) ou lot de dettes (n° 74, 65, 72).
+
 ### 2026-11-01 — Lot R5b forêt livré : couvert et pertes Hansen en tuiles, 4 pages (merge `47af1b3`)
 
 - **Livré sur `feat/forest`** (plan `2026-10-31-forest.md`, 9 tâches subagent-driven) : couche **Forest** du menu — couvert 2000 ≥ 30 % en vert d'intensité, pertes 2001–2024 jaune → rouge selon l'année, opacité = part de forêt perdue ; tuiles jusqu'au niveau 8 (≈ 150 m) sous ±30°, 7 ailleurs ; frise masquée sous Forest ; tooltip couvert + année ; légende double ; crédit Hansen CC BY 4.0 ; capture 📷 ; 4 pages `/deforestation-map/`, `/amazon-deforestation-map/`, `/borneo-deforestation-map/`, `/congo-basin-deforestation-map/` avec images OG (textes validés par l'utilisateur).
@@ -1984,7 +1991,8 @@ git rapporte le fichier entier comme modifié.
 
 ---
 
-**Dernière mise à jour :** 2026-11-01 (**lot R5b forêt mergé `47af1b3`** — couche Forest Hansen v1.12 en tuiles, 4 pages, déployée)
+**Dernière mise à jour :** 2026-11-07 (**bilan des moteurs** — Google 25/25 URLs indexées, ≈ 16 impressions/jour ; Bing 5 URLs indexées, 23 URLs renvoyées)
+**Entrée précédente :** 2026-11-01 (**lot R5b forêt mergé `47af1b3`** — couche Forest Hansen v1.12 en tuiles, 4 pages, déployée)
 **Entrée précédente :** 2026-11-01 (**lot R5b forêt prêt à merger sur `feat/forest`** — couvert 2000 ≥ 30 % + pertes 2001–2024 Hansen v1.12 en tuiles (21 086, 3,795 Go), 4 pages ; 881 vitest + 392 pytest, bundle 195,28 Ko gzip ; merge en attente de l'accord utilisateur)
 **Entrée précédente :** 2026-10-31 (**lot R5b forêt : spec, plan, workflow de génération sur `master`** — exécution en cours sur `feat/forest`)
 **Entrée précédente :** 2026-10-31 (**lot R5a neige mergé `72ad975`** — Snowfall cumulé 10:1 + Depth, source `gfs_snow` isolée, 4 pages ; 811 vitest + 318 pytest, bundle 189,03 Ko gzip)
