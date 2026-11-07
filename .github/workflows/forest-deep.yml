@@ -1,0 +1,345 @@
+name: forest-deep
+
+# Lot R5c : tuiles forêt profondes (niveau 9 partout, niveau 8 hors bande tropicale), emballées en archives
+# WTPK de 10° et envoyées sur Hugging Face (dépôt dataset public, CC BY 4.0, données Hansen). R2 n'est jamais
+# alimenté en tuiles : seul le manifeste existant est complété (bloc `deep`), à son emplacement actuel.
+# Lancement manuel uniquement ; upload_hf et patch_manifest sont faux par défaut.
+# Mode estimation (sample=K, K impair et non multiple de 11, ex. 7 ou 13) : chaque boîte écrit sample-sizes.json,
+# aucun archivage, et RIEN n'est jamais envoyé nulle part.
+# Toutes les entrées et tous les secrets passent par env: (jamais interpolés dans un run:).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dossier de version : tiles/forest/<version>/manifest.json sur R2 et <version>/ sur Hugging Face"
+        type: string
+        default: "v1.12"
+      boxes:
+        description: "Boîtes à générer (JSON, 0..7)"
+        type: string
+        default: "[0,1,2,3,4,5,6,7]"
+      sample:
+        description: "Estimation : lire 1 bloc sur K (7 ou 13) ; vide = génération complète"
+        type: string
+        default: ""
+      upload_hf:
+        description: "Envoyer sur Hugging Face (seulement génération complète des 8 boîtes)"
+        type: boolean
+        default: false
+      patch_manifest:
+        description: "Ajouter le bloc deep au manifeste R2 (après un envoi complet : nécessite upload_hf)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forest-deep
+  cancel-in-progress: false
+
+env:
+  TROPICS: "-180,180,-30,30"
+  # Un run partiel (boxes != les 8) ou un échantillon n'envoie jamais rien.
+  FULL_SET: ${{ inputs.boxes == '[0,1,2,3,4,5,6,7]' && inputs.sample == '' }}
+
+jobs:
+  # Garde « rien vers R2 sauf le manifeste » : le fichier lui-même est inspecté, à chaque exécution,
+  # avant tout envoi (les autres jobs en dépendent).
+  garde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aucune écriture R2 hors manifeste
+        env:
+          WF: .github/workflows/forest-deep.yml
+        run: |
+          # Les motifs sont assemblés par morceaux pour ne pas se reconnaître eux-mêmes dans le fichier.
+          verbs='copy|copyto|sync|move|moveto|delete|deletefile|purge|rcat|mkdir|touch|cleanup|bisync|serve|mount'
+          rc="rclone[[:space:]]+($verbs)"
+          code=$(grep -vE '^[[:space:]]*#' "$WF")
+          echo "$code" | grep -E "$rc" || true
+          # 1. Commandes rclone (lecture ou écriture) : exactement deux, celles du manifeste.
+          n=$(echo "$code" | grep -cE "$rc" || true)
+          [ "$n" = 2 ] || { echo "::error::$n commandes rclone (2 attendues : lecture et écriture du manifeste)"; exit 1; }
+          # 2. La seule qui n'a pas R2 pour source écrit le manifeste, à l'emplacement du manifeste.
+          w=$(echo "$code" | grep -E "$rc" | grep -vE "copyto[[:space:]]+\"r2[:]" || true)
+          [ "$(echo "$w" | grep -c .)" = 1 ] || { echo "::error::écriture rclone inattendue"; exit 1; }
+          echo "$w" | grep -qE "copyto[[:space:]]+manifest-out[.]json[[:space:]]+\"r2[:][^\"]*/manifest[.]json\"" \
+            || { echo "::error::l'écriture rclone ne vise pas manifest.json : $w"; exit 1; }
+          # 3. Aucune autre référence au remote r2 que ces deux lignes ; aucune ligne qui lie out/forest à R2.
+          m=$(echo "$code" | grep -cE "r2[:]" || true)
+          [ "$m" = 2 ] || { echo "::error::$m références au remote r2 (2 attendues)"; exit 1; }
+          if echo "$code" | grep -E "out/for""est" | grep -qE "r2[:]|rclone"; then
+            echo "::error::out/forest ne doit jamais partir vers R2"; exit 1
+          fi
+          echo "Garde : seule l'écriture du manifeste vers R2 est présente"
+
+  deep:
+    needs: garde
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        box: ${{ fromJSON(inputs.boxes || '[0,1,2,3,4,5,6,7]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Le cache Hansen garde 2 rangées de dalles de la boîte (jusqu'à ≈ 10 Go au pire) : on libère
+      # les SDK inutiles du runner (≈ 25 Go) pour ne pas dépendre des ≈ 14 Go libres par défaut.
+      - name: Place disque
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Outils
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gdal-bin time
+          pip install -r tiler/requirements.txt
+          gdalwarp --version
+          nproc && free -m && df -h .
+      - name: Tuiles forêt niveau 9 et archives, boîte ${{ matrix.box }}
+        env:
+          SAMPLE: ${{ inputs.sample }}
+          BOX: ${{ matrix.box }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$SAMPLE" ]; then
+            # Grille du niveau 9 : 32 blocs par rangée de boîte (8 tuiles de côté) contre 22 (niveau 8)
+            # et 16 (niveau 7). K doit être premier avec les trois, sinon l'échantillon retombe toujours
+            # sur les mêmes colonnes : impair et non multiple de 11 (7 et 13 conviennent).
+            [[ "$SAMPLE" =~ ^[0-9]+$ ]] && [ "$SAMPLE" -ge 2 ] || { echo "::error::sample doit être un entier ≥ 2"; exit 1; }
+            [ $((SAMPLE % 2)) -eq 1 ] && [ $((SAMPLE % 11)) -ne 0 ] || { echo "::error::sample doit être impair et non multiple de 11 (grille du niveau 9 : 32 blocs par rangée), ex. 7 ou 13"; exit 1; }
+            SAMPLE_ARG="--sample $SAMPLE"
+          else
+            SAMPLE_ARG=""
+          fi
+          # Pic de disque échantillonné toutes les 20 s (dalles Hansen + tuiles + archives).
+          # Départ mesuré à part : le disque du runner est déjà occupé (≈ 42 Go) avant le tiler.
+          base=$(df --output=used -B1M . | tail -1 | tr -d ' ')
+          ( peak=0; while true; do u=$(df --output=used -B1M . | tail -1 | tr -d ' '); [ "$u" -gt "$peak" ] && peak=$u && echo "$peak" > disk-peak-mb; sleep 20; done ) &
+          SAMPLER=$!
+          # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
+          set +e  # Actions lance `bash -e` sans pipefail : `tee` masquerait l'échec du tiler, PIPESTATUS[0] le relève
+          /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box "$BOX" --out out --work work \
+            --min-level 1 --max-level 9 --max-level-outside 9 \
+            --tropics=$TROPICS $SAMPLE_ARG 2>&1 | tee log.txt; rc=${PIPESTATUS[0]}
+          set -e
+          [ "$rc" = 0 ] || { cat time.txt; kill $SAMPLER; exit 1; }
+          echo "Disque après génération : pic $(cat disk-peak-mb) Mo"
+          mkdir -p out/forest "deep/$VERSION"
+          if [ -z "$SAMPLE" ]; then
+            # Le cache Hansen ne sert plus : on le libère avant l'emballage (tuiles et archives coexistent).
+            rm -rf work
+            python -u -m tiler.main pack-deep --out-dir out --dest "deep/$VERSION" --catalog-fragment "frag-$BOX.json" 2>&1 | tee -a log.txt
+            ls -la "deep/$VERSION" | head -50
+          fi
+          kill $SAMPLER || true
+          cat time.txt
+          peak=$(cat disk-peak-mb)
+          echo "Disque : départ $base Mo, pic $peak Mo, soit $((peak - base)) Mo pour le cache Hansen, les tuiles et les archives"
+          {
+            echo "### Boîte $BOX"
+            grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/- /'
+            echo "- disque : départ $base Mo, pic $peak Mo, cache + tuiles + archives $((peak - base)) Mo"
+            echo "- tuiles : $(du -sh out/forest | cut -f1)"
+            echo "- archives : $(ls deep/$VERSION/*.wtpk 2>/dev/null | wc -l) fichiers, $(du -sh deep/$VERSION | cut -f1), la plus grosse $(ls -S deep/$VERSION/*.wtpk 2>/dev/null | head -1 | xargs -r du -h | cut -f1) (limite 4 Gio)"
+            grep -h "dalles Hansen\|repli lossyear\|dalles absentes\|total extrapolé\|^boîte\|^pack-deep\|échantillon niveau" log.txt | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Mesures de la boîte (estimation comme génération) ; jamais les archives.
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: mesures-${{ matrix.box }}
+          path: |
+            time.txt
+            disk-peak-mb
+            log.txt
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample != '' }}
+        with:
+          name: sample-${{ matrix.box }}
+          path: out/sample-sizes.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sample == '' }}
+        with:
+          name: fragment-${{ matrix.box }}
+          path: frag-${{ matrix.box }}.json
+          retention-days: 30
+      # Archives d'une boîte : seulement génération complète des 8 boîtes (jamais un échantillon).
+      # Les 8 boîtes commitent en parallèle sur le même dépôt : 409/412 (conflit), 429 et 5xx sont réessayés.
+      - name: Envoi des archives sur Hugging Face
+        if: ${{ inputs.upload_hf && env.FULL_SET == 'true' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO: ${{ vars.HF_REPO }}
+          VERSION: ${{ inputs.version }}
+          BOX: ${{ matrix.box }}
+        run: |
+          python - <<'EOF'
+          import os, pathlib, random, time
+          from huggingface_hub import HfApi
+
+          version, box = os.environ["VERSION"], os.environ["BOX"]
+          folder = pathlib.Path("deep") / version
+          if not list(folder.glob("*.wtpk")):
+              print(f"boîte {box} : aucune archive, rien à envoyer")
+              raise SystemExit(0)
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          for attempt in range(1, 6):
+              try:
+                  info = api.upload_folder(folder_path=str(folder), path_in_repo=version,
+                                           repo_id=os.environ["HF_REPO"], repo_type="dataset",
+                                           allow_patterns="*.wtpk",
+                                           commit_message=f"forêt profonde {version} : boîte {box}")
+                  print(info)
+                  break
+              except Exception as e:
+                  status = getattr(getattr(e, "response", None), "status_code", None)
+                  retry = status in (409, 412, 429) or (status is not None and status >= 500) \
+                      or (status is None and isinstance(e, (ConnectionError, TimeoutError, OSError)))
+                  if not retry or attempt == 5:
+                      raise
+                  wait = 30 * 2 ** (attempt - 1) + random.uniform(0, 15)
+                  print(f"tentative {attempt} échouée (statut {status}) : nouvelle tentative dans {wait:.0f} s")
+                  time.sleep(wait)
+          EOF
+
+  catalog:
+    needs: deep
+    if: ${{ inputs.upload_hf && inputs.sample == '' && inputs.boxes == '[0,1,2,3,4,5,6,7]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r tiler/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fragment-*
+          path: fragments
+      - name: Fusion des fragments
+        env:
+          BOXES: ${{ inputs.boxes }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          want=$(python -c "import json, os; print(len(json.loads(os.environ['BOXES'])))")
+          got=$(ls fragments/*/frag-*.json | wc -l)
+          [ "$want" = "$got" ] || { echo "::error::$got fragments pour $want boîtes"; exit 1; }
+          python -m tiler.main merge-deep-catalog --fragments fragments/*/frag-*.json --out "deep/$VERSION/catalog.json"
+          python -c "import json, sys; d = json.load(open(sys.argv[1])); print(len(d['cells']), 'cellules,', sum(c['count'] for c in d['cells'].values()), 'tuiles,', sum(c['bytes'] for c in d['cells'].values()), 'octets')" "deep/$VERSION/catalog.json"
+      - name: Fiche du dépôt (README.md)
+        run: |
+          cat > README.md <<'EOF'
+          ---
+          license: cc-by-4.0
+          pretty_name: Globelayers forest tiles (deep zoom)
+          ---
+
+          # Globelayers forest tiles (deep zoom)
+
+          Deep-zoom forest tiles (level 9 everywhere, level 8 outside the tropical band) for the Forest layer of https://globelayers.com, packed as WTPK archives (a 16-byte header, a sorted directory of 16-byte records, then the concatenated PNG tiles) that the site reads with HTTP Range requests.
+
+          Data: Hansen/UMD/Google/USGS/NASA — Global Forest Change 2000–2024 (v1.12), CC BY 4.0.
+          EOF
+      - name: Envoi du catalogue et de la fiche, lecture du sha figé
+        id: sha
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO: ${{ vars.HF_REPO }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python - <<'EOF'
+          import json, os, random, time
+          from huggingface_hub import HfApi
+
+          version, repo = os.environ["VERSION"], os.environ["HF_REPO"]
+          api = HfApi(token=os.environ["HF_TOKEN"])
+
+          def retried(fn):
+              for attempt in range(1, 6):
+                  try:
+                      return fn()
+                  except Exception as e:
+                      status = getattr(getattr(e, "response", None), "status_code", None)
+                      retry = status in (409, 412, 429) or (status is not None and status >= 500) \
+                          or (status is None and isinstance(e, (ConnectionError, TimeoutError, OSError)))
+                      if not retry or attempt == 5:
+                          raise
+                      wait = 30 * 2 ** (attempt - 1) + random.uniform(0, 15)
+                      print(f"tentative {attempt} échouée (statut {status}) : nouvelle tentative dans {wait:.0f} s")
+                      time.sleep(wait)
+
+          # Chaque cellule du catalogue doit exister sur le dépôt avant de publier le catalogue.
+          files = set(api.list_repo_files(repo, repo_type="dataset"))
+          cells = json.load(open(f"deep/{version}/catalog.json"))["cells"]
+          missing = [c for c in cells if f"{version}/{c}.wtpk" not in files]
+          if missing:
+              raise SystemExit(f"archives absentes du dépôt : {missing[:10]} ({len(missing)} au total)")
+          retried(lambda: api.upload_file(path_or_fileobj=f"deep/{version}/catalog.json",
+                                          path_in_repo=f"{version}/catalog.json", repo_id=repo, repo_type="dataset",
+                                          commit_message=f"forêt profonde {version} : catalogue"))
+          retried(lambda: api.upload_file(path_or_fileobj="README.md", path_in_repo="README.md",
+                                          repo_id=repo, repo_type="dataset", commit_message="fiche du dépôt"))
+          sha = retried(lambda: api.repo_info(repo, repo_type="dataset").sha)
+          print("sha de tête :", sha)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"sha={sha}\n")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog
+          path: deep/${{ inputs.version }}/catalog.json
+          retention-days: 30
+
+  # Seule écriture vers R2 : le manifeste existant, au même emplacement, revalidé à 5 min.
+  manifest:
+    needs: catalog
+    if: ${{ inputs.patch_manifest }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -q && sudo apt-get install -y -q rclone && pip install -r tiler/requirements.txt
+      - name: Bloc deep du manifeste
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          HF_REPO: ${{ vars.HF_REPO }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ needs.catalog.outputs.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha Hugging Face invalide : '$SHA'"; exit 1; }
+          rclone copyto "r2:$R2_BUCKET/tiles/forest/$VERSION/manifest.json" manifest-in.json --retries 5
+          python -m tiler.main add-deep-manifest --manifest manifest-in.json --max-level 9 --out manifest-out.json \
+            --base-url "https://huggingface.co/datasets/$HF_REPO/resolve/$SHA/$VERSION"
+          cat manifest-out.json
+          rclone copyto manifest-out.json "r2:$R2_BUCKET/tiles/forest/$VERSION/manifest.json" --header-upload "Cache-Control: public, max-age=300" --retries 5
+      # Copie du manifeste d'origine pour pouvoir revenir en arrière.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-avant
+          path: manifest-in.json
+          retention-days: 90

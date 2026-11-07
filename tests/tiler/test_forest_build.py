@@ -433,3 +433,16 @@ def test_box_without_forest_writes_empty_index_accepted_by_merge(tmp_path):
                                     max_level_outside=3, tropics=main.TROPICS, level1_dir=level1)
     merged = encode.TileIndex.from_bytes(res.read_bytes())
     assert merged.has(0, 0, 0) and merged.has(1, 0, 0)
+
+
+# --- niveau 9 (lot R5c) : aucun ajustement du code attendu ---
+
+
+def test_forest_factor_level9():
+    assert main.forest_factor(9) == 3
+
+
+def test_forest_block_level9_under_peak():
+    b = main.forest_block(9, main.forest_factor(9))
+    assert b == 8
+    assert main.forest_peak_bytes(b, main.forest_factor(9)) <= main.PEAK_LIMIT_BYTES
