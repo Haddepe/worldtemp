@@ -1,0 +1,33 @@
+# Essai jetable du lot R5c (plan 2026-11-07, Task 1) : envoie une dalle Hansen de ≈ 376 Mo sur le
+# dépôt dataset Hugging Face pour vérifier Range + CORS après redirection. Supprimé en fin de lot.
+name: hf-spike
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_REPO: ${{ vars.HF_REPO }}
+      SRC: https://storage.googleapis.com/earthenginepartners-hansen/GFC-2024-v1.12/Hansen_GFC-2024-v1.12_treecover2000_10S_060W.tif
+    steps:
+      - name: Téléchargement de la dalle
+        run: curl -sSfL --retry 3 -o big.tif "$SRC" && ls -l big.tif
+      - name: Envoi sur Hugging Face
+        run: |
+          pip install -q huggingface_hub
+          python - <<'EOF'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          info = api.upload_file(path_or_fileobj="big.tif", path_in_repo="spike/big.tif",
+                                 repo_id=os.environ["HF_REPO"], repo_type="dataset",
+                                 commit_message="essai R5c : gros fichier pour Range/CORS")
+          print(info)
+          EOF
