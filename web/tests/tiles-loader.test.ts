@@ -272,6 +272,27 @@ describe("TileLoader — jeu forest", () => {
     expect(l.resolve(q, "forest")!.tile).toEqual({ z: 1, x: 1, y: 0 });
   });
 
+  it("une requête profonde qui lève compte comme un échec : pas de fuite de concurrence, update ne lève pas", async () => {
+    const h = harness();
+    // Présente au choix de la tuile (needs), absente à la requête : forestTileRequest lève.
+    let n = 0;
+    const deep = { lookup: () => (++n <= 1 ? { state: "present" as const, url: "https://t.test/a.wtpk", range: { start: 0, end: 9 } } : { state: "absent" as const }) } as unknown as DeepCatalog;
+    const l = loader(h, { forest: { ...forestSource(), deep, deepMaxLevel: 3 }, concurrency: 1 });
+    l.setForestEnabled(true);
+    expect(() => l.update([{ z: 3, x: 0, y: 0 }], cam)).not.toThrow();
+    // Concurrence 1 : on résout les jobs grossiers un à un jusqu'à ce que le job profond soit démarré (et échoue).
+    for (let i = 0; i < 20 && h.timers.length === 0; i++) {
+      for (const c of h.calls.splice(0)) c.resolve(bitmap());
+      await flush();
+    }
+    expect(h.timers.length).toBe(1); // échec du job profond : nouvel essai différé programmé
+    expect(h.calls.some((c) => c.range)).toBe(false); // jamais envoyé
+    // Le créneau n'a pas fui : de nouveaux jobs démarrent encore.
+    expect(() => l.update([{ z: 0, x: 1, y: 0 }], cam)).not.toThrow();
+    await flush();
+    expect(h.calls.length).toBeGreaterThan(0);
+  });
+
   it("une requête forêt encore voulue n'est pas annulée à la sélection suivante", () => {
     const h = harness();
     const l = loader(h, { forest: forestSource() });

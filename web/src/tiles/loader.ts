@@ -50,8 +50,9 @@ const ancestorAt = (t: TileId, z: number): TileId => {
  * `min(t.z, deepMaxLevel)` dans son archive. Présente → elle ; absente → `null` même si l'ancêtre R2
  * existe (bord de forêt : pas de forêt étirée, Review Focus 5) ; répertoire pas encore chargé ou en
  * échec → règle R2 (l'ancêtre R2 s'affiche sans trou, Review Focus 1 et 2). Les trois cas
- * concluent dès le premier niveau essayé : les niveaux profonds d'une tuile sont dans la même
- * cellule, donc au même état.
+ * concluent dès le premier niveau essayé, donc un seul niveau est essayé (jamais un repli sur un
+ * niveau profond intermédiaire) : deux niveaux d'une même zone peuvent relever de cellules
+ * différentes (une tuile z8 peut chevaucher une frontière de cellule), donc d'états différents.
  */
 export function forestTileFor(t: TileId, src: ForestSource): TileId | null {
   const cap = r2Cap(t, src);
@@ -295,10 +296,18 @@ export class TileLoader {
   }
 
   private start(job: Job): void {
+    // Requête calculée avant tout état : si elle lève, le job échoue sans fuite de concurrence.
+    let req: { url: string; range: ByteRange | null };
+    try {
+      req = this.request(job);
+    } catch {
+      this.fail(job);
+      return;
+    }
     job.state = "loading";
     job.controller = new AbortController();
     this.inflight++;
-    const { url, range } = this.request(job);
+    const { url, range } = req;
     this.deps.fetchBitmap(url, job.controller.signal, range).then(
       (bitmap) => {
         if (this.jobs.get(job.key) !== job) {
@@ -313,24 +322,29 @@ export class TileLoader {
       () => {
         if (this.jobs.get(job.key) !== job) return;
         this.inflight--;
-        job.attempts++;
-        job.controller = null;
-        const delay = this.delays[job.attempts - 1];
-        if (delay === undefined) {
-          job.state = "failed";
-        } else {
-          job.state = "waiting";
-          job.timer = this.deps.setTimeout(() => {
-            job.timer = null;
-            if (this.jobs.get(job.key) === job) {
-              job.state = "queued";
-              this.pump();
-            }
-          }, delay);
-        }
+        this.fail(job);
         this.pump();
       },
     );
+  }
+
+  /** Échec d'un job (chargement ou calcul de requête) : nouvel essai différé, ou abandon. */
+  private fail(job: Job): void {
+    job.attempts++;
+    job.controller = null;
+    const delay = this.delays[job.attempts - 1];
+    if (delay === undefined) {
+      job.state = "failed";
+    } else {
+      job.state = "waiting";
+      job.timer = this.deps.setTimeout(() => {
+        job.timer = null;
+        if (this.jobs.get(job.key) === job) {
+          job.state = "queued";
+          this.pump();
+        }
+      }, delay);
+    }
   }
 
   private store(job: Job, bitmap: ImageBitmap): void {
