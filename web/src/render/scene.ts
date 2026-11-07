@@ -45,9 +45,13 @@ export function rotateSpeedFor(d: number): number {
   return Math.min(0.5, Math.max(0.25 * (FOREST_MIN_DISTANCE - 1), 0.25 * (d - 1)));
 }
 
-/** Limite basse à poser au démarrage selon la couche initiale (`?layer=` complété par la page). */
-export function initialMinDistance(layerId: string | null): number {
-  return layerId === "forest" ? FOREST_MIN_DISTANCE : MIN_DISTANCE;
+/**
+ * Limite basse à poser au démarrage selon la couche initiale (`?layer=` complété par la page).
+ * `hasDeep` faux (source forêt chargée sans niveaux profonds) : limite normale, la caméra ne descend
+ * pas sous les niveaux R2. Vrai par défaut : au démarrage la source n'est souvent pas encore chargée.
+ */
+export function initialMinDistance(layerId: string | null, hasDeep = true): number {
+  return layerId === "forest" && hasDeep ? FOREST_MIN_DISTANCE : MIN_DISTANCE;
 }
 
 /**

@@ -11,6 +11,12 @@ describe("caméra profonde sous Forest (lot R5c)", () => {
     expect(initialMinDistance("temperature")).toBe(MIN_DISTANCE);
     expect(initialMinDistance(null)).toBe(MIN_DISTANCE);
   });
+  it("initialMinDistance : source forêt sans niveaux profonds → limite normale ; inconnu (défaut) → limite basse", () => {
+    expect(initialMinDistance("forest", false)).toBe(MIN_DISTANCE);
+    expect(initialMinDistance("forest", true)).toBe(FOREST_MIN_DISTANCE);
+    expect(initialMinDistance("forest")).toBe(FOREST_MIN_DISTANCE);
+    expect(initialMinDistance("temperature", true)).toBe(MIN_DISTANCE);
+  });
   it("rotateSpeedFor : 0,25·(d−1) borné à [0,25·(FOREST_MIN_DISTANCE−1), 0,5] — vitesse écran constante jusqu'en bas de Forest", () => {
     expect(rotateSpeedFor(4)).toBe(0.5);
     expect(rotateSpeedFor(1.3)).toBeCloseTo(0.075, 12);

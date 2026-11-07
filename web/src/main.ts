@@ -268,6 +268,22 @@ async function boot(): Promise<void> {
   /** Lecture du texel sous le curseur pour le tooltip Forest (tuile la plus fine présente à l'index). */
   const forestReader = createTileReader({ source: () => forestSrc, decode: browserDecodeTile });
   const tileLayers = (): string[] => (forestReady ? ["forest"] : []);
+  /** Faux seulement si la source est chargée sans `deep` : inconnu (pas encore chargée) → profond. */
+  const forestHasDeep = (): boolean => forestSrc === null || forestSrc.deep !== null;
+  /** Quitte la caméra profonde : remontée à MIN_DISTANCE, limite normale posée après le vol (pas de saut). */
+  const leaveDeepCamera = (): void => {
+    if (!deepCamera) return;
+    deepCamera = false;
+    const apply = (): void => {
+      climbing = false;
+      if (!deepCamera) sceneHandle.setMinDistance(MIN_DISTANCE);
+    };
+    const c = climbTarget(sceneHandle.camera.position, MIN_DISTANCE);
+    if (c) {
+      climbing = true;
+      flight.start(c.lon, c.lat, c.d, apply, apply);
+    } else apply();
+  };
   /** Charge le jeu `forest` ; vrai s'il vient d'arriver (le menu est alors à refaire). */
   const loadForest = async (): Promise<boolean> => {
     try {
@@ -279,6 +295,8 @@ async function boot(): Promise<void> {
       const src: ForestSource = { ...base, deep, deepMaxLevel };
       loader.configureForest(src);
       forestSrc = src;
+      // Forest déjà active (vue de démarrage ?layer=forest) mais sans niveaux profonds : remontée.
+      if (!deep) leaveDeepCamera();
       globe.setForestPalette(createLutTexture(buildForestLut(layerDef("forest")!, src.manifest.yearBase), 2), src.manifest.channels, src.manifest.tileSize);
       forestReady = true;
       console.info(`[worldtemp] forest tiles ${src.manifest.version}: ≤ ${src.manifest.maxLevel} (tropics), ≤ ${src.manifest.maxLevelOutside} elsewhere${deep ? `, deep ≤ ${deepMaxLevel}` : ""}`);
@@ -814,22 +832,15 @@ async function boot(): Promise<void> {
     // Lot R5c : sous Forest, caméra plus basse et tuiles jusqu'au niveau profond (sur-zoom au-delà).
     // En la quittant (vers toute autre couche ou Aucune), remontée à MIN_DISTANCE : la limite normale
     // n'est posée qu'après le vol (ou à son annulation) — OrbitControls y ramènerait d'un saut.
-    if (tiles) {
+    // Sans niveaux profonds au manifeste (`forestSrc.deep` nul), Forest garde la limite normale.
+    if (tiles && forestHasDeep()) {
       deepCamera = true;
       if (climbing) flight.cancel();
       sceneHandle.setMinDistance(FOREST_MIN_DISTANCE);
       if (forestSrc) globe.setForestMaxLevel(forestSrc.deepMaxLevel);
-    } else if (deepCamera) {
-      deepCamera = false;
-      const apply = (): void => {
-        climbing = false;
-        if (!deepCamera) sceneHandle.setMinDistance(MIN_DISTANCE);
-      };
-      const c = climbTarget(sceneHandle.camera.position, MIN_DISTANCE);
-      if (c) {
-        climbing = true;
-        flight.start(c.lon, c.lat, c.d, apply, apply);
-      } else apply();
+    } else {
+      if (tiles && forestSrc) globe.setForestMaxLevel(forestSrc.deepMaxLevel);
+      leaveDeepCamera();
     }
     globe.setForest(tiles);
     ui.setForestCredit(tiles);
