@@ -128,7 +128,7 @@ jobs:
           # /usr/bin/time -v : pic de RAM réel (Maximum resident set size) et durée.
           set +e  # Actions lance `bash -e` sans pipefail : `tee` masquerait l'échec du tiler, PIPESTATUS[0] le relève
           /usr/bin/time -v -o time.txt python -u -m tiler.main forest --box "$BOX" --out out --work work \
-            --min-level 1 --max-level 9 --max-level-outside 9 \
+            --min-level 8 --max-level 9 --max-level-outside 9 \
             --tropics=$TROPICS $SAMPLE_ARG 2>&1 | tee log.txt; rc=${PIPESTATUS[0]}
           set -e
           [ "$rc" = 0 ] || { cat time.txt; kill $SAMPLER; exit 1; }

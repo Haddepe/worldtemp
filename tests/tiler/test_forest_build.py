@@ -446,3 +446,14 @@ def test_forest_block_level9_under_peak():
     b = main.forest_block(9, main.forest_factor(9))
     assert b == 8
     assert main.forest_peak_bytes(b, main.forest_factor(9)) <= main.PEAK_LIMIT_BYTES
+
+
+def test_build_forest_box_min_level_high_writes_only_requested_levels(tmp_path):
+    # Le job forest-deep lance --min-level 8 --max-level 9 : seuls ces niveaux sont écrits
+    # (ici 2..3 sur la grille du faux Hansen, même mécanique), sans niveau 1 ni 0.
+    index = _build(tmp_path, FakeHansen(), min_level=2, max_level=3, max_level_outside=3)
+    assert _files(tmp_path, 3) and _files(tmp_path, 2)
+    assert not (tmp_path / "forest" / "1").exists() and not (tmp_path / "forest" / "0").exists()
+    assert _index_tiles(index, 3) == _files(tmp_path, 3)
+    assert _index_tiles(index, 2) == _files(tmp_path, 2)
+    assert index.max_level == 3
