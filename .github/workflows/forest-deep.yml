@@ -64,6 +64,13 @@ jobs:
           if [ "$PATCH_MANIFEST" = true ] && [ "$UPLOAD_HF" != true ]; then
             echo "::error::patch_manifest exige upload_hf"; exit 1
           fi
+      - name: Avertissement run partiel (rien publié)
+        if: ${{ inputs.upload_hf && env.FULL_SET != 'true' }}
+        env:
+          BOXES: ${{ inputs.boxes }}
+          SAMPLE: ${{ inputs.sample }}
+        run: |
+          echo "::warning::Run partiel ou échantillon (boxes=$BOXES, sample=$SAMPLE) : rien n'est envoyé sur Hugging Face (le jeu complet exige boxes=[0,1,2,3,4,5,6,7], sans espaces, et sample vide)"
       - name: Aucune écriture R2 hors manifeste
         env:
           WF: .github/workflows/forest-deep.yml

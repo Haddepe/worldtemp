@@ -74,7 +74,7 @@ def test_no_extra_copy_large_array():
     cov, yr, sh = forest.aggregate(c, np.zeros_like(c), 8)
     assert sh.max() == 0
     assert cov.shape == (512, 512) and cov.dtype == np.uint8 and yr.max() == 0
-    # Sorties nouvelles : aucune ne partage sa mémoire avec loss'entrée (pas de vue déguisée).
+    # Sorties nouvelles : aucune ne partage sa mémoire avec l'entrée (pas de vue déguisée).
     assert not any(np.shares_memory(o, c) for o in (cov, yr, sh))
 
 
